@@ -83,27 +83,27 @@ Giao diện chương trình được thiết kế theo mô hình **Dual-Grid** (
 
 ```mermaid
 flowchart TD
-    A[Chạy chương trình Z_AUTH_TEST] --> B[Nhập Username & Tuỳ chọn Active Roles]
-    B --> C[Gọi SUSR_USER_SU53_READ: Lấy buffer 3h gần nhất]
-    C --> D[Gọi get_user_roles: Đọc Single Roles từ AGR_USERS & AGR_DEFINE]
-    D --> E[Khởi tạo Docking Container & Fullscreen ALV]
-    E --> F[eval_auths_for_role: Đánh giá độ phủ quyền của Role mặc định]
-    F --> G[Người dùng chọn Role đích & Tích chọn các dòng quyền thiếu]
-    G --> H[Bấm nút 'Add to Role']
-    H --> I{Phân loại quyền được chọn}
-    I -- Object S_TCODE -->> J[Gọi PRGN_RFC_ADD_TRANSACTION đưa vào Role Menu]
-    I -- Regular Objects -->> K[Lock Role: PRGN_ACTIVITY_GROUP_ENQUEUE]
-    K --> L[Đọc dữ liệu Role: PRGN_1250 / 1251 / 1252]
-    L --> M[Tra cứu TOBJ: Lấy đầy đủ 100% fields mặc định]
-    M --> N[Điền giá trị trace; Field mở/thiếu tự động gán '*']
-    N --> O[Reactivate nếu object bị xóa: DELETED = ' ']
-    O --> P[Lưu dữ liệu: PRGN_1250_SAVE, PRGN_1251_SAVE, PRGN_UPDATE_DATABASE]
-    P --> Q[Unlock Role: PRGN_ACTIVITY_GROUP_DEQUEUE]
-    J --> R[Force Maintain Org Levels trong AGR_1252 với '*']
+    A["Chạy chương trình Z_AUTH_TEST"] --> B["Nhập Username & Tuỳ chọn Active Roles"]
+    B --> C["Gọi SUSR_USER_SU53_READ: Lấy buffer 3h gần nhất"]
+    C --> D["Gọi get_user_roles: Đọc Single Roles từ AGR_USERS & AGR_DEFINE"]
+    D --> E["Khởi tạo Docking Container & Fullscreen ALV"]
+    E --> F["eval_auths_for_role: Đánh giá độ phủ quyền của Role mặc định"]
+    F --> G["Người dùng chọn Role đích & Tích chọn các dòng quyền thiếu"]
+    G --> H["Bấm nút Add to Role"]
+    H --> I{"Phân loại quyền được chọn"}
+    I -->|Object S_TCODE| J["Gọi PRGN_RFC_ADD_TRANSACTION đưa vào Role Menu"]
+    I -->|Regular Objects| K["Lock Role: PRGN_ACTIVITY_GROUP_ENQUEUE"]
+    K --> L["Đọc dữ liệu Role: PRGN_1250 / 1251 / 1252"]
+    L --> M["Tra cứu TOBJ: Lấy đầy đủ 100% fields mặc định"]
+    M --> N["Điền giá trị trace; Field mở/thiếu tự động gán *"]
+    N --> O["Reactivate nếu object bị xóa: DELETED = space"]
+    O --> P["Lưu dữ liệu: PRGN_1250_SAVE, PRGN_1251_SAVE, PRGN_UPDATE_DATABASE"]
+    P --> Q["Unlock Role: PRGN_ACTIVITY_GROUP_DEQUEUE"]
+    J --> R["Force Maintain Org Levels trong AGR_1252 với *"]
     Q --> R
-    R --> S[Gọi SUPRN_DARK_MANIPULATE_PROFILE với fill_fields='X' & fill_orgs='X']
-    S --> T[Tự động regenerate Profile thành công]
-    T --> U[Refresh dữ liệu & Cập nhật Icon trạng thái trên màn hình]
+    R --> S["Gọi SUPRN_DARK_MANIPULATE_PROFILE tự động sinh Profile"]
+    S --> T["Regenerate Profile thành công"]
+    T --> U["Refresh dữ liệu & Cập nhật Icon trạng thái trên màn hình"]
 ```
 
 ---
