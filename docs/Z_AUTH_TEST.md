@@ -19,6 +19,12 @@ Chương trình ABAP **`Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`) là một c
    - [4.8. Force Profile Generation & Xử lý Organizational Levels (`AGR_1252`)](#48-force-profile-generation--xử-lý-organizational-levels-agr_1252)
    - [4.9. Xử lý Event & Điều hướng lệnh UI](#49-xử-lý-event--điều-hướng-lệnh-ui)
 5. [Tổng kết các Function Module SAP chuẩn được sử dụng](#5-tổng-kết-các-function-module-sap-chuẩn-được-sử-dụng)
+6. [Hướng dẫn Clone & Tự triển khai lên SAP Server (Deployment Guide)](#6-hướng-dẫn-clone--tự-triển-khai-lên-sap-server-deployment-guide)
+   - [6.1. Clone Repository](#61-clone-repository)
+   - [6.2. Cấu hình thông tin SAP Server của bạn](#62-cấu-hình-thông-tin-sap-server-của-bạn)
+   - [6.3. Ba phương thức Deploy chương trình lên SAP](#63-ba-phương-thức-deploy-chương-trình-lên-sap)
+   - [6.4. Tạo mã giao dịch Transaction Code (SE93)](#64-tạo-mã-giao-dịch-transaction-code-se93)
+   - [6.5. Kiểm tra & Vận hành thực tế](#65-kiểm-tra--vận-hành-thực-tế)
 
 ---
 
@@ -260,3 +266,112 @@ flowchart TD
 | `SUPRN_DARK_MANIPULATE_PROFILE`| Sinh (generate) Authorization Profile tự động ở chế độ background (dark). |
 | `PRGN_AUTO_GENERATE_PROFILE_NEW`| Function Module dự phòng sinh Profile tự động. |
 | `REUSE_ALV_GRID_DISPLAY_LVC` | Hiển thị bảng Fullscreen ALV Grid danh sách quyền thiếu. |
+
+---
+
+## 6. Hướng dẫn Clone & Tự triển khai lên SAP Server (Deployment Guide)
+
+Bất kỳ lập trình viên hoặc quản trị viên SAP nào khi clone repository này về máy đều có thể dễ dàng triển khai chương trình `Z_AUTH_TEST` (hoặc các chương trình khác trong thư mục `src/`) lên hệ thống SAP riêng của họ.
+
+### 6.1. Clone Repository
+Mở Terminal / PowerShell và clone repo về máy:
+```bash
+git clone https://github.com/<your-username>/sap-abap-mcp-auth-test.git
+cd sap-abap-mcp-auth-test
+```
+
+### 6.2. Cấu hình thông tin SAP Server của bạn
+1. Sao chép file `.sap.env.example` thành file `.sap.env`:
+   ```bash
+   # Windows PowerShell:
+   Copy-Item .sap.env.example .sap.env
+
+   # Linux / macOS:
+   cp .sap.env.example .sap.env
+   ```
+2. Mở file `.sap.env` và cập nhật thông tin máy chủ SAP của bạn:
+   ```ini
+   SAP_URL=https://your-sap-server.com:44310
+   SAP_CLIENT=100
+   SAP_AUTH_TYPE=basic
+   SAP_SYSTEM_TYPE=onprem
+   SAP_USERNAME=YOUR_USER
+   SAP_PASSWORD=YOUR_PASSWORD
+   SAP_LANGUAGE=EN
+   SAP_MASTER_SYSTEM=DEV
+   NODE_TLS_REJECT_UNAUTHORIZED=0
+   ```
+   > 🔒 **Lưu ý**: File `.sap.env` đã được `.gitignore` bảo vệ, tuyệt đối không commit file này.
+
+---
+
+### 6.3. Ba phương thức Deploy chương trình lên SAP
+
+Bạn có thể lựa chọn 1 trong 3 phương thức dưới đây để đưa chương trình lên máy chủ SAP:
+
+#### Cách 1: Sử dụng Script CLI tự động (Khuyên dùng - Nhanh nhất)
+Repository đã tích hợp sẵn script tự động hóa [`scripts/deploy.js`](../scripts/deploy.js). Script này tự động gọi MCP Server qua ADT API để kiểm tra xem chương trình đã tồn tại hay chưa: nếu chưa có sẽ tự tạo mới trong package `$TMP`, nếu đã có sẽ ghi đè và kích hoạt (Activate) ngay lập tức.
+
+1. Đảm bảo đã cài đặt Node.js (>= 22) và gói MCP server:
+   ```bash
+   npm install -g @mcp-abap-adt/core
+   ```
+2. Chạy lệnh deploy:
+   ```bash
+   npm run deploy
+   # hoặc:
+   node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST
+   ```
+3. Kết quả console hiển thị:
+   ```text
+   📦 Deploying Z_AUTH_TEST (66942 characters)...
+   🔌 Starting SAP ADT MCP Server with environment: .sap.env
+   🚀 Checking and deploying program Z_AUTH_TEST on SAP...
+   ✅ Success! Program Z_AUTH_TEST updated and activated successfully.
+   ```
+
+#### Cách 2: Triển khai qua AI Assistant có kết nối MCP
+Nếu bạn sử dụng **Grok Build**, **Google Antigravity**, **Claude Desktop**, hoặc **Cursor IDE** (đã cấu hình MCP Server theo `README.md`):
+- Bạn chỉ cần mở khung chat AI trong thư mục dự án và gửi prompt:
+  > *"Deploy chương trình trong src/z_auth_test.prog.abap lên hệ thống SAP với tên Z_AUTH_TEST và activate nó"*
+- Trợ lý AI sẽ tự động đọc source code từ `src/` và gọi tool ADT (`UpdateProgram` / `CreateProgram`, `ActivateProgram`) để triển khai trong vài giây.
+
+#### Cách 3: Triển khai thủ công qua SAP GUI hoặc Eclipse ADT
+Nếu máy trạm không cài Node.js hoặc không dùng MCP:
+1. Đăng nhập SAP GUI vào Client phát triển của bạn.
+2. Mở transaction **`SE38`** (ABAP Editor).
+3. Nhập tên chương trình: **`Z_AUTH_TEST`** -> Bấm **Create**.
+4. Thiết lập:
+   - **Title**: `SU53 Authorization Trace and Simulator`
+   - **Type**: `Executable program` (1)
+   - **Status**: `Test program` (T)
+5. Bấm **Save** -> Chọn Package **`$TMP`** (Local Object) hoặc Package dự án của bạn.
+6. Mở file [`src/z_auth_test.prog.abap`](../src/z_auth_test.prog.abap) bằng text editor bất kỳ, copy toàn bộ nội dung và dán vào cửa sổ SE38.
+7. Bấm **Check Syntax** (`Ctrl + F2`) để kiểm tra cú pháp, sau đó bấm **Activate** (`Ctrl + F3`).
+
+---
+
+### 6.4. Tạo mã giao dịch Transaction Code (SE93)
+Để người dùng hoặc chuyên viên bảo mật có thể chạy chương trình nhanh chóng:
+1. Vào transaction **`SE93`**.
+2. Nhập Transaction Code: **`ZAT`** -> Bấm **Create**.
+3. Điền Short Text: `SU53 Role Assignment Simulator`.
+4. Chọn radio button: **`Program and selection screen (report transaction)`** -> Bấm Enter.
+5. Tại mục **Program**: điền `Z_AUTH_TEST`.
+6. Tại mục **GUI Support**: tích chọn cả 3 mục (SAP GUI for Windows, SAP GUI for Java, SAP GUI for HTML).
+7. Bấm **Save** (lưu vào `$TMP` hoặc transport request).
+
+---
+
+### 6.5. Kiểm tra & Vận hành thực tế
+1. Mở SAP GUI và gõ lệnh: **`/nZAT`**.
+2. Nhập **User** cần kiểm tra (ví dụ user đang gặp lỗi phân quyền khi thao tác nghiệp vụ).
+3. Bấm **Execute** (`F8`):
+   - Danh sách lỗi phân quyền trong 3 giờ gần nhất sẽ xuất hiện ở bảng dưới.
+   - Danh sách các Single Role của user xuất hiện ở bảng trên.
+4. Bấm chọn Radio icon của Role đích cần phân quyền.
+5. Tích checkbox `[X]` các quyền thiếu cần cấp và bấm nút **`Add to Role`**:
+   - Hệ thống tự động thêm TCode vào Menu hoặc thêm Authorization Object với đầy đủ 100% field chuẩn (`TOBJ`).
+   - Tự động điền `*` cho các biến Org Level còn mở trong `AGR_1252`.
+   - Tự động sinh Profile cho role mà không cần bất kỳ thao tác thủ công nào trong `PFCG`.
+

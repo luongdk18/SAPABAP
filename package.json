@@ -1,0 +1,20 @@
+{
+  "name": "sap-abap-mcp-tools",
+  "version": "1.0.0",
+  "description": "SAP ABAP ADT MCP Tools & Automated Deployment",
+  "scripts": {
+    "deploy": "node scripts/deploy.js",
+    "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST"
+  },
+  "keywords": [
+    "sap",
+    "abap",
+    "mcp",
+    "adt",
+    "security",
+    "su53",
+    "pfcg"
+  ],
+  "author": "",
+  "license": "MIT"
+}

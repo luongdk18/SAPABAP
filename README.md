@@ -20,7 +20,8 @@ This repository provides the configuration, environment templates, and setup gui
    - [Google Antigravity](#44-google-antigravity)
    - [VS Code (Cline / Continue / Roo Code)](#45-vs-code-cline--continue--roo-code)
 5. [Verification & Available Tools](#5-verification--available-tools)
-6. [Security & Best Practices](#6-security--best-practices)
+6. [Deploying ABAP Programs to SAP](#6-deploying-abap-programs-to-sap)
+7. [Security & Best Practices](#7-security--best-practices)
 
 ---
 
@@ -267,7 +268,37 @@ Once connected, ask your AI assistant to run a quick test prompt:
 
 ---
 
-## 6. Security & Best Practices
+## 6. Deploying ABAP Programs to SAP
+
+Programs located in the `src/` directory (such as `src/z_auth_test.prog.abap`) can be deployed directly to your connected SAP server.
+
+### Option 1: Automated Script (`npm run deploy`)
+Ensure your `.sap.env` file is properly configured, then run:
+
+```bash
+# Deploy default program (Z_AUTH_TEST)
+npm run deploy
+
+# Or deploy any specific ABAP file
+node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST
+```
+The script communicates with the MCP server over stdio, checks if the program exists on SAP, creates or updates the source code, and activates it automatically.
+
+### Option 2: Using Your AI Assistant
+In any MCP-connected AI assistant (Grok Build, Claude, Cursor, Antigravity), simply instruct:
+> *"Read `src/z_auth_test.prog.abap` and deploy/activate it to the connected SAP system as program `Z_AUTH_TEST`."*
+
+### Option 3: Manual Deployment (SAP GUI / SE38)
+1. Open transaction `SE38` in SAP GUI.
+2. Enter program name `Z_AUTH_TEST` and choose **Create** (Type: *Executable program*, Status: *SAP Standard Production Program* or *Test Program*).
+3. Copy the contents of `src/z_auth_test.prog.abap` and paste into the editor.
+4. Save (`Ctrl + S`) and Activate (`Ctrl + F3`).
+
+> 📖 **Program Documentation**: For complete technical specifications and functional logic of `Z_AUTH_TEST`, see [docs/Z_AUTH_TEST.md](docs/Z_AUTH_TEST.md).
+
+---
+
+## 7. Security & Best Practices
 
 1. **Credentials Isolation**:
    - Keep `.sap.env` local. Verify it matches the `.gitignore` rule before staging or committing changes.
