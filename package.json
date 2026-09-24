@@ -15,6 +15,11 @@
     "su53",
     "pfcg"
   ],
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luongdk18/SAPABAP.git"
+  },
+  "homepage": "https://github.com/luongdk18/SAPABAP#readme",
+  "author": "luongdk18",
   "license": "MIT"
 }

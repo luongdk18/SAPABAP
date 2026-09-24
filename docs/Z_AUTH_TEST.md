@@ -276,8 +276,8 @@ Bất kỳ lập trình viên hoặc quản trị viên SAP nào khi clone repos
 ### 6.1. Clone Repository
 Mở Terminal / PowerShell và clone repo về máy:
 ```bash
-git clone https://github.com/<your-username>/sap-abap-mcp-auth-test.git
-cd sap-abap-mcp-auth-test
+git clone https://github.com/luongdk18/SAPABAP.git
+cd SAPABAP
 ```
 
 ### 6.2. Cấu hình thông tin SAP Server của bạn

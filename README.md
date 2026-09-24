@@ -10,9 +10,10 @@ This repository provides the configuration, environment templates, and setup gui
    - [Client Environment](#21-client-environment)
    - [SAP System Requirements](#22-sap-system-requirements)
 3. [Installation & Setup](#3-installation--setup)
-   - [Step 1: Install Node.js](#step-1-install-nodejs)
-   - [Step 2: Install MCP Server CLI](#step-2-install-mcp-server-cli)
-   - [Step 3: Configure Environment Variables](#step-3-configure-environment-variables)
+   - [Step 1: Clone Repository](#step-1-clone-repository)
+   - [Step 2: Install Node.js](#step-2-install-nodejs)
+   - [Step 3: Install MCP Server CLI](#step-3-install-mcp-server-cli)
+   - [Step 4: Configure Environment Variables](#step-4-configure-environment-variables)
 4. [AI Client Configuration](#4-ai-client-configuration)
    - [Grok Build (Latest Version)](#41-grok-build-latest-version)
    - [Claude Desktop](#42-claude-desktop)
@@ -61,7 +62,14 @@ The **SAP ABAP ADT MCP Server** (`@mcp-abap-adt/core`) bridges AI assistants and
 
 ## 3. Installation & Setup
 
-### Step 1: Install Node.js
+### Step 1: Clone Repository
+Clone the repository from GitHub to your local machine:
+```bash
+git clone https://github.com/luongdk18/SAPABAP.git
+cd SAPABAP
+```
+
+### Step 2: Install Node.js
 Verify that Node.js 22+ is installed:
 ```bash
 node -v
@@ -69,7 +77,7 @@ npm -v
 ```
 If your version is below 22, download the current LTS/latest release from [nodejs.org](https://nodejs.org/).
 
-### Step 2: Install MCP Server CLI
+### Step 3: Install MCP Server CLI
 Install the SAP ABAP ADT MCP Server globally via npm:
 ```bash
 npm install -g @mcp-abap-adt/core
@@ -85,7 +93,7 @@ Verify that the CLI executable is detected:
   which mcp-abap-adt
   ```
 
-### Step 3: Configure Environment Variables
+### Step 4: Configure Environment Variables
 1. Copy the provided template file `.sap.env.example` to `.sap.env`:
    - **Windows PowerShell**:
      ```powershell
