@@ -1,137 +1,171 @@
-# SAP ABAP ADT MCP Server & Z_AUTH_TEST
+# SAP ABAP ADT Model Context Protocol (MCP) Server Setup
 
-Dự án tích hợp **SAP ABAP ADT Model Context Protocol (MCP) Server** và chương trình ABAP **`Z_AUTH_TEST`** (Phân tích lỗi phân quyền SU53, giả lập kiểm tra Role và tự động phân quyền kèm sinh Profile).
-
----
-
-## 📌 Mục lục
-1. [Giới thiệu tổng quan](#1-giới-thiệu-tổng-quan)
-2. [Yêu cầu hệ thống (Prerequisites)](#2-yêu-cầu-hệ-thống-prerequisites)
-3. [Hướng dẫn cài đặt MCP Server (Step-by-Step)](#3-hướng-dẫn-cài-đặt-mcp-server-step-by-step)
-4. [Cấu hình MCP trên các công cụ AI (Client Setup)](#4-cấu-hình-mcp-trên-các-công-cụ-ai-client-setup)
-5. [Triển khai chương trình ABAP Z_AUTH_TEST](#5-triển-khai-chương-trình-abap-z_auth_test)
-6. [Hướng dẫn đưa dự án lên GitHub](#6-hướng-dẫn-đưa-dự-án-lên-github)
-7. [Bảo mật & Lưu ý quan trọng](#7-bảo-mật--lưu-ý-quan-trọng)
+This repository provides the configuration, environment templates, and setup guide to connect AI coding assistants (such as **Grok Build**, **Claude Desktop**, **Cursor**, **Google Antigravity**, and **VS Code**) directly to **SAP S/4HANA** and **SAP ECC** systems using the **Model Context Protocol (MCP)** via **ABAP Development Tools (ADT)**.
 
 ---
 
-## 1. Giới thiệu tổng quan
-
-Kho lưu trữ này cung cấp giải pháp toàn diện kết nối giữa **AI Assistant** và hệ thống **SAP S/4HANA / ECC**:
-- **SAP ADT MCP Server (`@mcp-abap-adt/core`)**: Triển khai giao thức Model Context Protocol (MCP) cho phép các trợ lý AI (Google Antigravity, Claude Desktop, Cursor, VS Code) tương tác trực tiếp với SAP qua ABAP Development Tools (ADT REST API) để đọc, cập nhật, kích hoạt chương trình ABAP, truy vấn bảng, kiểm tra cú pháp, đọc trace dump.
-- **Chương trình ABAP `Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`):
-  - Đọc buffer SU53 trong 3 giờ gần nhất của user đích.
-  - Phân tích chi tiết tất cả các Authorization Object, Field và Value bị thiếu.
-  - Đối chiếu với các Single Roles mà user đang sở hữu.
-  - Đánh giá độ phủ quyền (Coverage) theo từng Role và hiển thị trạng thái bằng icon màu trực quan.
-  - Cho phép chọn các dòng thiếu quyền và bấm **"Add to Role"** để tự động gán vào Role được chọn qua chuẩn PFCG Function Modules.
-  - Tự động bổ sung tất cả các fields mặc định từ bảng `TOBJ` (điền `*` cho các field mở) và các biến Organizational Level trong `AGR_1252`.
-  - Tự động sinh (regenerate) Profile cho role sau khi add.
-
----
-
-## 2. Yêu cầu hệ thống (Prerequisites)
-
-### 2.1. Phía máy trạm (Client / Developer Machine)
-- **Hệ điều hành**: Windows 10/11, macOS, hoặc Linux.
-- **Node.js**: Phiên bản **>= 22.0.0** (bắt buộc cho `@mcp-abap-adt/core` v10+).
-- **npm**: Phiên bản **>= 9.0.0** (đi kèm Node.js).
-- **Git**: Đã cài đặt Git CLI.
-- **AI Client hỗ trợ MCP**: Google Antigravity, Claude Desktop, Cursor IDE, Windsurf, hoặc VS Code (với Cline / Roo Code / Continue).
-
-### 2.2. Phía hệ thống SAP (SAP System Prerequisites)
-- **Hệ thống SAP**: SAP NetWeaver 7.50 trở lên hoặc SAP S/4HANA (On-Premise / Private Cloud / BTP ABAP Environment).
-- **Dịch vụ ADT ICF đã được kích hoạt** (Giao dịch `SICF`):
-  - Đảm bảo node `/default_host/sap/bc/adt` đã được Active.
-- **Cổng HTTPS**: Cổng HTTPS của SAP Web Dispatcher / ICM hoạt động bình thường (ví dụ: port `44300` hoặc `44310`).
-- **Tài khoản người dùng SAP (SAP User)**:
-  - Tài khoản kỹ thuật hoặc developer account có quyền ADT (`S_ADT_RES`, `S_RFC`, `S_DEVELOP`, `S_TABU_DIS`, v.v.).
-  - Nếu thao tác trên Role/Profile: cần quyền PFCG (`S_USER_AGR`, `S_USER_PRO`).
+## Table of Contents
+1. [Overview](#1-overview)
+2. [Prerequisites](#2-prerequisites)
+   - [Client Environment](#21-client-environment)
+   - [SAP System Requirements](#22-sap-system-requirements)
+3. [Installation & Setup](#3-installation--setup)
+   - [Step 1: Install Node.js](#step-1-install-nodejs)
+   - [Step 2: Install MCP Server CLI](#step-2-install-mcp-server-cli)
+   - [Step 3: Configure Environment Variables](#step-3-configure-environment-variables)
+4. [AI Client Configuration](#4-ai-client-configuration)
+   - [Grok Build (Latest Version)](#41-grok-build-latest-version)
+   - [Claude Desktop](#42-claude-desktop)
+   - [Cursor IDE](#43-cursor-ide)
+   - [Google Antigravity](#44-google-antigravity)
+   - [VS Code (Cline / Continue / Roo Code)](#45-vs-code-cline--continue--roo-code)
+5. [Verification & Available Tools](#5-verification--available-tools)
+6. [Security & Best Practices](#6-security--best-practices)
 
 ---
 
-## 3. Hướng dẫn cài đặt MCP Server (Step-by-Step)
+## 1. Overview
 
-### Bước 1: Kiểm tra phiên bản Node.js
-Mở Terminal / PowerShell và kiểm tra:
+The **SAP ABAP ADT MCP Server** (`@mcp-abap-adt/core`) bridges AI assistants and SAP systems over standard ADT REST endpoints. Once configured, your AI assistant gains native tools to:
+- **Search & Explore**: Find repository objects (programs, classes, tables, CDS views, function modules).
+- **Read & Write Code**: View and edit ABAP source code, DDIC structures, CDS Data Definitions, and table contents.
+- **Syntax Check & Activate**: Execute syntax checks and activate inactive ABAP objects.
+- **Data Preview**: Run ad-hoc SQL queries against SAP database tables via ADT Data Preview API.
+- **Diagnostics**: Analyze short dumps (`ST22`), trace logs, and system messages.
+
+---
+
+## 2. Prerequisites
+
+### 2.1. Client Environment
+- **Operating System**: Windows 10/11, macOS, or Linux.
+- **Node.js**: **>= 22.0.0** (required by `@mcp-abap-adt/core` v10+).
+- **npm**: **>= 9.0.0** (bundled with Node.js).
+- **Git**: Installed and available in your `PATH`.
+
+### 2.2. SAP System Requirements
+- **SAP Release**: SAP NetWeaver 7.50+ or SAP S/4HANA (On-Premise, Private Cloud, or BTP ABAP Environment).
+- **ADT SICF Services Active**:
+  - In transaction `SICF`, ensure the sub-tree `/default_host/sap/bc/adt` is **Active**.
+- **HTTPS Port Reachability**:
+  - The SAP Web Dispatcher / ICM HTTPS port (e.g. `44300`, `44310`) must be accessible from your workstation.
+- **SAP User Authorizations**:
+  - Technical or developer user with ADT authorizations:
+    - `S_ADT_RES` (ADT Resource Access)
+    - `S_RFC` (RFC authorization)
+    - `S_DEVELOP` (ABAP Workbench object development & activation)
+    - `S_TABU_DIS` (Data Preview / table queries)
+
+---
+
+## 3. Installation & Setup
+
+### Step 1: Install Node.js
+Verify that Node.js 22+ is installed:
 ```bash
 node -v
 npm -v
 ```
-> ⚠️ **Lưu ý**: Nếu phiên bản Node.js < 22, vui lòng tải và cài đặt bản Node.js mới nhất từ [nodejs.org](https://nodejs.org/).
+If your version is below 22, download the current LTS/latest release from [nodejs.org](https://nodejs.org/).
 
-### Bước 2: Cài đặt gói `@mcp-abap-adt/core`
-Cài đặt MCP server toàn cục (Global) trên máy:
+### Step 2: Install MCP Server CLI
+Install the SAP ABAP ADT MCP Server globally via npm:
 ```bash
 npm install -g @mcp-abap-adt/core
 ```
 
-Kiểm tra lệnh đã khả dụng:
-```bash
-# Trên Windows CMD/PowerShell:
-where mcp-abap-adt
+Verify that the CLI executable is detected:
+- **Windows (Command Prompt / PowerShell)**:
+  ```cmd
+  where.exe mcp-abap-adt
+  ```
+- **macOS / Linux**:
+  ```bash
+  which mcp-abap-adt
+  ```
 
-# Trên Linux/macOS:
-which mcp-abap-adt
-```
-
-### Bước 3: Cấu hình biến môi trường kết nối SAP
-1. Trong thư mục dự án, sao chép file mẫu `.sap.env.example` thành `.sap.env`:
-   ```bash
-   cp .sap.env.example .sap.env
-   ```
-2. Mở file `.sap.env` và điền thông tin hệ thống SAP của bạn:
+### Step 3: Configure Environment Variables
+1. Copy the provided template file `.sap.env.example` to `.sap.env`:
+   - **Windows PowerShell**:
+     ```powershell
+     Copy-Item .sap.env.example .sap.env
+     ```
+   - **Linux / macOS**:
+     ```bash
+     cp .sap.env.example .sap.env
+     ```
+2. Open `.sap.env` and enter your SAP system credentials:
    ```ini
-   # Đường dẫn HTTPS tới máy chủ SAP (kèm cổng ADT)
+   # SAP HTTPS Base URL (including ADT port)
    SAP_URL=https://saps4dev.example.com:44310
 
-   # Client (Mandant)
+   # SAP Client (Mandant)
    SAP_CLIENT=100
 
-   # Phương thức xác thực: basic (On-premise user/password) hoặc xsuaa (BTP)
+   # Authentication Type: 'basic' (on-premise user/password) or 'xsuaa' (SAP BTP)
    SAP_AUTH_TYPE=basic
    SAP_SYSTEM_TYPE=onprem
 
-   # Tài khoản SAP
-   SAP_USERNAME=YOUR_USER
-   SAP_PASSWORD=YOUR_PASSWORD
+   # SAP User Credentials
+   SAP_USERNAME=YOUR_SAP_USER
+   SAP_PASSWORD=YOUR_SAP_PASSWORD
 
-   # Ngôn ngữ đăng nhập & System ID
-   SAP_LANGUAGE=EN
+   # System ID & Language
    SAP_MASTER_SYSTEM=DEV
+   SAP_LANGUAGE=EN
 
-   # Đặt 0 nếu hệ thống nội bộ dùng SSL tự ký (Self-signed Certificate)
+   # Set to 0 if connecting to a dev/sandbox system with self-signed SSL certificates
    NODE_TLS_REJECT_UNAUTHORIZED=0
    ```
 
-> 🔒 **CẢNH BÁO BẢO MẬT**: File `.sap.env` chứa mật khẩu SAP. File này đã được thêm vào `.gitignore` và **tuyệt đối không bao giờ được commit lên GitHub**!
+> ⚠️ **IMPORTANT**: `.sap.env` contains sensitive passwords and is listed in `.gitignore`. **Never commit `.sap.env` to version control!**
 
 ---
 
-## 4. Cấu hình MCP trên các công cụ AI (Client Setup)
+## 4. AI Client Configuration
 
-### 4.1. Cấu hình cho Google Antigravity
-Chỉnh sửa file cấu hình MCP của Antigravity tại:
-`C:\Users\<username>\.gemini\config\mcp_config.json` (Windows) hoặc `~/.gemini/config/mcp_config.json` (macOS/Linux):
+### 4.1. Grok Build (Latest Version)
 
-```json
-{
-  "mcpServers": {
-    "sap-s4hana": {
-      "command": "cmd.exe",
-      "args": [
-        "/c",
-        "mcp-abap-adt",
-        "--transport=stdio",
-        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
-      ]
-    }
-  }
-}
-```
+**Grok Build** (the xAI terminal coding agent) natively supports Model Context Protocol servers via the `grok mcp` command or configuration files.
 
-### 4.2. Cấu hình cho Claude Desktop
-Chỉnh sửa file `claude_desktop_config.json`:
+#### Option A: Using the CLI Command (Fastest)
+
+- **Windows (PowerShell / Command Prompt)**:
+  ```bash
+  grok mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env
+  ```
+- **macOS / Linux**:
+  ```bash
+  grok mcp add sap-s4hana -- mcp-abap-adt --transport=stdio --env-path=/absolute/path/to/.sap.env
+  ```
+
+#### Option B: Using `config.toml`
+Add the server definition to your global Grok configuration file at `~/.grok/config.toml` (or project-level `.grok/config.toml`):
+
+- **Windows**:
+  ```toml
+  [mcp_servers.sap-s4hana]
+  command = "cmd.exe"
+  args = ["/c", "mcp-abap-adt", "--transport=stdio", "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"]
+  ```
+
+- **macOS / Linux**:
+  ```toml
+  [mcp_servers.sap-s4hana]
+  command = "mcp-abap-adt"
+  args = ["--transport=stdio", "--env-path=/absolute/path/to/.sap.env"]
+  ```
+
+#### Managing MCP in Grok Build:
+- Open the interactive MCP manager inside the Grok TUI: `/mcps`
+- List active MCP servers: `grok mcp list`
+- Run diagnostic tests: `grok mcp doctor`
+
+---
+
+### 4.2. Claude Desktop
+
+Edit your `claude_desktop_config.json`:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
@@ -150,90 +184,96 @@ Chỉnh sửa file `claude_desktop_config.json`:
   }
 }
 ```
-*(Trên macOS/Linux, thay `"cmd.exe"` và `"/c"` bằng trực tiếp lệnh `"mcp-abap-adt"`).*
-
-### 4.3. Cấu hình cho Cursor IDE
-Vào **Settings** -> **Features** -> **MCP Servers** -> **Add New MCP Server**:
-- **Name**: `sap-s4hana`
-- **Type**: `command`
-- **Command**: `mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env`
+*(On macOS/Linux, set `"command": "mcp-abap-adt"` and pass `args: ["--transport=stdio", "--env-path=/path/to/.sap.env"]`).*
 
 ---
 
-## 5. Triển khai chương trình ABAP Z_AUTH_TEST
+### 4.3. Cursor IDE
 
-### Cách 1: Triển khai tự động qua MCP Server (Khuyên dùng)
-Nếu MCP Server đã kết nối thành công với AI Assistant, bạn chỉ cần yêu cầu AI Assistant:
-> *"Tạo và kích hoạt chương trình Z_AUTH_TEST từ file src/z_auth_test.prog.abap"*
-
-Trợ lý AI sẽ tự động gọi tool `UpdateProgram` / `CreateProgram` và `ActivateProgram` để deploy trực tiếp lên SAP.
-
-### Cách 2: Triển khai thủ công qua SAP GUI
-1. Đăng nhập SAP GUI vào đúng Client phát triển.
-2. Mở giao dịch **SE38** (ABAP Editor).
-3. Nhập tên chương trình: `Z_AUTH_TEST` -> Bấm **Create**.
-4. Chọn Title: `SU53 Authorization Trace and Simulator`, Type: `Executable program` -> Bấm **Save**.
-5. Chọn Package: `$TMP` (Local Object) hoặc Package phát triển tương ứng.
-6. Sao chép toàn bộ nội dung từ file [`src/z_auth_test.prog.abap`](src/z_auth_test.prog.abap) dán vào editor.
-7. Bấm **Check Syntax** (`Ctrl + F2`) và **Activate** (`Ctrl + F3`).
-8. *(Tùy chọn)*: Tạo Transaction Code bằng **SE93**:
-   - TCode: `ZAT`
-   - Short text: `SU53 Role Assignment Simulator`
-   - Program: `Z_AUTH_TEST`
+1. Open **Settings** -> **Features** -> **MCP Servers** -> **Add New MCP Server**.
+2. Fill in the parameters:
+   - **Name**: `sap-s4hana`
+   - **Type**: `command`
+   - **Command**:
+     ```bash
+     mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env
+     ```
 
 ---
 
-## 6. Hướng dẫn đưa dự án lên GitHub
+### 4.4. Google Antigravity
 
-Dưới đây là các bước chuẩn xác để khởi tạo Git và đẩy mã nguồn lên GitHub một cách an toàn.
+Add the server to your Antigravity configuration file located at:
+`%USERPROFILE%\.gemini\config\mcp_config.json`:
 
-### Bước 1: Khởi tạo Git repository tại thư mục dự án
-Mở Terminal / PowerShell tại thư mục `d:\PROJECTS\SAPABAP`:
-```bash
-git init
-```
-
-### Bước 2: Kiểm tra trạng thái Git và đảm bảo bảo mật
-Chạy lệnh kiểm tra:
-```bash
-git status
-```
-> ✅ **Kiểm tra**: Chắc chắn rằng file `.sap.env` **KHÔNG** xuất hiện trong danh sách `Untracked files`. Chỉ có `.gitignore`, `.sap.env.example`, `mcp-config.example.json`, `README.md`, và `src/` được hiển thị!
-
-### Bước 3: Thêm files và tạo commit đầu tiên
-```bash
-git add .
-git commit -m "feat: initial commit for SAP ADT MCP server setup and Z_AUTH_TEST tool"
-```
-
-### Bước 4: Tạo Repository mới trên GitHub
-1. Truy cập [github.com/new](https://github.com/new).
-2. Đặt tên repository (ví dụ: `sap-abap-mcp-auth-test`).
-3. Chọn chế độ: **Public** hoặc **Private** tùy nhu cầu.
-4. **Không** tích chọn *"Add a README file"*, *"Add .gitignore"* (vì chúng ta đã tạo sẵn tại local).
-5. Bấm **Create repository**.
-
-### Bước 5: Liên kết Remote và Push code lên GitHub
-Sao chép URL repository vừa tạo và chạy các lệnh:
-```bash
-# Đổi tên nhánh mặc định thành main
-git branch -M main
-
-# Thêm remote origin (thay URL bên dưới bằng URL repo GitHub của bạn)
-git remote add origin https://github.com/<your-username>/sap-abap-mcp-auth-test.git
-
-# Đẩy code lên GitHub
-git push -u origin main
+```json
+{
+  "mcpServers": {
+    "sap-s4hana": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "mcp-abap-adt",
+        "--transport=stdio",
+        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+      ]
+    }
+  }
+}
 ```
 
 ---
 
-## 7. Bảo mật & Lưu ý quan trọng
+### 4.5. VS Code (Cline / Continue / Roo Code)
 
-1. **Thông tin xác thực (Credentials)**:
-   - Tuyệt đối không commit file chứa mật khẩu thực tế (`.sap.env`).
-   - Luôn sử dụng `.sap.env.example` làm tài liệu hướng dẫn mẫu.
-2. **Quyền hạn tài khoản SAP**:
-   - Trong môi trường Production, nên giới hạn quyền của tài khoản kết nối MCP ở mức Read-Only hoặc chỉ cấp quyền sửa đổi trên các package thử nghiệm.
-3. **Mạng & SSL**:
-   - Khi kết nối qua mạng Internet công cộng, khuyến nghị kích hoạt VPN hoặc thiết lập HTTPS chứng chỉ hợp lệ (thay vì tắt kiểm tra SSL bằng `NODE_TLS_REJECT_UNAUTHORIZED=0`).
+In your extension MCP configuration file (`cline_mcp_settings.json` or `.vscode/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "sap-s4hana": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "mcp-abap-adt",
+        "--transport=stdio",
+        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+      ]
+    }
+  }
+}
+```
+
+---
+
+## 5. Verification & Available Tools
+
+Once connected, ask your AI assistant to run a quick test prompt:
+> *"Query 5 rows from table T001 using GetSqlQuery"*
+> or
+> *"Search for program Z* using SearchObject"*
+
+### Core MCP Tools Provided:
+| Tool Name | Description |
+| :--- | :--- |
+| `SearchObject` | Search repository objects by pattern or type (`PROG`, `CLAS`, `TABL`, `DDLS`, etc.) |
+| `GetProgram` / `UpdateProgram` | Read and deploy ABAP report source code |
+| `ActivateProgram` / `ActivateClass` | Activate ABAP objects |
+| `GetClass` / `UpdateClass` | Read and update ABAP OO classes |
+| `GetSqlQuery` | Run ad-hoc ABAP SQL queries via ADT Data Preview |
+| `GetTable` / `GetStructure` | Inspect DDIC table and structure definitions |
+| `RuntimeGetDumpById` | Retrieve ST22 short dump details for troubleshooting |
+| `CheckProgram` / `CheckClass` | Run remote ABAP syntax checks |
+
+---
+
+## 6. Security & Best Practices
+
+1. **Credentials Isolation**:
+   - Keep `.sap.env` local. Verify it matches the `.gitignore` rule before staging or committing changes.
+   - For shared CI/CD pipelines, inject environment variables through secret management systems rather than plain files.
+2. **Dedicated User Account**:
+   - Connect using a designated developer user rather than `SAP*` or `DDIC`.
+   - In quality or production systems, restrict user authorizations to read-only (`S_TABU_DIS`, read-only ADT).
+3. **SSL / TLS**:
+   - If using `NODE_TLS_REJECT_UNAUTHORIZED=0` for internal development servers, ensure you only communicate across a secure private network or VPN.
