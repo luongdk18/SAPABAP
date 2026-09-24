@@ -1,0 +1,34 @@
+# Environment files (NEVER commit credentials!)
+.sap.env
+.env
+.env.*
+!.env.example
+!.sap.env.example
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Logs
+*.log
+logs/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary & backup files
+*.bak
+*.tmp
+*.backup
+*~

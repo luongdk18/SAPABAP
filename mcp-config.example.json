@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sap-s4hana": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "mcp-abap-adt",
+        "--transport=stdio",
+        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+      ]
+    }
+  }
+}
