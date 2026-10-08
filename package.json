@@ -4,7 +4,9 @@
   "description": "SAP ABAP ADT MCP Tools & Automated Deployment",
   "scripts": {
     "deploy": "node scripts/deploy.js",
-    "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST"
+    "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST",
+    "deploy:auth:n": "node scripts/deploy.js src/z_auth_test_n.prog.abap Z_AUTH_TEST_N",
+    "test:auth:n": "node scripts/test-auth-n.cjs"
   },
   "keywords": [
     "sap",
