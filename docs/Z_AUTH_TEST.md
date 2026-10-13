@@ -1,8 +1,7 @@
 # 🛡️ Z_AUTH_TEST: SU53 Authorization Analyzer & Role Provisioning Cockpit
 
-> **Dự án thuộc Hệ sinh thái Kỹ thuật LuongDoan (LuongDoan Ecosystem) | Chia sẻ kiến thức SAP ABAP**  
-> **Tác giả**: Lương Đoàn ([@luongdk18](https://github.com/luongdk18))  
-> **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
+> **Dự án thuộc Hệ sinh thái LuongDoan | Lập trình SAP ABAP với AI & Model Context Protocol (MCP)**  
+> **Tác giả**: Lương Đoàn ([@luongdk18](https://github.com/luongdk18)) | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
 Chương trình ABAP **`Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`) là một công cụ toàn diện dành cho Quản trị viên Phân quyền SAP (SAP Security & Authorization Admins). Chương trình tự động hóa toàn bộ quy trình: từ trích xuất lịch sử lỗi phân quyền SU53, phân tích độ phủ quyền của các Role hiện có, giả lập và tự động gán quyền/TCode trực tiếp vào Role, cho đến tự động sinh lại Profile.
 

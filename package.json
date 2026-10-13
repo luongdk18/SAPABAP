@@ -1,7 +1,7 @@
 {
   "name": "luongdoan-sap-abap-toolkit",
   "version": "1.0.0",
-  "description": "LuongDoan Ecosystem | SAP ABAP Enterprise Toolkit: SU53 Authorization Automation & AI-Assisted Development via Model Context Protocol (MCP)",
+  "description": "Code SAP ABAP with AI Coding Agents via Model Context Protocol (MCP) | LuongDoan Ecosystem",
   "main": "scripts/deploy.js",
   "scripts": {
     "deploy": "node scripts/deploy.js",
