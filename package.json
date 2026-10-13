@@ -1,7 +1,7 @@
 {
-  "name": "sap-abap-ai-mcp-basis-tools",
+  "name": "sap-abap-ai-mcp",
   "version": "1.0.0",
-  "description": "Connect AI coding agents to SAP via Model Context Protocol (MCP) to develop ABAP + practical ABAP tools for SAP Basis",
+  "description": "Guides on connecting AI Agents via ABAP MCP to live SAP systems, featuring practical ABAP utilities coded with AI to assist SAP Basis operations.",
   "main": "scripts/deploy.js",
   "scripts": {
     "deploy": "node scripts/deploy.js",
@@ -13,16 +13,11 @@
     "mcp",
     "model-context-protocol",
     "sap-basis",
-    "basis",
-    "ai-coding",
+    "ai-agents",
     "adt",
     "grok-build",
     "claude",
-    "cursor",
-    "antigravity",
-    "su53",
-    "pfcg",
-    "security"
+    "cursor"
   ],
   "repository": {
     "type": "git",
