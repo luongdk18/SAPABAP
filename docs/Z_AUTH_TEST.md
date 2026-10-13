@@ -319,11 +319,13 @@ Repository đã tích hợp sẵn script tự động hóa [`scripts/deploy.js`]
    ```bash
    npm install -g @mcp-abap-adt/core
    ```
-2. Chạy lệnh deploy:
+2. Chạy lệnh deploy cho chương trình `Z_AUTH_TEST`:
    ```bash
-   npm run deploy
+   npm run deploy -- Z_AUTH_TEST
    # hoặc:
-   node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST
+   node scripts/deploy.js Z_AUTH_TEST
+   # hoặc chọn từ menu tương tác:
+   npm run deploy
    ```
 3. Kết quả console hiển thị:
    ```text
@@ -334,7 +336,7 @@ Repository đã tích hợp sẵn script tự động hóa [`scripts/deploy.js`]
    ```
 
 #### Cách 2: Triển khai qua AI Assistant có kết nối MCP
-Nếu bạn sử dụng **Grok Build**, **Google Antigravity**, **Claude Desktop**, hoặc **Cursor IDE** (đã cấu hình MCP Server theo `README.md`):
+Nếu bạn sử dụng **Grok Build**, **ChatGPT (Codex)**, **Claude Desktop**, **Cursor IDE**, hoặc **Google Antigravity** (đã cấu hình MCP Server theo `README.md`):
 - Bạn chỉ cần mở khung chat AI trong thư mục dự án và gửi prompt:
   > *"Deploy chương trình trong src/z_auth_test.prog.abap lên hệ thống SAP với tên Z_AUTH_TEST và activate nó"*
 - Trợ lý AI sẽ tự động đọc source code từ `src/` và gọi tool ADT (`UpdateProgram` / `CreateProgram`, `ActivateProgram`) để triển khai trong vài giây.

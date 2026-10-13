@@ -11,12 +11,13 @@
 3. [Quick Start](#3-quick-start)
 4. [AI Agent Configuration](#4-ai-agent-configuration)
    - [4.1. Grok Build](#41-grok-build)
-   - [4.2. Claude Desktop](#42-claude-desktop)
-   - [4.3. Cursor IDE](#43-cursor-ide)
-   - [4.4. Google Antigravity](#44-google-antigravity)
-   - [4.5. VS Code](#45-vs-code-cline--roo-code--continue)
+   - [4.2. ChatGPT (Desktop & Codex)](#42-chatgpt-desktop--codex)
+   - [4.3. Claude Desktop](#43-claude-desktop)
+   - [4.4. Cursor IDE](#44-cursor-ide)
+   - [4.5. Google Antigravity](#45-google-antigravity)
+   - [4.6. VS Code](#46-vs-code-cline--roo-code--continue)
 5. [AI-Assisted ABAP Workflow](#5-ai-assisted-abap-workflow)
-6. [Automated Deployment](#6-automated-deployment)
+6. [Automated Program-by-Program Deployment](#6-automated-program-by-program-deployment)
 7. [ABAP Utilities for SAP Basis](#7-abap-utilities-for-sap-basis)
    - [7.1. Current Utility: Z_AUTH_TEST](#71-current-utility-z_auth_test)
    - [7.2. Future Utilities Roadmap](#72-future-utilities-roadmap)
@@ -34,7 +35,7 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 ### Architecture
 
 ```
-[ AI Coding Agents ]  (Grok Build, Claude, Cursor, Antigravity, VS Code)
+[ AI Coding Agents ]  (Grok Build, ChatGPT/Codex, Claude, Cursor, Antigravity, VS Code)
          │
          │  stdio / JSON-RPC (Model Context Protocol)
          ▼
@@ -104,11 +105,12 @@ NODE_TLS_REJECT_UNAUTHORIZED=0
 
 > **Note**: `.sap.env` is excluded via `.gitignore`. Do not commit credentials to Git.
 
-### Step 4: Verify Connection
-Test connection and deploy the baseline utility to SAP:
+### Step 4: Deploy a Selected Program
+Deploy a chosen ABAP utility (e.g. `Z_AUTH_TEST`):
 ```bash
-npm run deploy
+npm run deploy -- Z_AUTH_TEST
 ```
+*(Or run `npm run deploy` without arguments to choose interactively from the menu of available programs in `src/`).*
 
 ---
 
@@ -137,7 +139,41 @@ args = ["/c", "mcp-abap-adt", "--transport=stdio", "--env-path=d:\\PROJECTS\\SAP
 
 ---
 
-### 4.2. Claude Desktop
+### 4.2. ChatGPT (Desktop & Codex)
+
+#### ChatGPT Desktop App (macOS & Windows)
+Add the server to your ChatGPT configuration file (`%APPDATA%\OpenAI\ChatGPT\mcp.json` on Windows or `~/.config/chatgpt/mcp.json` on macOS/Linux):
+```json
+{
+  "mcpServers": {
+    "sap-s4hana": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "mcp-abap-adt",
+        "--transport=stdio",
+        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+      ]
+    }
+  }
+}
+```
+*(On macOS/Linux, set `"command": "mcp-abap-adt"` and pass `args: ["--transport=stdio", "--env-path=/path/to/.sap.env"]`).*
+
+#### OpenAI Codex CLI
+Add the server via the Codex CLI:
+- **Windows**:
+  ```bash
+  codex mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env
+  ```
+- **macOS / Linux**:
+  ```bash
+  codex mcp add sap-s4hana -- mcp-abap-adt --transport=stdio --env-path=/path/to/.sap.env
+  ```
+
+---
+
+### 4.3. Claude Desktop
 
 In `claude_desktop_config.json`:
 ```json
@@ -158,7 +194,7 @@ In `claude_desktop_config.json`:
 
 ---
 
-### 4.3. Cursor IDE
+### 4.4. Cursor IDE
 
 In **Settings** -> **Features** -> **MCP Servers** -> **Add New MCP Server**:
 - **Name**: `sap-s4hana`
@@ -167,7 +203,7 @@ In **Settings** -> **Features** -> **MCP Servers** -> **Add New MCP Server**:
 
 ---
 
-### 4.4. Google Antigravity
+### 4.5. Google Antigravity
 
 In `%USERPROFILE%\.gemini\config\mcp_config.json`:
 ```json
@@ -188,7 +224,7 @@ In `%USERPROFILE%\.gemini\config\mcp_config.json`:
 
 ---
 
-### 4.5. VS Code (Cline / Roo Code / Continue)
+### 4.6. VS Code (Cline / Roo Code / Continue)
 
 In `cline_mcp_settings.json` or `.vscode/mcp.json`:
 ```json
@@ -225,17 +261,35 @@ Once connected, AI agents can read, write, validate, and query SAP systems direc
 
 ---
 
-## 6. Automated Deployment
+## 6. Automated Program-by-Program Deployment
 
-The deployment script [`scripts/deploy.js`](scripts/deploy.js) automates deploying ABAP programs directly from the repository without opening SAP GUI:
+Deployment is explicitly designed to be **selective per program**—you choose exactly which ABAP program to upload and activate, rather than pushing everything in bulk:
 
+### Option 1: Direct CLI by Program Name
 ```bash
-# Deploy default utility (Z_AUTH_TEST)
-npm run deploy
+# Specify the program name
+npm run deploy -- Z_AUTH_TEST
 
-# Deploy any custom program
-node scripts/deploy.js src/your_program.prog.abap YOUR_PROGRAM_NAME
+# Or pass file path directly
+node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST
 ```
+
+### Option 2: Interactive Terminal Selection Menu
+Run without arguments in an interactive terminal:
+```bash
+npm run deploy
+```
+The deploy script scans `src/`, lists all available ABAP programs, and asks you to select which one to deploy:
+```text
+📋 Select an ABAP program to deploy to SAP:
+  [1] Z_AUTH_TEST (z_auth_test.prog.abap)
+  ...
+Enter number (1-1) or 'q' to cancel: 1
+```
+
+### Option 3: Deploy via Connected AI Assistant
+In any MCP-connected AI assistant (Grok, ChatGPT/Codex, Claude, Cursor, Antigravity):
+> *"Deploy `src/z_auth_test.prog.abap` as program `Z_AUTH_TEST` to the connected SAP system and activate it."*
 
 ### Execution Lifecycle:
 1. Enqueue program lock via ADT
