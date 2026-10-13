@@ -1,27 +1,33 @@
 {
-  "name": "sap-abap-mcp-tools",
+  "name": "luongdoan-sap-abap-toolkit",
   "version": "1.0.0",
-  "description": "SAP ABAP ADT MCP Tools & Automated Deployment",
+  "description": "LuongDoan Ecosystem | SAP ABAP Enterprise Toolkit: SU53 Authorization Automation & AI-Assisted Development via Model Context Protocol (MCP)",
+  "main": "scripts/deploy.js",
   "scripts": {
     "deploy": "node scripts/deploy.js",
-    "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST",
-    "deploy:auth:n": "node scripts/deploy.js src/z_auth_test_n.prog.abap Z_AUTH_TEST_N",
-    "test:auth:n": "node scripts/test-auth-n.cjs"
+    "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST"
   },
   "keywords": [
+    "luongdoan",
     "sap",
     "abap",
     "mcp",
+    "model-context-protocol",
     "adt",
     "security",
     "su53",
-    "pfcg"
+    "pfcg",
+    "authorization",
+    "ai-assistant",
+    "grok-build",
+    "claude",
+    "cursor"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/luongdk18/SAPABAP.git"
   },
   "homepage": "https://github.com/luongdk18/SAPABAP#readme",
-  "author": "luongdk18",
+  "author": "Luong Doan (@luongdk18)",
   "license": "MIT"
 }
