@@ -1,7 +1,7 @@
 # 🛡️ Z_AUTH_TEST: SU53 Authorization Analyzer & Role Provisioning Cockpit
 
-> **Dự án thuộc Hệ sinh thái LuongDoan | Lập trình SAP ABAP với AI & Model Context Protocol (MCP)**  
-> **Tác giả**: Lương Đoàn ([@luongdk18](https://github.com/luongdk18)) | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
+> **Bộ công cụ SAP Basis & Hướng dẫn Lập trình ABAP bằng AI qua Model Context Protocol (MCP)**  
+> **Tác giả**: luongdk18 | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
 Chương trình ABAP **`Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`) là một công cụ toàn diện dành cho Quản trị viên Phân quyền SAP (SAP Security & Authorization Admins). Chương trình tự động hóa toàn bộ quy trình: từ trích xuất lịch sử lỗi phân quyền SU53, phân tích độ phủ quyền của các Role hiện có, giả lập và tự động gán quyền/TCode trực tiếp vào Role, cho đến tự động sinh lại Profile.
 
@@ -382,8 +382,8 @@ Nếu máy trạm không cài Node.js hoặc không dùng MCP:
 
 ---
 
-## 🌟 Đóng góp & Bản quyền (LuongDoan Ecosystem)
+## 🌟 Đóng góp & Bản quyền (SAP Basis & ABAP Open Source Tools)
 
-Chương trình và tài liệu này được phát triển và chia sẻ miễn phí theo giấy phép [MIT License](../README.md#-license) nhằm mục đích nâng cao năng lực kỹ thuật và tối ưu hóa vận hành phân quyền trong cộng đồng SAP Việt Nam và quốc tế.
+Chương trình và tài liệu này được phát triển và chia sẻ miễn phí theo giấy phép [MIT License](../README.md#-license) nhằm mục đích nâng cao năng lực kỹ thuật và tối ưu hóa vận hành cho đội ngũ SAP Basis, Security và Developer.
 
-Mọi ý kiến đóng góp, báo lỗi hoặc yêu cầu tính năng xin vui lòng gửi qua [GitHub Issues](https://github.com/luongdk18/SAPABAP/issues) hoặc liên hệ tác giả **Lương Đoàn** ([@luongdk18](https://github.com/luongdk18)).
+Mọi ý kiến đóng góp, báo lỗi hoặc yêu cầu tính năng xin vui lòng gửi qua [GitHub Issues](https://github.com/luongdk18/SAPABAP/issues) hoặc liên hệ tác giả [@luongdk18](https://github.com/luongdk18).

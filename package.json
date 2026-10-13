@@ -1,33 +1,34 @@
 {
-  "name": "luongdoan-sap-abap-toolkit",
+  "name": "sap-abap-ai-mcp-basis-tools",
   "version": "1.0.0",
-  "description": "Code SAP ABAP with AI Coding Agents via Model Context Protocol (MCP) | LuongDoan Ecosystem",
+  "description": "Connect AI coding agents to SAP via Model Context Protocol (MCP) to develop ABAP + practical ABAP tools for SAP Basis",
   "main": "scripts/deploy.js",
   "scripts": {
     "deploy": "node scripts/deploy.js",
     "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST"
   },
   "keywords": [
-    "luongdoan",
     "sap",
     "abap",
     "mcp",
     "model-context-protocol",
+    "sap-basis",
+    "basis",
+    "ai-coding",
     "adt",
-    "security",
-    "su53",
-    "pfcg",
-    "authorization",
-    "ai-assistant",
     "grok-build",
     "claude",
-    "cursor"
+    "cursor",
+    "antigravity",
+    "su53",
+    "pfcg",
+    "security"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/luongdk18/SAPABAP.git"
   },
   "homepage": "https://github.com/luongdk18/SAPABAP#readme",
-  "author": "Luong Doan (@luongdk18)",
+  "author": "luongdk18",
   "license": "MIT"
 }
