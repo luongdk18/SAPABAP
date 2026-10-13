@@ -1,52 +1,53 @@
 # 🛡️ Z_AUTH_TEST: SU53 Authorization Analyzer & Role Provisioning Cockpit
 
-> **Bộ công cụ SAP Basis & Hướng dẫn Lập trình ABAP bằng AI qua Model Context Protocol (MCP)**  
-> **Tác giả**: luongdk18 | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
+> **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
+> **Author**: luongdk18 | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-Chương trình ABAP **`Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`) là một công cụ toàn diện dành cho Quản trị viên Phân quyền SAP (SAP Security & Authorization Admins). Chương trình tự động hóa toàn bộ quy trình: từ trích xuất lịch sử lỗi phân quyền SU53, phân tích độ phủ quyền của các Role hiện có, giả lập và tự động gán quyền/TCode trực tiếp vào Role, cho đến tự động sinh lại Profile.
+The ABAP program **`Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`) is an interactive operational cockpit designed for SAP Security Administrators and Basis Engineers. It automates the end-to-end authorization troubleshooting lifecycle: extracting SU53 failure histories, evaluating coverage across user single roles, simulating assignments, injecting transactions/objects into roles, maintaining Organizational Levels, and forcing background profile regeneration.
 
 ---
 
-## 📌 Mục lục
-1. [Bối cảnh nghiệp vụ & Vấn đề giải quyết](#1-bối-cảnh-nghiệp-vụ--vấn-đề-giải-quyết)
-2. [Kiến trúc giao diện Dual-Grid Cockpit](#2-kiến-trúc-giao-diện-dual-grid-cockpit)
-3. [Luồng xử lý chi tiết (Detailed Workflow)](#3-luồng-xử-lý-chi-tiết-detailed-workflow)
-4. [Giải thích chi tiết từng Subroutine & Khối Code](#4-giải-thích-chi-tiết-từng-subroutine--khối-code)
-   - [4.1. Khởi tạo & Màn hình Selection Screen](#41-khởi-tạo--màn-hình-selection-screen)
-   - [4.2. Đọc Buffer SU53 (`SUSR_USER_SU53_READ`)](#42-đọc-buffer-su53-susr_user_su53_read)
-   - [4.3. Xác định Single Roles của User](#43-xác-định-single-roles-của-user)
-   - [4.4. Giả lập & Đánh giá độ phủ quyền (`eval_auths_for_role`)](#44-giả-lập--đánh-giá-độ-phủ-quyền-eval_auths_for_role)
-   - [4.5. Cơ chế Add to Role qua PFCG Function Modules](#45-cơ-chế-add-to-role-qua-pfcg-function-modules)
-   - [4.6. Toàn vẹn dữ liệu: Bổ sung 100% Default Fields từ Bảng `TOBJ`](#46-toàn-vẹn-dữ-liệu-bổ-sung-100-default-fields-từ-bảng-tobj)
-   - [4.7. Xử lý Authorization Object bị Deactivate (`DELETED = 'X'`)](#47-xử-lý-authorization-object-bị-deactivate-deleted--x)
-   - [4.8. Force Profile Generation & Xử lý Organizational Levels (`AGR_1252`)](#48-force-profile-generation--xử-lý-organizational-levels-agr_1252)
-   - [4.9. Xử lý Event & Điều hướng lệnh UI](#49-xử-lý-event--điều-hướng-lệnh-ui)
-5. [Tổng kết các Function Module SAP chuẩn được sử dụng](#5-tổng-kết-các-function-module-sap-chuẩn-được-sử-dụng)
-6. [Hướng dẫn Clone & Tự triển khai lên SAP Server (Deployment Guide)](#6-hướng-dẫn-clone--tự-triển-khai-lên-sap-server-deployment-guide)
+## 📌 Table of Contents
+1. [Business Context & Problem Statement](#1-business-context--problem-statement)
+2. [Dual-Grid Cockpit Architecture](#2-dual-grid-cockpit-architecture)
+3. [Detailed Processing Workflow](#3-detailed-processing-workflow)
+4. [Subroutine Breakdown & Technical Logic](#4-subroutine-breakdown--technical-logic)
+   - [4.1. Selection Screen Initialization](#41-selection-screen-initialization)
+   - [4.2. SU53 Buffer Extraction (`SUSR_USER_SU53_READ`)](#42-su53-buffer-extraction-susr_user_su53_read)
+   - [4.3. Identifying User Single Roles](#43-identifying-user-single-roles)
+   - [4.4. Role Coverage Evaluation (`eval_auths_for_role`)](#44-role-coverage-evaluation-eval_auths_for_role)
+   - [4.5. PFCG Role Maintenance Engine](#45-pfcg-role-maintenance-engine)
+   - [4.6. Data Integrity: 100% Default Field Pass from `TOBJ`](#46-data-integrity-100-default-field-pass-from-tobj)
+   - [4.7. Deactivated Object Reactivation (`DELETED = 'X'`)](#47-deactivated-object-reactivation-deleted--x)
+   - [4.8. Forced Profile Generation & Org Level Maintenance (`AGR_1252`)](#48-forced-profile-generation--org-level-maintenance-agr_1252)
+   - [4.9. UI Event Handling & Command Forwarding](#49-ui-event-handling--command-forwarding)
+5. [Summary of Standard SAP Function Modules Used](#5-summary-of-standard-sap-function-modules-used)
+6. [Deployment & Operational Guide](#6-deployment--operational-guide)
    - [6.1. Clone Repository](#61-clone-repository)
-   - [6.2. Cấu hình thông tin SAP Server của bạn](#62-cấu-hình-thông-tin-sap-server-của-bạn)
-   - [6.3. Ba phương thức Deploy chương trình lên SAP](#63-ba-phương-thức-deploy-chương-trình-lên-sap)
-   - [6.4. Tạo mã giao dịch Transaction Code (SE93)](#64-tạo-mã-giao-dịch-transaction-code-se93)
-   - [6.5. Kiểm tra & Vận hành thực tế](#65-kiểm-tra--vận-hành-thực-tế)
+   - [6.2. Environment Configuration](#62-environment-configuration)
+   - [6.3. Three Deployment Methods](#63-three-deployment-methods)
+   - [6.4. Transaction Code Setup (SE93)](#64-transaction-code-setup-se93)
+   - [6.5. Operational Verification](#65-operational-verification)
+7. [Contributing & License](#7-contributing--license)
 
 ---
 
-## 1. Bối cảnh nghiệp vụ & Vấn đề giải quyết
+## 1. Business Context & Problem Statement
 
-### Vấn đề thực tế trong vận hành SAP:
-1. **Hạn chế của transaction `SU53` chuẩn**: Chỉ hiển thị đúng lần kiểm tra thất bại cuối cùng trên Application Server hiện tại. Khi user gặp chuỗi lỗi phân quyền phức tạp (ví dụ khi chạy các nghiệp vụ mua hàng `ME21N`, duyệt đơn, chạy báo cáo), quản trị viên phải yêu cầu user thực hiện lại nhiều lần để chụp màn hình từng lỗi.
-2. **Khó khăn khi tra cứu Role**: Quản trị viên phải mở `SU01` để xem danh sách Role, sau đó vào `PFCG` mở từng Role để kiểm tra xem object bị thiếu đã có trong role nào chưa, vì sao chưa hợp lệ.
-3. **Mất toàn vẹn khi thêm thủ công (Manual Objects)**: Trong PFCG, nếu thêm một authorization object mà quên điền một field mặc định (ví dụ `S_ALV_LAYR` có các field `ACTVT`, `REPORT`, `HANDLE`, `LOG_GROUP`, nếu bỏ quên `LOG_GROUP`), object sẽ có trạng thái chưa hoàn thiện (tam giác vàng - Unmaintained). Hậu quả là **Profile Generator bị chặn, không thể sinh được Profile**.
-4. **Vướng mắc Organizational Levels**: Khi thêm TCode hoặc Object vào role menu, các biến Org Level (như `$BUKRS`, `$WERKS`) nếu không được điền giá trị sẽ khiến Profile Generator raise lỗi `open_auths`.
+### Practical Pain Points in SAP Authorization Operations:
+1. **Limitations of Standard Transaction `SU53`**: Only captures the *single last failed check* on the current Application Server. When end-users encounter cascading authorization failures across complex workflows (e.g., `ME21N` purchasing, workflow approvals, custom reports), administrators must instruct users to repeat actions repeatedly while collecting screenshots.
+2. **Cumbersome Role Lookup**: Administrators must navigate between `SU01` (to view user roles) and `PFCG` (opening each role individually to determine why a missing object is not satisfied).
+3. **Loss of Integrity in Manual Additions**: In `PFCG`, manually adding an authorization object while omitting one of its default fields (e.g., `S_ALV_LAYR` requires `ACTVT`, `REPORT`, `HANDLE`, and `LOG_GROUP`) leaves the object in an **Unmaintained (Yellow Triangle)** state. This blocks the SAP Profile Generator from compiling the runtime profile.
+4. **Unmaintained Organizational Levels**: Adding transactions or authorization objects often introduces unpopulated Organizational Level variables (such as `$BUKRS`, `$WERKS` in `AGR_1252`), causing Profile Generation to fail with `open_auths` errors.
 
-### Giải pháp của `Z_AUTH_TEST`:
-Cung cấp một màn hình Cockpit duy nhất: tổng hợp toàn bộ lỗi SU53 trong 3 giờ gần nhất, đối chiếu tự động với từng Role của User, cho phép chọn quyền thiếu và bấm 1 nút để tự động thêm vào Role và sinh lại Profile thành công 100%.
+### The Solution: `Z_AUTH_TEST` Cockpit
+`Z_AUTH_TEST` unifies the troubleshooting workflow into a single screen: it aggregates all SU53 failures from the past 3 hours, evaluates coverage against the user's active single roles, allows administrators to select missing permissions, and injects them into the chosen role with guaranteed field completeness and immediate profile compilation.
 
 ---
 
-## 2. Kiến trúc giao diện Dual-Grid Cockpit
+## 2. Dual-Grid Cockpit Architecture
 
-Giao diện chương trình được thiết kế theo mô hình **Dual-Grid** (hai bảng dữ liệu liên kết trên cùng một màn hình):
+The program interface utilizes a linked **Dual-Grid** layout:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -55,7 +56,7 @@ Giao diện chương trình được thiết kế theo mô hình **Dual-Grid** (
 ├────┬──────────────────┬────────────────────────────────────────────────┤
 │Radio│ Role Name        │ Role Description                               │
 ├────┼──────────────────┼────────────────────────────────────────────────┤
-│🔘  │ Z_ROLE_TEST      │ Test Authorization Role                        │
+│🔘  │ Z_ROLE_TEST      │ Purchasing Authorization Role                  │
 │⚪  │ Z_MM_PURCHASER   │ Purchasing Operations                          │
 └────┴──────────────────┴────────────────────────────────────────────────┘
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -70,66 +71,66 @@ Giao diện chương trình được thiết kế theo mô hình **Dual-Grid** (
 ```
 
 - **Top Grid (Docking Container - `go_docking`)**:
-  - Gắn vào phía trên màn hình bằng `cl_gui_docking_container` với `extension = 150`.
-  - Hiển thị danh sách Single Roles của User đích kèm nút chọn Radio Icon (`@06@` / `@05@`).
-  - Thanh toolbar chứa các nút thao tác chính.
+  - Docked at the top of the screen via `cl_gui_docking_container` (`extension = 150`).
+  - Displays the target user's Single Roles with interactive radio selection icons (`@06@` / `@05@`).
+  - Custom toolbar hosting action buttons: `Add to Role`, `Select All`, `Deselect All`, `Refresh from SU53`.
 - **Bottom Grid (Fullscreen ALV Grid)**:
-  - Hiển thị danh sách chi tiết các quyền bị thiếu trích xuất từ buffer SU53, sắp xếp giảm dần theo thời gian (giống SU53).
-  - Checkbox `SEL`: Cho phép người dùng chọn dòng quyền cần thêm vào Role.
-  - Icon Status:
-    - 🟢 `@08@` (Xanh): Quyền đã có sẵn và hợp lệ trong Role đang chọn. Checkbox tự động bị Disable.
-    - 🔴 `@0A@` (Đỏ): Quyền chưa có hoặc chưa đủ trong Role đang chọn. Checkbox mở cho phép tích chọn.
+  - Displays authorization check failures extracted from the SU53 buffer, ordered descending by timestamp.
+  - Checkbox `SEL`: Enables selecting specific missing checks to inject into the selected role.
+  - Status Indicators:
+    - 🟢 `@08@` (Green): Check is already satisfied by the currently selected role. The checkbox is automatically disabled.
+    - 🔴 `@0A@` (Red): Check is missing or incomplete in the selected role. The checkbox is enabled for selection.
 
 ---
 
-## 3. Luồng xử lý chi tiết (Detailed Workflow)
+## 3. Detailed Processing Workflow
 
 ```mermaid
 flowchart TD
-    A["Chạy chương trình Z_AUTH_TEST"] --> B["Nhập Username & Tuỳ chọn Active Roles"]
-    B --> C["Gọi SUSR_USER_SU53_READ: Lấy buffer 3h gần nhất"]
-    C --> D["Gọi get_user_roles: Đọc Single Roles từ AGR_USERS & AGR_DEFINE"]
-    D --> E["Khởi tạo Docking Container & Fullscreen ALV"]
-    E --> F["eval_auths_for_role: Đánh giá độ phủ quyền của Role mặc định"]
-    F --> G["Người dùng chọn Role đích & Tích chọn các dòng quyền thiếu"]
-    G --> H["Bấm nút Add to Role"]
-    H --> I{"Phân loại quyền được chọn"}
-    I -->|Object S_TCODE| J["Gọi PRGN_RFC_ADD_TRANSACTION đưa vào Role Menu"]
-    I -->|Regular Objects| K["Lock Role: PRGN_ACTIVITY_GROUP_ENQUEUE"]
-    K --> L["Đọc dữ liệu Role: PRGN_1250 / 1251 / 1252"]
-    L --> M["Tra cứu TOBJ: Lấy đầy đủ 100% fields mặc định"]
-    M --> N["Điền giá trị trace; Field mở/thiếu tự động gán *"]
-    N --> O["Reactivate nếu object bị xóa: DELETED = space"]
-    O --> P["Lưu dữ liệu: PRGN_1250_SAVE, PRGN_1251_SAVE, PRGN_UPDATE_DATABASE"]
-    P --> Q["Unlock Role: PRGN_ACTIVITY_GROUP_DEQUEUE"]
-    J --> R["Force Maintain Org Levels trong AGR_1252 với *"]
+    A["Execute Z_AUTH_TEST"] --> B["Input Target Username & Active Role Filter"]
+    B --> C["Call SUSR_USER_SU53_READ: Fetch 3h Buffer"]
+    C --> D["Call get_user_roles: Retrieve Single Roles from AGR_USERS & AGR_DEFINE"]
+    D --> E["Initialize Dual-Grid: Docking Container & Fullscreen ALV"]
+    E --> F["eval_auths_for_role: Evaluate Coverage for Default Selected Role"]
+    F --> G["Administrator Selects Role & Checks Missing Auth Rows"]
+    G --> H["Click Add to Role"]
+    H --> I{"Classify Selected Auths"}
+    I -->|Object S_TCODE| J["Call PRGN_RFC_ADD_TRANSACTION to Insert into Menu"]
+    I -->|Regular Objects| K["Enqueue Role: PRGN_ACTIVITY_GROUP_ENQUEUE"]
+    K --> L["Read Role Data: PRGN_1250 / 1251 / 1252"]
+    L --> M["Lookup TOBJ: Retrieve 100% Default Object Fields"]
+    M --> N["Apply Trace Values; Fill Open/Missing Fields with *"]
+    N --> O["Reactivate if Deactivated: Set DELETED = space"]
+    O --> P["Persist: PRGN_1250_SAVE, PRGN_1251_SAVE, PRGN_UPDATE_DATABASE"]
+    P --> Q["Dequeue Role: PRGN_ACTIVITY_GROUP_DEQUEUE"]
+    J --> R["Force Maintain Org Levels in AGR_1252 with *"]
     Q --> R
-    R --> S["Gọi SUPRN_DARK_MANIPULATE_PROFILE tự động sinh Profile"]
-    S --> T["Regenerate Profile thành công"]
-    T --> U["Refresh dữ liệu & Cập nhật Icon trạng thái trên màn hình"]
+    R --> S["Call SUPRN_DARK_MANIPULATE_PROFILE for Background Profile Generation"]
+    S --> T["Authorization Profile Successfully Generated"]
+    T --> U["Refresh Display & Update Status Icons"]
 ```
 
 ---
 
-## 4. Giải thích chi tiết từng Subroutine & Khối Code
+## 4. Subroutine Breakdown & Technical Logic
 
-### 4.1. Khởi tạo & Màn hình Selection Screen
-- **Khai báo màn hình** (Lines 100-140):
+### 4.1. Selection Screen Initialization
+- **Screen Declaration**:
   ```abap
   PARAMETERS: p_uname TYPE usr02-bname DEFAULT sy-uname OBLIGATORY,
               p_actv  TYPE abap_bool AS CHECKBOX DEFAULT 'X'.
   ```
-  - `p_uname`: Username cần kiểm tra phân quyền (mặc định là user đang đăng nhập).
-  - `p_actv`: Chỉ lấy các Role đang còn hiệu lực theo ngày (`from_dat <= sy-datum <= to_dat`).
+  - `p_uname`: Username to inspect (defaults to current session user).
+  - `p_actv`: Restricts role lookup to active assignments (`from_dat <= sy-datum <= to_dat`).
 
-### 4.2. Đọc Buffer SU53 (`SUSR_USER_SU53_READ`)
-- **Subroutine `get_missing_authorizations`** (Lines 165-280):
-  - Tính toán timestamp 3 giờ trước bằng `cl_abap_tstmp=>subtractsecs`:
+### 4.2. SU53 Buffer Extraction (`SUSR_USER_SU53_READ`)
+- **Subroutine `get_missing_authorizations`**:
+  - Calculates timestamp for 3 hours prior using `cl_abap_tstmp=>subtractsecs`:
     ```abap
     GET TIME STAMP FIELD lv_from.
     cl_abap_tstmp=>subtractsecs( EXPORTING tstmp = lv_from secs = 10800 RECEIVING r_tstmp = lv_from ).
     ```
-  - Gọi FM chuẩn SAP:
+  - Calls standard SAP function module:
     ```abap
     CALL FUNCTION 'SUSR_USER_SU53_READ'
       EXPORTING
@@ -139,16 +140,16 @@ flowchart TD
       IMPORTING
         et_usr07_ext   = lt_su53_raw.
     ```
-  - **Trích xuất field/value**: Hàm duyệt qua 10 cặp `fiel1..fiel10` và `val01..val10` của `usr07_ext`, bỏ qua các giá trị giả lập `dummyfield`, tra cứu diễn giải object từ bảng `TOBJT` theo ngôn ngữ đăng nhập (`sy-langu`) hoặc tiếng Anh (`E`).
+  - **Field & Value Extraction**: Iterates across the 10 field pairs `fiel1..fiel10` and `val01..val10` in `usr07_ext`, filters out dummy values (`dummyfield`), and retrieves object descriptions from `TOBJT` using logon language (`sy-langu`) or English fallback (`E`).
 
-### 4.3. Xác định Single Roles của User
-- **Subroutine `get_user_roles`** (Lines 415-465):
-  - Đọc từ bảng `AGR_USERS` theo username.
-  - Kiểm tra bảng `AGR_DEFINE` để **loại trừ Collective Roles** (`kollektive = space`), chỉ giữ lại các Single Role có thể trực tiếp gán quyền.
+### 4.3. Identifying User Single Roles
+- **Subroutine `get_user_roles`**:
+  - Reads assignments from table `AGR_USERS` matching the specified user.
+  - Queries `AGR_DEFINE` to **exclude Collective/Composite Roles** (`kollektive = space`), retaining only Single Roles that directly maintain authorization objects.
 
-### 4.4. Giả lập & Đánh giá độ phủ quyền (`eval_auths_for_role`)
-- **Subroutine `eval_auths_for_role`** (Lines 525-635):
-  - **Lọc loại trừ quyền bị Deactivate**:
+### 4.4. Role Coverage Evaluation (`eval_auths_for_role`)
+- **Subroutine `eval_auths_for_role`**:
+  - **Filters Out Deactivated Objects**:
     ```abap
     SELECT object, auth, field, low, high
       FROM agr_1251
@@ -162,22 +163,22 @@ flowchart TD
         AND deleted  = ' '
       INTO TABLE @lt_role_objs.
     ```
-    > 💡 **Điểm mấu chốt**: Thêm điều kiện `AND deleted = ' '` giúp chương trình không bị nhận diện sai các quyền đã bị tắt trong PFCG. Nếu object bị tắt, trạng thái hiển thị là 🔴 Thiếu quyền.
-  - **So khớp logic AND/OR**: Một Authorization Instance (`auth`) trong role được xem là bao phủ lỗi khi nó thỏa mãn **tất cả** các field được kiểm tra trong lần trace đó (AND), và chỉ cần **bất kỳ** instance nào thỏa mãn là đạt (OR). Hỗ trợ kiểm tra giá trị chính xác, dấu đại diện `*`, và khoảng giá trị (`low <= value <= high`).
+    > 💡 **Key Design Rule**: Enforcing `AND deleted = ' '` ensures deactivated authorizations in PFCG are not mistakenly marked as satisfied. Deactivated objects are treated as 🔴 Missing.
+  - **AND/OR Coverage Logic**: An authorization instance (`auth`) satisfies a trace check if it satisfies **all** fields evaluated during that check event (AND). If **any** active instance in the role satisfies all fields, the check is considered covered (OR). Supports exact matches, wildcards (`*`), and range boundaries (`low <= value <= high`).
 
-### 4.5. Cơ chế Add to Role qua PFCG Function Modules
-- **Subroutine `add_selected_auths_to_role`** (Lines 875-1210):
-  - Chỉ lọc những dòng có `sel = 'X'` và `is_in_role = abap_false`.
-  - **Tách riêng Object `S_TCODE`**:
-    Đối với quyền chạy transaction (`S_TCODE`), chương trình **không insert thẳng vào bảng AGR_1251** (vì làm vậy sẽ tạo ra manual object không chuẩn), mà đưa vào Menu của Role bằng FM:
+### 4.5. PFCG Role Maintenance Engine
+- **Subroutine `add_selected_auths_to_role`**:
+  - Processes only lines where `sel = 'X'` and `is_in_role = abap_false`.
+  - **Special Handling for Object `S_TCODE`**:
+    For transaction start permissions (`S_TCODE`), the program **does not insert directly into AGR_1251** (which creates non-standard manual objects). Instead, it injects the transaction into the PFCG Menu tree:
     ```abap
     CALL FUNCTION 'PRGN_RFC_ADD_TRANSACTION'
       EXPORTING
         activity_group = pv_role
         tcode          = lv_tcode.
     ```
-  - **Kiểm tra Enqueue Lock**:
-    Trước khi chỉnh sửa role, chương trình khóa role lại:
+  - **Enqueue Lock Management**:
+    Locks the role before making modifications:
     ```abap
     CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
       EXPORTING
@@ -186,113 +187,111 @@ flowchart TD
         foreign_lock   = 1
         OTHERS         = 2.
     ```
-    Nếu role đang bị người khác mở chế độ Edit trong PFCG (`sy-subrc = 1`), biến hệ thống `sy-msgv1` sẽ chứa chính xác Username đang giữ lock. Chương trình sẽ thông báo rõ ràng: *"Role X is locked by user Y. Please exit Edit mode in PFCG first..."*.
+    If another user is currently editing the role in PFCG (`sy-subrc = 1`), `sy-msgv1` contains the exact lock owner. The cockpit alerts the user: *"Role X is locked by user Y. Please exit Edit mode in PFCG first..."*.
 
-### 4.6. Toàn vẹn dữ liệu: Bổ sung 100% Default Fields từ Bảng `TOBJ`
-Đây là tính năng quan trọng nhất đảm bảo role không bao giờ bị lỗi trạng thái Unmaintained:
+### 4.6. Data Integrity: 100% Default Field Pass from `TOBJ`
+This critical feature prevents authorization objects from remaining in an unmaintained state:
 ```abap
-  " Đọc toàn bộ các trường định nghĩa của Authorization Object
+  " Retrieve all default fields registered for the object in TOBJ
   SELECT SINGLE fiel1, fiel2, fiel3, fiel4, fiel5, fiel6, fiel7, fiel8, fiel9, fiel0
     FROM tobj
     WHERE objct = @ls_item-object
     INTO CORRESPONDING FIELDS OF @ls_tobj_def.
 
-  " Duyệt qua tất cả các trường mặc định
+  " Iterate across all registered fields
   LOOP AT lt_def_fields INTO DATA(lv_df).
     READ TABLE ls_item-check_values INTO DATA(ls_scv) WITH KEY field = lv_df.
     IF sy-subrc = 0 AND ls_scv-value IS NOT INITIAL.
-      lv_df_val = ls_scv-value.      " Trường có trong trace: lấy giá trị trace
+      lv_df_val = ls_scv-value.      " Field was present in trace: take trace value
     ELSE.
-      lv_df_val = '*'.               " Trường không có trong trace / rỗng: gán '*'
+      lv_df_val = '*'.               " Field omitted in trace: populate wildcard '*'
     ENDIF.
     ...
   ENDLOOP.
 ```
-- **Ví dụ**: Khi add object `S_ALV_LAYR` (bị lỗi `ACTVT = 23`, `REPORT = SAPLMEGUI`, `HANDLE = RIOV`, `LOG_GROUP = ''`):
-  - `ACTVT` -> Nhận `23`
-  - `REPORT` -> Nhận `SAPLMEGUI`
-  - `HANDLE` -> Nhận `RIOV`
-  - `LOG_GROUP` -> Nhận `*`
-  - Cả 4 field đều hiện diện đầy đủ trong `AGR_1251`, object đạt trạng thái xanh hoàn toàn trong PFCG.
+- **Example**: When adding object `S_ALV_LAYR` (trace indicated `ACTVT = 23`, `REPORT = SAPLMEGUI`, `HANDLE = RIOV`, `LOG_GROUP = ''`):
+  - `ACTVT` -> Assigned `23`
+  - `REPORT` -> Assigned `SAPLMEGUI`
+  - `HANDLE` -> Assigned `RIOV`
+  - `LOG_GROUP` -> Assigned `*`
+  - All 4 fields are persisted to `AGR_1251`, achieving a completely maintained (green) status in PFCG.
 
-### 4.7. Xử lý Authorization Object bị Deactivate (`DELETED = 'X'`)
-- Trong subroutine `ensure_role_auth` và vòng lặp cập nhật `lt_field_values`:
+### 4.7. Deactivated Object Reactivation (`DELETED = 'X'`)
+- In subroutine `ensure_role_auth` and field update routines:
   ```abap
   <ls_auth>-modified = 'U'.
-  <ls_auth>-deleted  = ' '.  " Xóa cờ xóa để reactivate object
+  <ls_auth>-deleted  = ' '.  " Clear deletion flag to reactivate object
   ```
-  Nếu role đã có sẵn object này nhưng trước đó đang ở trạng thái Deactivate, chương trình sẽ tự động phục hồi lại thành Active và cập nhật các field tương ứng.
+  If the target role already contained the object in a deactivated state, the program restores it to Active and updates field values rather than creating duplicate instances.
 
-### 4.8. Force Profile Generation & Xử lý Organizational Levels (`AGR_1252`)
-- **Subroutine `generate_role_profile`** (Lines 1595-1670):
-  - **Tự động quét và điền Org Levels (`AGR_1252`)**:
-    Khi thêm TCode hoặc Object vào role, các biến Organizational Level (như `$BUKRS`, `$WERKS`, `$EKORG`, `$VKORG`) có thể được tạo ra nhưng mang giá trị `null`. Chương trình tự động đọc qua `PRGN_1252_READ_ORG_LEVELS`, gán `low = '*'` cho các biến chưa có giá trị, và lưu lại bằng `PRGN_1252_SAVE_ORG_LEVELS` + `PRGN_UPDATE_DATABASE`.
-  - **Gọi Profile Generator ngầm**:
+### 4.8. Forced Profile Generation & Org Level Maintenance (`AGR_1252`)
+- **Subroutine `generate_role_profile`**:
+  - **Auto-populating Organizational Levels (`AGR_1252`)**:
+    Adding menu items or objects can create Organizational Level variables (`$BUKRS`, `$WERKS`, `$EKORG`, etc.) with null values. The subroutine scans via `PRGN_1252_READ_ORG_LEVELS`, assigns `low = '*'` to unpopulated variables, and commits them via `PRGN_1252_SAVE_ORG_LEVELS` + `PRGN_UPDATE_DATABASE`.
+  - **Background Profile Generation**:
     ```abap
     CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
       EXPORTING
         activity_group        = pv_role
-        fill_orgs_with_star   = 'X'    " Tự động điền * cho các Org Levels còn mở
-        fill_fields_with_star = 'X'    " Tự động điền * cho các Field còn mở
-        no_dialog             = 'X'    " Chế độ không mở popup UI
+        fill_orgs_with_star   = 'X'    " Automatically fill open Org Levels with *
+        fill_fields_with_star = 'X'    " Automatically fill open fields with *
+        no_dialog             = 'X'    " Suppress interactive popups
         rebuild_auth_data     = pv_rebuild
-        generate_profile      = 'X'    " Yêu cầu sinh profile ngay
+        generate_profile      = 'X'    " Trigger immediate generation
     ```
-  - **Cơ chế Fallback**: Nếu `SUPRN_DARK_MANIPULATE_PROFILE` gặp cảnh báo, chương trình tự động gọi tiếp `PRGN_AUTO_GENERATE_PROFILE_NEW` với đầy đủ cờ `org_levels_with_star = 'X'` và `fill_empty_fields_with_star = 'X'`.
+  - **Fallback Handling**: If `SUPRN_DARK_MANIPULATE_PROFILE` encounters warnings, the program triggers `PRGN_AUTO_GENERATE_PROFILE_NEW` with flags `org_levels_with_star = 'X'` and `fill_empty_fields_with_star = 'X'`.
 
-### 4.9. Xử lý Event & Điều hướng lệnh UI
-- **Subroutine `on_user_command_roles` & `handle_user_command`**:
-  - Tránh lỗi đệ quy Automation Queue của SAP GUI khi gọi `refresh_table_display` từ trong Event Handler của chính ALV Grid:
-  - Event Handler phía trên (`on_user_command_roles`) chỉ đóng vai trò forward mã hàm bằng:
+### 4.9. UI Event Handling & Command Forwarding
+- **Subroutines `on_user_command_roles` & `handle_user_command`**:
+  - Prevents SAP GUI Automation Queue deadlocks by decoupling grid events:
+  - The docking container event handler forwards commands using:
     ```abap
     cl_gui_cfw=>set_new_ok_code( e_ucomm ).
     ```
-  - Callback trung tâm của màn hình chính (`handle_user_command`) tiếp nhận và thực thi toàn bộ các nghiệp vụ: `ADD_ROLE`, `SEL_ALL`, `DESEL_ALL`, `REFRESH`.
+  - The central screen controller (`handle_user_command`) executes user actions: `ADD_ROLE`, `SEL_ALL`, `DESEL_ALL`, and `REFRESH`.
 
 ---
 
-## 5. Tổng kết các Function Module SAP chuẩn được sử dụng
+## 5. Summary of Standard SAP Function Modules Used
 
-| Tên Function Module | Mục đích sử dụng trong chương trình |
+| Function Module | Operational Purpose |
 | :--- | :--- |
-| `SUSR_USER_SU53_READ` | Đọc toàn bộ lịch sử trace lỗi phân quyền SU53 từ buffer của người dùng. |
-| `PRGN_ACTIVITY_GROUP_ENQUEUE` | Khóa Role trước khi chỉnh sửa dữ liệu phân quyền. |
-| `PRGN_ACTIVITY_GROUP_DEQUEUE` | Mở khóa Role sau khi cập nhật dữ liệu. |
-| `PRGN_RFC_ADD_TRANSACTION` | Thêm mã giao dịch (TCode) vào Menu của Role chuẩn PFCG. |
-| `PRGN_1250_READ_AUTH_DATA` | Đọc danh sách các Authorization Object/Instance (`AGR_1250`). |
-| `PRGN_1250_SAVE_AUTH_DATA` | Lưu danh sách các Authorization Object/Instance (`AGR_1250`). |
-| `PRGN_1251_READ_FIELD_VALUES` | Đọc chi tiết các trường và giá trị phân quyền (`AGR_1251`). |
-| `PRGN_1251_SAVE_FIELD_VALUES` | Lưu chi tiết các trường và giá trị phân quyền (`AGR_1251`). |
-| `PRGN_1252_READ_ORG_LEVELS` | Đọc danh sách các biến Organizational Level (`AGR_1252`). |
-| `PRGN_1252_SAVE_ORG_LEVELS` | Lưu danh sách các biến Organizational Level (`AGR_1252`). |
-| `PRGN_UPDATE_DATABASE` | Xác nhận ghi dữ liệu Role xuống Database SAP. |
-| `SUPRN_DARK_MANIPULATE_PROFILE`| Sinh (generate) Authorization Profile tự động ở chế độ background (dark). |
-| `PRGN_AUTO_GENERATE_PROFILE_NEW`| Function Module dự phòng sinh Profile tự động. |
-| `REUSE_ALV_GRID_DISPLAY_LVC` | Hiển thị bảng Fullscreen ALV Grid danh sách quyền thiếu. |
+| `SUSR_USER_SU53_READ` | Extracts authorization trace failure buffer for target user |
+| `PRGN_ACTIVITY_GROUP_ENQUEUE` | Locks role prior to editing authorization data |
+| `PRGN_ACTIVITY_GROUP_DEQUEUE` | Releases role lock following updates |
+| `PRGN_RFC_ADD_TRANSACTION` | Inserts transaction codes into the standard PFCG Role Menu |
+| `PRGN_1250_READ_AUTH_DATA` | Reads authorization objects and instances (`AGR_1250`) |
+| `PRGN_1250_SAVE_AUTH_DATA` | Persists authorization objects and instances (`AGR_1250`) |
+| `PRGN_1251_READ_FIELD_VALUES` | Reads authorization fields and values (`AGR_1251`) |
+| `PRGN_1251_SAVE_FIELD_VALUES` | Persists authorization fields and values (`AGR_1251`) |
+| `PRGN_1252_READ_ORG_LEVELS` | Reads Organizational Level variables (`AGR_1252`) |
+| `PRGN_1252_SAVE_ORG_LEVELS` | Persists Organizational Level variables (`AGR_1252`) |
+| `PRGN_UPDATE_DATABASE` | Commits staged role buffer updates to the database |
+| `SUPRN_DARK_MANIPULATE_PROFILE`| Generates authorization profiles in background mode |
+| `PRGN_AUTO_GENERATE_PROFILE_NEW`| Fallback profile generator function module |
+| `REUSE_ALV_GRID_DISPLAY_LVC` | Renders fullscreen ALV Grid of missing authorizations |
 
 ---
 
-## 6. Hướng dẫn Clone & Tự triển khai lên SAP Server (Deployment Guide)
-
-Bất kỳ lập trình viên hoặc quản trị viên SAP nào khi clone repository này về máy đều có thể dễ dàng triển khai chương trình `Z_AUTH_TEST` (hoặc các chương trình khác trong thư mục `src/`) lên hệ thống SAP riêng của họ.
+## 6. Deployment & Operational Guide
 
 ### 6.1. Clone Repository
-Mở Terminal / PowerShell và clone repo về máy:
 ```bash
 git clone https://github.com/luongdk18/SAPABAP.git
 cd SAPABAP
 ```
 
-### 6.2. Cấu hình thông tin SAP Server của bạn
-1. Sao chép file `.sap.env.example` thành file `.sap.env`:
-   ```bash
-   # Windows PowerShell:
-   Copy-Item .sap.env.example .sap.env
-
-   # Linux / macOS:
-   cp .sap.env.example .sap.env
-   ```
-2. Mở file `.sap.env` và cập nhật thông tin máy chủ SAP của bạn:
+### 6.2. Environment Configuration
+1. Copy the environment configuration template:
+   - **Windows PowerShell**:
+     ```powershell
+     Copy-Item .sap.env.example .sap.env
+     ```
+   - **macOS / Linux**:
+     ```bash
+     cp .sap.env.example .sap.env
+     ```
+2. Configure `.sap.env` with your SAP server connection details:
    ```ini
    SAP_URL=https://your-sap-server.com:44310
    SAP_CLIENT=100
@@ -304,30 +303,28 @@ cd SAPABAP
    SAP_MASTER_SYSTEM=DEV
    NODE_TLS_REJECT_UNAUTHORIZED=0
    ```
-   > 🔒 **Lưu ý**: File `.sap.env` đã được `.gitignore` bảo vệ, tuyệt đối không commit file này.
+   > 🔒 **Security Notice**: `.sap.env` is excluded by `.gitignore`. Never commit credentials.
 
 ---
 
-### 6.3. Ba phương thức Deploy chương trình lên SAP
+### 6.3. Three Deployment Methods
 
-Bạn có thể lựa chọn 1 trong 3 phương thức dưới đây để đưa chương trình lên máy chủ SAP:
+#### Method 1: Selective CLI Script (Recommended)
+Use the included automated deployer [`scripts/deploy.js`](../scripts/deploy.js). It communicates with the SAP ADT MCP server to lock, upload to `$TMP`, check syntax, and activate the program remotely.
 
-#### Cách 1: Sử dụng Script CLI tự động (Khuyên dùng - Nhanh nhất)
-Repository đã tích hợp sẵn script tự động hóa [`scripts/deploy.js`](../scripts/deploy.js). Script này tự động gọi MCP Server qua ADT API để kiểm tra xem chương trình đã tồn tại hay chưa: nếu chưa có sẽ tự tạo mới trong package `$TMP`, nếu đã có sẽ ghi đè và kích hoạt (Activate) ngay lập tức.
-
-1. Đảm bảo đã cài đặt Node.js (>= 22) và gói MCP server:
+1. Ensure Node.js (>= 22) and MCP CLI are installed:
    ```bash
    npm install -g @mcp-abap-adt/core
    ```
-2. Chạy lệnh deploy cho chương trình `Z_AUTH_TEST`:
+2. Deploy the program:
    ```bash
+   # Deploy specifically Z_AUTH_TEST
    npm run deploy -- Z_AUTH_TEST
-   # hoặc:
-   node scripts/deploy.js Z_AUTH_TEST
-   # hoặc chọn từ menu tương tác:
+
+   # Or run interactively to choose from available programs:
    npm run deploy
    ```
-3. Kết quả console hiển thị:
+3. Console output confirms activation:
    ```text
    📦 Deploying Z_AUTH_TEST (66942 characters)...
    🔌 Starting SAP ADT MCP Server with environment: .sap.env
@@ -335,57 +332,53 @@ Repository đã tích hợp sẵn script tự động hóa [`scripts/deploy.js`]
    ✅ Success! Program Z_AUTH_TEST updated and activated successfully.
    ```
 
-#### Cách 2: Triển khai qua AI Assistant có kết nối MCP
-Nếu bạn sử dụng **Grok Build**, **ChatGPT (Codex)**, **Claude Desktop**, **Cursor IDE**, hoặc **Google Antigravity** (đã cấu hình MCP Server theo `README.md`):
-- Bạn chỉ cần mở khung chat AI trong thư mục dự án và gửi prompt:
-  > *"Deploy chương trình trong src/z_auth_test.prog.abap lên hệ thống SAP với tên Z_AUTH_TEST và activate nó"*
-- Trợ lý AI sẽ tự động đọc source code từ `src/` và gọi tool ADT (`UpdateProgram` / `CreateProgram`, `ActivateProgram`) để triển khai trong vài giây.
+#### Method 2: Deploy via Connected AI Assistant
+In any MCP-connected AI assistant (**Grok Build**, **ChatGPT / Codex**, **Claude Desktop**, **Cursor IDE**, or **Google Antigravity**):
+- Provide prompt:
+  > *"Deploy `src/z_auth_test.prog.abap` as program `Z_AUTH_TEST` to the connected SAP system and activate it."*
+- The assistant reads the file and invokes ADT tools (`UpdateProgram`/`CreateProgram` and `ActivateProgram`) automatically.
 
-#### Cách 3: Triển khai thủ công qua SAP GUI hoặc Eclipse ADT
-Nếu máy trạm không cài Node.js hoặc không dùng MCP:
-1. Đăng nhập SAP GUI vào Client phát triển của bạn.
-2. Mở transaction **`SE38`** (ABAP Editor).
-3. Nhập tên chương trình: **`Z_AUTH_TEST`** -> Bấm **Create**.
-4. Thiết lập:
+#### Method 3: Manual Deployment (SAP GUI / SE38)
+1. Open transaction **`SE38`** in SAP GUI.
+2. Enter program name: **`Z_AUTH_TEST`** -> Click **Create**.
+3. Set attributes:
    - **Title**: `SU53 Authorization Trace and Simulator`
    - **Type**: `Executable program` (1)
    - **Status**: `Test program` (T)
-5. Bấm **Save** -> Chọn Package **`$TMP`** (Local Object) hoặc Package dự án của bạn.
-6. Mở file [`src/z_auth_test.prog.abap`](../src/z_auth_test.prog.abap) bằng text editor bất kỳ, copy toàn bộ nội dung và dán vào cửa sổ SE38.
-7. Bấm **Check Syntax** (`Ctrl + F2`) để kiểm tra cú pháp, sau đó bấm **Activate** (`Ctrl + F3`).
+4. Save to package **`$TMP`** (Local Object) or your target development package.
+5. Open [`src/z_auth_test.prog.abap`](../src/z_auth_test.prog.abap), copy all source code, and paste into SE38.
+6. Check syntax (`Ctrl + F2`) and **Activate** (`Ctrl + F3`).
 
 ---
 
-### 6.4. Tạo mã giao dịch Transaction Code (SE93)
-Để người dùng hoặc chuyên viên bảo mật có thể chạy chương trình nhanh chóng:
-1. Vào transaction **`SE93`**.
-2. Nhập Transaction Code: **`ZAT`** -> Bấm **Create**.
-3. Điền Short Text: `SU53 Role Assignment Simulator`.
-4. Chọn radio button: **`Program and selection screen (report transaction)`** -> Bấm Enter.
-5. Tại mục **Program**: điền `Z_AUTH_TEST`.
-6. Tại mục **GUI Support**: tích chọn cả 3 mục (SAP GUI for Windows, SAP GUI for Java, SAP GUI for HTML).
-7. Bấm **Save** (lưu vào `$TMP` hoặc transport request).
+### 6.4. Transaction Code Setup (SE93)
+To provide easy execution for basis administrators:
+1. Open transaction **`SE93`**.
+2. Transaction Code: **`ZAT`** -> Click **Create**.
+3. Short Text: `SU53 Role Assignment Simulator`.
+4. Select: **`Program and selection screen (report transaction)`** -> Enter.
+5. In **Program**, enter: `Z_AUTH_TEST`.
+6. Under **GUI Support**, check all 3 boxes (SAP GUI for Windows, Java, and HTML).
+7. Save into `$TMP` or a transport request.
 
 ---
 
-### 6.5. Kiểm tra & Vận hành thực tế
-1. Mở SAP GUI và gõ lệnh: **`/nZAT`**.
-2. Nhập **User** cần kiểm tra (ví dụ user đang gặp lỗi phân quyền khi thao tác nghiệp vụ).
-3. Bấm **Execute** (`F8`):
-   - Danh sách lỗi phân quyền trong 3 giờ gần nhất sẽ xuất hiện ở bảng dưới.
-   - Danh sách các Single Role của user xuất hiện ở bảng trên.
-4. Bấm chọn Radio icon của Role đích cần phân quyền.
-5. Tích checkbox `[X]` các quyền thiếu cần cấp và bấm nút **`Add to Role`**:
-   - Hệ thống tự động thêm TCode vào Menu hoặc thêm Authorization Object với đầy đủ 100% field chuẩn (`TOBJ`).
-   - Tự động điền `*` cho các biến Org Level còn mở trong `AGR_1252`.
-   - Tự động sinh Profile cho role mà không cần bất kỳ thao tác thủ công nào trong `PFCG`.
-
-
+### 6.5. Operational Verification
+1. Open SAP GUI and execute: **`/nZAT`**.
+2. Enter the target **User** experiencing authorization errors.
+3. Click **Execute** (`F8`):
+   - Missing authorization checks from the past 3 hours appear in the bottom grid.
+   - User single roles appear in the top grid.
+4. Select the radio button for the target role to receive permissions.
+5. Check `[X]` next to missing authorization rows and click **`Add to Role`**:
+   - The program injects TCodes into menus and creates authorization objects with 100% standard fields (`TOBJ`).
+   - Automatically maintains Organizational Levels in `AGR_1252` with wildcards.
+   - Automatically generates the authorization profile in background mode without manual PFCG actions.
 
 ---
 
-## 🌟 Đóng góp & Bản quyền (SAP Basis & ABAP Open Source Tools)
+## 7. Contributing & License
 
-Chương trình và tài liệu này được phát triển và chia sẻ miễn phí theo giấy phép [MIT License](../README.md#-license) nhằm mục đích nâng cao năng lực kỹ thuật và tối ưu hóa vận hành cho đội ngũ SAP Basis, Security và Developer.
+This program and documentation are licensed under the [MIT License](../README.md#license) for open-source technical enablement across the SAP Basis and Developer community.
 
-Mọi ý kiến đóng góp, báo lỗi hoặc yêu cầu tính năng xin vui lòng gửi qua [GitHub Issues](https://github.com/luongdk18/SAPABAP/issues) hoặc liên hệ tác giả [@luongdk18](https://github.com/luongdk18).
+Feedback, bug reports, and pull requests are welcome via [GitHub Issues](https://github.com/luongdk18/SAPABAP/issues) or directly to [@luongdk18](https://github.com/luongdk18).

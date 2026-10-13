@@ -123,7 +123,7 @@ Connect your AI coding assistant to the SAP ADT MCP server:
 **CLI command (fastest):**
 - **Windows**:
   ```bash
-  grok mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env
+  grok mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=C:\path\to\SAPABAP\.sap.env
   ```
 - **macOS / Linux**:
   ```bash
@@ -134,7 +134,7 @@ Connect your AI coding assistant to the SAP ADT MCP server:
 ```toml
 [mcp_servers.sap-s4hana]
 command = "cmd.exe"
-args = ["/c", "mcp-abap-adt", "--transport=stdio", "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"]
+args = ["/c", "mcp-abap-adt", "--transport=stdio", "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"]
 ```
 
 ---
@@ -152,7 +152,7 @@ Add the server to your ChatGPT configuration file (`%APPDATA%\OpenAI\ChatGPT\mcp
         "/c",
         "mcp-abap-adt",
         "--transport=stdio",
-        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
       ]
     }
   }
@@ -164,7 +164,7 @@ Add the server to your ChatGPT configuration file (`%APPDATA%\OpenAI\ChatGPT\mcp
 Add the server via the Codex CLI:
 - **Windows**:
   ```bash
-  codex mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env
+  codex mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=C:\path\to\SAPABAP\.sap.env
   ```
 - **macOS / Linux**:
   ```bash
@@ -185,7 +185,7 @@ In `claude_desktop_config.json`:
         "/c",
         "mcp-abap-adt",
         "--transport=stdio",
-        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
       ]
     }
   }
@@ -199,7 +199,7 @@ In `claude_desktop_config.json`:
 In **Settings** -> **Features** -> **MCP Servers** -> **Add New MCP Server**:
 - **Name**: `sap-s4hana`
 - **Type**: `command`
-- **Command**: `mcp-abap-adt --transport=stdio --env-path=d:\PROJECTS\SAPABAP\.sap.env`
+- **Command**: `mcp-abap-adt --transport=stdio --env-path=C:\path\to\SAPABAP\.sap.env`
 
 ---
 
@@ -215,7 +215,7 @@ In `%USERPROFILE%\.gemini\config\mcp_config.json`:
         "/c",
         "mcp-abap-adt",
         "--transport=stdio",
-        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
       ]
     }
   }
@@ -236,7 +236,7 @@ In `cline_mcp_settings.json` or `.vscode/mcp.json`:
         "/c",
         "mcp-abap-adt",
         "--transport=stdio",
-        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
       ]
     }
   }
@@ -307,7 +307,7 @@ A primary objective of this repository is to build and maintain open-source ABAP
 ### 7.1. Current Utility: Z_AUTH_TEST
 
 - **Source Code**: [`src/z_auth_test.prog.abap`](src/z_auth_test.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_TEST.md`](docs/Z_AUTH_TEST.md) (Detailed specifications in Vietnamese)
+- **Documentation**: [`docs/Z_AUTH_TEST.md`](docs/Z_AUTH_TEST.md) (Comprehensive technical reference & code analysis)
 - **Purpose**: Automated SU53 buffer analyzer & PFCG single-role remediation cockpit.
 - **Key Features**:
   - Aggregates all authorization check failures from the SU53 buffer over the last 3 hours via `SUSR_USER_SU53_READ`.

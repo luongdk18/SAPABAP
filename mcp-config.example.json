@@ -6,7 +6,7 @@
         "/c",
         "mcp-abap-adt",
         "--transport=stdio",
-        "--env-path=d:\\PROJECTS\\SAPABAP\\.sap.env"
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
       ]
     }
   }
