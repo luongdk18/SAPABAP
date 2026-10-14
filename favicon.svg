@@ -4,17 +4,11 @@
       <stop offset="0%" stop-color="#ea580c"/>
       <stop offset="100%" stop-color="#f59e0b"/>
     </linearGradient>
-    <filter id="abapShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.12"/>
-    </filter>
   </defs>
-
-  <!-- Bright White / Light Squircle Base -->
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="#ffffff" filter="url(#abapShadow)"/>
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="url(#abapGrad)" stroke-width="2.5"/>
-
-  <!-- Iconic ABAP / Code Brackets < / > (Centered, No Dot) -->
-  <path d="M 23 24 L 15 32 L 23 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <line x1="35" y1="22" x2="29" y2="42" stroke="url(#abapGrad)" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M 41 24 L 49 32 L 41 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(32, 32) scale(1.35) translate(-32, -32)">
+    <!-- Iconic ABAP / Code Brackets < / > (Centered, No Dot) -->
+    <path d="M 23 24 L 15 32 L 23 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="35" y1="22" x2="29" y2="42" stroke="url(#abapGrad)" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M 41 24 L 49 32 L 41 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>
