@@ -337,3 +337,10 @@ Additional ABAP utilities for SAP Basis will be developed and added to this repo
 ## 9. License
 
 This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## 10. Disclaimer & Trademark Notice
+
+SAP, SAP S/4HANA, SAP NetWeaver, ABAP, and other SAP products and services mentioned herein are trademarks or registered trademarks of SAP SE in Germany and other countries. This repository is an independent open-source technical project and is not affiliated with, endorsed by, or sponsored by SAP SE.
+
