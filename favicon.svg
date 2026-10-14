@@ -13,11 +13,8 @@
   <rect x="2" y="2" width="60" height="60" rx="14" fill="#ffffff" filter="url(#abapShadow)"/>
   <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="url(#abapGrad)" stroke-width="2.5"/>
 
-  <!-- Iconic ABAP / Code Brackets < / > -->
-  <path d="M 19 26 L 11 34 L 19 42" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M 37 26 L 45 34 L 37 42" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <line x1="31" y1="24" x2="25" y2="44" stroke="url(#abapGrad)" stroke-width="3.5" stroke-linecap="round"/>
-
-  <!-- Electric Sky Blue Accent Dot -->
-  <circle cx="48" cy="18" r="3.5" fill="#0284c7"/>
+  <!-- Iconic ABAP / Code Brackets < / > (Centered, No Dot) -->
+  <path d="M 23 24 L 15 32 L 23 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="35" y1="22" x2="29" y2="42" stroke="url(#abapGrad)" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M 41 24 L 49 32 L 41 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
