@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="64" height="64" alt="SAP ABAP Logo">
+</p>
+
 # SAP ABAP with AI & Model Context Protocol (MCP)
 
 > Guides on connecting AI Agents via ABAP MCP to live SAP systems, featuring practical ABAP utilities coded with AI to assist SAP Basis operations.
@@ -46,6 +50,25 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 [ SAP S/4HANA / NetWeaver System ]
    ├── ADT Endpoints (Read, Write, Syntax Check, Activate, SQL Query)
    └── ABAP Utilities (e.g., Z_AUTH_TEST, Basis tools)
+```
+
+### Repository Structure
+
+```
+.
+├── assets/
+│   └── logo.svg                # Repository brand logo
+├── docs/
+│   └── Z_AUTH_TEST.md          # Technical analysis & architecture documentation
+├── scripts/
+│   └── deploy.js               # CLI deployment engine via MCP ADT
+├── src/
+│   └── z_auth_test.prog.abap   # ABAP operational cockpit source code
+├── .sap.env.example            # SAP ADT connection template (never commit .sap.env)
+├── mcp-config.example.json     # MCP server configuration snippet
+├── package.json                # Project metadata & npm deploy scripts
+├── LICENSE                     # MIT License
+└── README.md                   # Project documentation & guides
 ```
 
 ---

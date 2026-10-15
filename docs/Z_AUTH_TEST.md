@@ -1,7 +1,7 @@
 # 🛡️ Z_AUTH_TEST: SU53 Authorization Analyzer & Role Provisioning Cockpit
 
 > **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
-> **Author**: luongdk18 | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
+> **Author**: Luong Doan | **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
 The ABAP program **`Z_AUTH_TEST`** (`src/z_auth_test.prog.abap`) is an interactive operational cockpit designed for SAP Security Administrators and Basis Engineers. It automates the end-to-end authorization troubleshooting lifecycle: extracting SU53 failure histories, evaluating coverage across user single roles, simulating assignments, injecting transactions/objects into roles, maintaining Organizational Levels, and forcing background profile regeneration.
 
