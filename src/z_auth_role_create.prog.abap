@@ -254,14 +254,14 @@ FORM parse_csv_line USING    iv_line TYPE string
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
         lv_cur    TYPE string,
-        lv_char   TYPE c.
+        lv_char   TYPE string.
 
   CLEAR: ev_col1, ev_col2, ev_col3.
 
   lv_len = strlen( iv_line ).
   DO lv_len TIMES.
     DATA(lv_idx) = sy-index - 1.
-    lv_char = iv_line+lv_idx(1).
+    lv_char = substring( val = iv_line off = lv_idx len = 1 ).
 
     IF lv_char = '"'.
       IF lv_in_q = abap_true.
@@ -370,10 +370,6 @@ FORM read_excel_file USING iv_file TYPE localfile.
 
       IF <lt_sheet_data> IS ASSIGNED.
         LOOP AT <lt_sheet_data> ASSIGNING <ls_sheet_row>.
-          IF sy-tabix = 1.
-            CONTINUE. " Skip header row
-          ENDIF.
-
           CLEAR ls_raw.
 
           ASSIGN COMPONENT 1 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
