@@ -346,14 +346,18 @@ A primary objective of this repository is to build and maintain open-source ABAP
 
 - **Source Code**: [`src/z_auth_role_create.prog.abap`](src/z_auth_role_create.prog.abap)
 - **Companion Script**: [`scripts/convert_role_excel.py`](scripts/convert_role_excel.py)
-- **Purpose**: Batch PFCG Single Role Creation, Menu Folder Generation, and Authorization Profile Build from Excel (`.xlsx`) or CSV.
+- **Purpose**: Batch PFCG Master Single Role Creation, Menu Folder Generation, and Authorization Profile Build from Excel (`.xlsx`) or CSV.
 - **Workflow & Key Features**:
   - **Excel Preprocessing**: `convert_role_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized row-based format (`Role Name`, `Role Description`, `TCode`).
-  - **Deduplication & Grouping**: Groups multiple TCodes per Role ID and deduplicates redundant assignments.
+  - **Preserves Exact Spacing**: Role Description and Menu Folders preserve original whitespaces without stripping or condensing.
+  - **Clean PFCG Descriptions**: Automatically cleans up default SAP generated comment lines (`"The role was created automatically and can be processed manually."`) from `AGR_TEXTS`.
+  - **Master Role Architecture (Org Levels Defaulted to `-`)**:
+    - Avoids assigning wildcard `'*'` to Organizational Levels (`AGR_1252` and related authorization fields in `AGR_1251`).
+    - Defaults all Organizational Levels to `'-'` (standard template architecture for Master Roles), ensuring zero unintended authorization leakage while readying template roles for subsequent derivation into specialized operational roles.
   - **PFCG Menu Hierarchy**:
     - Automatically creates a dedicated **Menu Folder** named after the **Role Description** (e.g. `Folder = "GL Period Control"`).
     - Links all assigned TCodes as children under that folder.
-  - **Automated Profile Generation**: Calls `PRGN_RFC_CREATE_ACTIVITY_GROUP` and `PRGN_AUTO_GENERATE_PROFILE_NEW` (`SUPRN_DARK_MANIPULATE_PROFILE`) in background mode.
+  - **Automated Profile Generation**: Calls `PRGN_RFC_CREATE_ACTIVITY_GROUP` and `SUPRN_DARK_MANIPULATE_PROFILE` in background mode.
   - **Interactive ALV Grid**: Interactive execution cockpit with simulation mode (Test Run), TCode verification against `TSTC`, and hotspot links to open `PFCG` directly.
 
 ### 7.3. Future Utilities Roadmap
