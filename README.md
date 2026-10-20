@@ -374,7 +374,19 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - **Organizational Level Defaults**: Automatically defaults all inherited organizational levels to `"-1"` in `AGR_1252` and `AGR_1251`, readying roles for subsequent organization value specialization.
   - **Interactive ALV Cockpit**: Features Simulation Mode (Test Run), Update Existing Roles option, and clickable hotspot links to jump directly into transaction `PFCG` for both Derived Roles and Master Roles.
 
-### 7.4. Future Utilities Roadmap
+### 7.4. Current Utility: Z_AUTH_ROLE_UPDATE_ORG
+
+- **Source Code**: [`src/z_auth_role_update_org.prog.abap`](src/z_auth_role_update_org.prog.abap)
+- **Companion Script**: [`scripts/convert_derived_role_org_excel.py`](scripts/convert_derived_role_org_excel.py)
+- **Purpose**: Batch Update Organizational Levels in PFCG Roles from Excel (`.xlsx`) or CSV (`.csv`).
+- **Workflow & Key Features**:
+  - **Upload Format**: Reads 3-column flat format (`Role Name`, `Org Level Variable`, `Org Value`), e.g., derived from matrix sheets via `convert_derived_role_org_excel.py`.
+  - **Selective Role Org Maintenance**: Matches Org Level variables (`$BUKRS`, `$KOKRS`, `$ERKRS`, `$PRCTR`, etc.) against existing entries in `AGR_1252`, updating only the fields relevant to each role's authorization scope.
+  - **Field Synchronization (`AGR_1251`)**: Automatically synchronizes authorization fields mapped via table `USORG` to ensure consistency between Org Level headers and concrete field authorization values.
+  - **Profile Regeneration**: Calls `SUPRN_DARK_MANIPULATE_PROFILE` without dialog to regenerate the authorization profile in background mode.
+  - **Interactive ALV Cockpit**: Displays simulation mode (Test Run), counts of file vs. updated Org levels, detail summary of updated values, and clickable hotspot links to inspect roles in `PFCG`.
+
+### 7.5. Future Utilities Roadmap
 
 Additional ABAP utilities for SAP Basis will be developed and added to this repository:
 - **Authorization & User Governance**: Role assignment analyzer, dormant user cleanup, and unassigned profile auditing.

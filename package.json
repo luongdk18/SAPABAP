@@ -8,6 +8,7 @@
     "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST",
     "deploy:role": "node scripts/deploy.js src/z_auth_role_create.prog.abap Z_AUTH_ROLE_CREATE",
     "deploy:derive": "node scripts/deploy.js src/z_auth_role_derive.prog.abap Z_AUTH_ROLE_DERIVE",
+    "deploy:org": "node scripts/deploy.js src/z_auth_role_update_org.prog.abap Z_AUTH_ROLE_UPDATE_ORG",
     "convert:role": "python scripts/convert_master_role_excel.py",
     "convert:master_role": "python scripts/convert_master_role_excel.py",
     "convert:derived_create": "python scripts/convert_derived_role_create_excel.py",
