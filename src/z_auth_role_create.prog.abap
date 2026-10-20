@@ -652,12 +652,12 @@ FORM process_role_generation.
         ENDIF.
       ELSE.
         ls_res-action  = 'SIMULATED'.
-        ls_res-message = |Simulation OK: Would create new Master role with folder '{ ls_role-role_desc }' and { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
+        ls_res-message = |Simulation OK: Would create new Master role with folder '{ ls_role-role_desc }' and { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-1'.|.
       ENDIF.
 
       IF lv_invalid_cnt > 0.
         ls_res-status  = '@09@'.
-        ls_res-message = |{ ls_res-message } Warning: { lv_invalid_cnt } TCode(s) not found in TSTC: [{ lv_invalid_list }].|.
+        ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }]. { ls_res-message }|.
       ENDIF.
 
       APPEND ls_res TO gt_results.
@@ -702,10 +702,10 @@ FORM process_role_generation.
           OTHERS                        = 13.
 
       IF sy-subrc = 0 OR sy-subrc = 11 OR sy-subrc = 12.
-        " Ensure Org Levels are defaulted to '-' for Master Role derivation
-        PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+        " Ensure Org Levels are defaulted to '-1' for Master Role derivation
+        PERFORM set_org_levels_default USING ls_role-agr_name.
 
-        " Regenerate profile with '-' org values if requested
+        " Regenerate profile with '-1' org values if requested
         IF p_genprf = abap_true.
           CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
             EXPORTING
@@ -719,7 +719,7 @@ FORM process_role_generation.
               return                = lt_bapiret
             EXCEPTIONS
               OTHERS                = 1.
-          PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+          PERFORM set_org_levels_default USING ls_role-agr_name.
         ENDIF.
 
         " Clean Description tab: Keep ONLY exact Role Description, remove auto-comments
@@ -731,7 +731,7 @@ FORM process_role_generation.
 
         ls_res-status  = '@08@'. " Green
         ls_res-action  = 'CREATED'.
-        ls_res-message = |Master role created. Folder '{ ls_role-role_desc }' populated with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
+        ls_res-message = |Master role created. Folder '{ ls_role-role_desc }' populated with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-1'.|.
       ELSE.
         ROLLBACK WORK.
         ls_res-status  = '@0A@'. " Red
@@ -813,7 +813,7 @@ FORM process_role_generation.
               OTHERS                  = 8.
 
           IF sy-subrc = 0.
-            PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+            PERFORM set_org_levels_default USING ls_role-agr_name.
 
             IF p_genprf = abap_true.
               CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
@@ -828,7 +828,7 @@ FORM process_role_generation.
                   return                = lt_bapiret
                 EXCEPTIONS
                   OTHERS                = 1.
-              PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+              PERFORM set_org_levels_default USING ls_role-agr_name.
             ENDIF.
 
             DELETE FROM agr_texts
@@ -837,7 +837,7 @@ FORM process_role_generation.
 
             ls_res-status  = '@08@'.
             ls_res-action  = 'UPDATED'.
-            ls_res-message = |Role had no menu. Created menu folder '{ ls_role-role_desc }' with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
+            ls_res-message = |Role had no menu. Created menu folder '{ ls_role-role_desc }' with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-1'.|.
           ELSE.
             ROLLBACK WORK.
             ls_res-status  = '@0A@'.
@@ -852,7 +852,7 @@ FORM process_role_generation.
           " Case B: Role ALREADY has a menu structure!
           IF lt_tcodes_to_add IS INITIAL.
             " All TCodes already exist! Skip menu modifications (idempotent, no duplicate folders/nodes)
-            PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+            PERFORM set_org_levels_default USING ls_role-agr_name.
 
             IF p_genprf = abap_true.
               CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
@@ -867,7 +867,7 @@ FORM process_role_generation.
                   return                = lt_bapiret
                 EXCEPTIONS
                   OTHERS                = 1.
-              PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+              PERFORM set_org_levels_default USING ls_role-agr_name.
             ENDIF.
 
             DELETE FROM agr_texts
@@ -876,7 +876,7 @@ FORM process_role_generation.
 
             ls_res-status  = '@08@'.
             ls_res-action  = 'UP-TO-DATE'.
-            ls_res-message = |Role menu up-to-date. All { ls_role-tcode_cnt } TCodes already exist. No duplicates added; Org levels defaulted to '-'.|.
+            ls_res-message = |Role menu up-to-date. All { ls_role-tcode_cnt } TCodes already exist. No duplicates added; Org levels defaulted to '-1'.|.
 
           ELSE.
             " Missing TCodes exist -> Append ONLY missing TCodes under existing folder
@@ -960,7 +960,7 @@ FORM process_role_generation.
                 OTHERS                  = 3.
 
             IF sy-subrc = 0 AND lv_err_flag IS INITIAL.
-              PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+              PERFORM set_org_levels_default USING ls_role-agr_name.
 
               IF p_genprf = abap_true.
                 CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
@@ -975,7 +975,7 @@ FORM process_role_generation.
                     return                = lt_bapiret
                   EXCEPTIONS
                     OTHERS                = 1.
-                PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+                PERFORM set_org_levels_default USING ls_role-agr_name.
               ENDIF.
 
               DELETE FROM agr_texts
@@ -985,7 +985,7 @@ FORM process_role_generation.
               lv_added_cnt = lines( lt_tcodes_to_add ).
               ls_res-status  = '@08@'.
               ls_res-action  = 'UPDATED'.
-              ls_res-message = |Added { lv_added_cnt } new TCode(s) under existing folder '{ ls_role-role_desc }'; Skipped { lv_skipped_cnt } existing TCode(s); Org levels defaulted to '-'.|.
+              ls_res-message = |Added { lv_added_cnt } new TCode(s) under existing folder '{ ls_role-role_desc }'; Skipped { lv_skipped_cnt } existing TCode(s); Org levels defaulted to '-1'.|.
             ELSE.
               ROLLBACK WORK.
               ls_res-status  = '@0A@'.
@@ -1004,9 +1004,11 @@ FORM process_role_generation.
     SELECT SINGLE profile FROM agr_1016 INTO ls_res-profile
       WHERE agr_name = ls_role-agr_name.
 
-    IF lv_invalid_cnt > 0 AND ls_res-status = '@08@'.
-      ls_res-status  = '@09@'.
-      ls_res-message = |{ ls_res-message } (Warning: { lv_invalid_cnt } unverified TCodes in TSTC: [{ lv_invalid_list }])|.
+    IF lv_invalid_cnt > 0.
+      IF ls_res-status = '@08@'.
+        ls_res-status  = '@09@'.
+      ENDIF.
+      ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }]. { ls_res-message }|.
     ENDIF.
 
     APPEND ls_res TO gt_results.
@@ -1029,12 +1031,12 @@ FORM format_bapi_message USING    it_bapiret TYPE bapiret2_t
 ENDFORM.
 
 *&---------------------------------------------------------------------*
-*& Form set_org_levels_to_hyphen
+*& Form set_org_levels_default
 *&---------------------------------------------------------------------*
-* Sets all Organizational Levels for Master Roles to '-'
+* Sets all Organizational Levels for Master Roles to '-1'
 * (Used as template default for subsequent derived role specialization)
 *&---------------------------------------------------------------------*
-FORM set_org_levels_to_hyphen USING iv_agr_name TYPE agr_name.
+FORM set_org_levels_default USING iv_agr_name TYPE agr_name.
   DATA: lt_org_levels TYPE TABLE OF pt1252,
         lv_org_mod    TYPE abap_bool.
 
@@ -1050,7 +1052,7 @@ FORM set_org_levels_to_hyphen USING iv_agr_name TYPE agr_name.
 
   IF sy-subrc = 0 AND lt_org_levels IS NOT INITIAL.
     LOOP AT lt_org_levels ASSIGNING FIELD-SYMBOL(<ls_org>).
-      <ls_org>-low = '-'.
+      <ls_org>-low = '-1'.
       lv_org_mod   = abap_true.
     ENDLOOP.
 
@@ -1064,18 +1066,18 @@ FORM set_org_levels_to_hyphen USING iv_agr_name TYPE agr_name.
     ENDIF.
   ENDIF.
 
-  " Directly ensure database table AGR_1252 has low = '-'
-  UPDATE agr_1252 SET low = '-'
+  " Directly ensure database table AGR_1252 has low = '-1'
+  UPDATE agr_1252 SET low = '-1'
     WHERE agr_name = @iv_agr_name.
 
-  " Propagate '-' into AGR_1251 for all fields mapped to Org Levels in USORG
+  " Propagate '-1' into AGR_1251 for all fields mapped to Org Levels in USORG
   SELECT varbl, field FROM usorg INTO TABLE @DATA(lt_usorg_map).
   IF sy-subrc = 0 AND lt_usorg_map IS NOT INITIAL.
     LOOP AT lt_usorg_map INTO DATA(ls_um).
       SELECT SINGLE varbl FROM agr_1252 INTO @DATA(lv_chk_var)
         WHERE agr_name = @iv_agr_name AND varbl = @ls_um-varbl.
       IF sy-subrc = 0.
-        UPDATE agr_1251 SET low = '-'
+        UPDATE agr_1251 SET low = '-1'
           WHERE agr_name = @iv_agr_name
             AND field    = @ls_um-field.
       ENDIF.
@@ -1177,6 +1179,7 @@ FORM display_alv_results.
       lo_col->set_short_text( 'TC List' ).
       lo_col->set_medium_text( 'TCodes List' ).
       lo_col->set_long_text( 'Assigned Transaction Codes' ).
+      lo_col->set_output_length( 50 ).
 
       " Invalid TCodes (Not in TSTC)
       TRY.
@@ -1184,6 +1187,7 @@ FORM display_alv_results.
           lo_col->set_short_text( 'Invalid TC' ).
           lo_col->set_medium_text( 'Invalid TCodes' ).
           lo_col->set_long_text( 'Invalid TCodes (Not in TSTC)' ).
+          lo_col->set_output_length( 40 ).
         CATCH cx_salv_not_found.
       ENDTRY.
 
@@ -1198,6 +1202,7 @@ FORM display_alv_results.
       lo_col->set_short_text( 'Message' ).
       lo_col->set_medium_text( 'Execution Details' ).
       lo_col->set_long_text( 'Execution Status & Details' ).
+      lo_col->set_output_length( 255 ).
 
       " Register Hotspot Event Handler
       lo_events = lo_alv->get_event( ).
