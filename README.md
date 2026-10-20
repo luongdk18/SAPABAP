@@ -63,6 +63,8 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   └── Z_AUTH_TEST.md          # Technical analysis & architecture documentation
 ├── scripts/
 │   ├── convert_master_role_excel.py # Preprocessing script: converts matrix Excel to row format
+│   ├── convert_derived_role_create_excel.py # Converts derived role creation Excel to flat CSV format
+│   ├── convert_derived_role_org_excel.py    # Converts derived role org matrix to flat CSV referencing Org_Levels.csv
 │   └── deploy.js               # CLI deployment engine via MCP ADT
 ├── src/
 │   ├── z_auth_role_create.prog.abap # Batch Role Creation & Menu Structuring tool
@@ -360,7 +362,19 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - **Automated Profile Generation**: Calls `PRGN_RFC_CREATE_ACTIVITY_GROUP` and `SUPRN_DARK_MANIPULATE_PROFILE` in background mode.
   - **Interactive ALV Grid**: Interactive execution cockpit with simulation mode (Test Run), TCode verification against `TSTC`, and hotspot links to open `PFCG` directly.
 
-### 7.3. Future Utilities Roadmap
+### 7.3. Current Utility: Z_AUTH_ROLE_DERIVE
+
+- **Source Code**: [`src/z_auth_role_derive.prog.abap`](src/z_auth_role_derive.prog.abap)
+- **Purpose**: Batch PFCG Derived Role Creation & Inheritance Synchronization from Excel (`.xlsx`) or CSV (`.csv`).
+- **Workflow & Key Features**:
+  - **Upload Format**: Reads mapping spreadsheets (`Master Role`, `Derived Role`, `Derived Role Description`).
+  - **Master Role Validation**: Validates that the imparting Master Role exists in SAP (`AGR_DEFINE`) and is a single role.
+  - **Derived Role Creation**: Calls `PRGN_RFC_CREATE_AGR_MULTIPLE` to generate the derived role shell with `PARENT_AGR = master_role` and custom description without automatic comments.
+  - **Authorization Inheritance & Profile Generation**: Calls `PRGN_RFC_CREATE_DERIVATION` to synchronize all authorization data from the Master Role and compile the authorization profile.
+  - **Organizational Level Defaults**: Automatically defaults all inherited organizational levels to `"-1"` in `AGR_1252` and `AGR_1251`, readying roles for subsequent organization value specialization.
+  - **Interactive ALV Cockpit**: Features Simulation Mode (Test Run), Update Existing Roles option, and clickable hotspot links to jump directly into transaction `PFCG` for both Derived Roles and Master Roles.
+
+### 7.4. Future Utilities Roadmap
 
 Additional ABAP utilities for SAP Basis will be developed and added to this repository:
 - **Authorization & User Governance**: Role assignment analyzer, dormant user cleanup, and unassigned profile auditing.

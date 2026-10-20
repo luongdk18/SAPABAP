@@ -1,72 +1,72 @@
 Org Level Description,Org Level Variable
+Business Partner for Provider of Information,$/ECRS/POIB
+Activity Area,$/SCWM/AREA
+Authorized Drawer,$/SCWM/ENTL
+Warehouse number / warehouse complex,$/SCWM/LGNU
+Storage type,$/SCWM/LGTY
+Chart of Depreciation,$AFAPL
+Asset Class,$ANLKL
+Applicant Group,$APGRP
+Applicant Range,$APTYP
+Work Center,$ARBPL
+Aspect (application area),$ASPET
+Order Type,$AUFART
+Bank Area,$BKKRS
 Company Code,$BUKRS
 Consolidation Unit,$BUNIT
+Valuation area,$BWKEY
+Aspect,$CFASPET
+User Group,$CLASS
+Condition Area,$CONDAREA
+Consolidation Group,$CONGR
 View,$DIMEN
+MRP Controller,$DISPO
 Purchasing Group,$EKGRP
 Purchasing Organization,$EKORG
+Operating Concern,$ERKRS
 FM area,$FIKRS
 Functional Area,$FKBER
 Business Area,$GSBER
+User Group,$HIEID
+Maintenance planning plant,$IWERK
+Credit Control Area,$KKBER
+Costing Variant,$KLVAR
 Account Type,$KOART
 Controlling Area,$KOKRS
-Profit Centers,$PRCTR
-Division,$SPART
-Sales Organization,$VKORG
-Distribution Channel,$VTWEG
-Plant,$WERKS
-Operating Concern,$ERKRS
+Cost Element,$KSTAR
+Contact Type,$KTAAR
+Chart of Accounts,$KTOPL
+Cost Object Category,$KTRAT
+Warehouse Number / Warehouse Complex,$LGNUM
+Storage type,$LGTYP
+Location,$LTRM_LOCAT
+Personnel Area,$PERSA
+Employee Group,$PERSG
+Employee Subgroup,$PERSK
 Plan Version,$PLVAR
-Work Center,$ARBPL
-Shipping Point,$VSTEL
-Activity Area,$/SCWM/AREA
+Profit Centers,$PRCTR
+Company,$RCOMP
+Personnel officer for the job application,$RESRF
+Ledger,$RLDNR
+Payroll Administrator,$SACHA
 Administrator for HR Master Data,$SACHP
 Administrator for Time Recording,$SACHZ
 Administrator Group,$SBMOD
-Applicant Group,$APGRP
-Applicant Range,$APTYP
-Aspect,$CFASPET
-Aspect (application area),$ASPET
-Asset Class,$ANLKL
-Authorized Drawer,$/SCWM/ENTL
-Bank Area,$BKKRS
-Business Partner for Provider of Information,$/ECRS/POIB
-Chart of Accounts,$KTOPL
-Chart of Depreciation,$AFAPL
-Company,$RCOMP
-Condition Area,$CONDAREA
-Consolidation Group,$CONGR
-Contact Type,$KTAAR
-Cost Element,$KSTAR
-Cost Object Category,$KTRAT
-Costing Variant,$KLVAR
-Credit Control Area,$KKBER
-Employee Group,$PERSG
-Employee Subgroup,$PERSK
-Enterprise Organization,$XCORG
-Ledger,$RLDNR
-Location,$LTRM_LOCAT
-Maintenance planning plant,$IWERK
+Division,$SPART
 Maintenance plant,$SWERK
-MRP Controller,$DISPO
-Order Type,$AUFART
+Transportation Planning Point,$TPLST
 Organizational Key,$VDSK1
-Payroll Administrator,$SACHA
-Personnel Area,$PERSA
-Personnel officer for the job application,$RESRF
+Sales Office,$VKBUR
+Sales Group,$VKGRP
+Sales Organization,$VKORG
+Shipping Point,$VSTEL
+Distribution Channel,$VTWEG
+Plant,$WERKS
+Enterprise Organization,$XCORG
 Planning and Execution Group,$XEGRP
 Planning and Execution Organization,$XEORG
 Purchasing Group,$XPGRP
 Purchasing Organization,$XPORG
-Sales Group,$VKGRP
 Sales Group,$XSGRP
-Sales Office,$VKBUR
 Sales Office,$XSOFF
 Sales Organization,$XSORG
-Storage type,$/SCWM/LGTY
-Storage type,$LGTYP
-Transportation Planning Point,$TPLST
-User Group,$CLASS
-User Group,$HIEID
-Valuation area,$BWKEY
-Warehouse number / warehouse complex,$/SCWM/LGNU
-Warehouse Number / Warehouse Complex,$LGNUM
