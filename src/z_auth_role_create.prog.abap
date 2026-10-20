@@ -273,22 +273,21 @@ FORM parse_csv_line USING    iv_line TYPE string
       APPEND lv_cur TO lt_tokens.
       CLEAR lv_cur.
     ELSE.
-      CONCATENATE lv_cur lv_char INTO lv_cur.
+      lv_cur = lv_cur && lv_char.
     ENDIF.
   ENDDO.
   APPEND lv_cur TO lt_tokens.
 
   IF lines( lt_tokens ) >= 1.
     ev_col1 = lt_tokens[ 1 ].
-    ev_col1 = condense( ev_col1 ).
+    ev_col1 = to_upper( condense( ev_col1 ) ).
   ENDIF.
   IF lines( lt_tokens ) >= 2.
-    ev_col2 = lt_tokens[ 2 ].
-    ev_col2 = condense( ev_col2 ).
+    ev_col2 = lt_tokens[ 2 ]. " Keep exact spacing as in input file (no trim/condense)
   ENDIF.
   IF lines( lt_tokens ) >= 3.
     ev_col3 = lt_tokens[ 3 ].
-    ev_col3 = condense( ev_col3 ).
+    ev_col3 = to_upper( condense( ev_col3 ) ).
   ENDIF.
 ENDFORM.
 
@@ -385,8 +384,7 @@ FORM read_excel_file USING iv_file TYPE localfile.
 
           ASSIGN COMPONENT 2 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
           IF sy-subrc = 0 AND <lv_field> IS ASSIGNED.
-            ls_raw-col2 = <lv_field>.
-            ls_raw-col2 = condense( ls_raw-col2 ).
+            ls_raw-col2 = <lv_field>. " Keep exact spacing as in input file (no trim/condense)
           ENDIF.
 
           ASSIGN COMPONENT 3 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
@@ -424,7 +422,7 @@ FORM aggregate_and_validate_data.
 
   LOOP AT gt_raw_rows INTO DATA(ls_raw).
     lv_agr_name = to_upper( condense( ls_raw-col1 ) ).
-    lv_role_dsc = condense( ls_raw-col2 ).
+    lv_role_dsc = ls_raw-col2. " Keep exact spacing as in input file (no trim/condense)
     lv_tcode    = to_upper( condense( ls_raw-col3 ) ).
 
     IF lv_agr_name IS INITIAL OR lv_tcode IS INITIAL.
@@ -628,7 +626,7 @@ FORM process_role_generation.
     " Branch 2: ACTUAL EXECUTION
     " -----------------------------------------------------------------
     IF lv_exists = abap_false.
-      " 2A. CREATE NEW ROLE
+      " 2A. CREATE NEW MASTER ROLE
       DATA: lv_only_tc TYPE char01 VALUE space.
       IF p_genprf = abap_false.
         lv_only_tc = 'X'.
@@ -638,7 +636,7 @@ FORM process_role_generation.
         EXPORTING
           activity_group                = ls_role-agr_name
           activity_group_text           = ls_role-role_desc
-          org_levels_with_star          = 'X'
+          org_levels_with_star          = space   " Master role: DO NOT fill orgs with '*'
           unmaintained_fields_with_star = 'X'
           only_tcode_assignment         = lv_only_tc
           no_dialog                     = 'X'
@@ -661,17 +659,36 @@ FORM process_role_generation.
           error_when_generating_profile = 12
           OTHERS                        = 13.
 
-      IF sy-subrc = 0.
+      IF sy-subrc = 0 OR sy-subrc = 11 OR sy-subrc = 12.
+        " Ensure Org Levels are defaulted to '-' for Master Role derivation
+        PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+
+        " Regenerate profile with '-' org values if requested
+        IF p_genprf = abap_true.
+          CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
+            EXPORTING
+              activity_group        = ls_role-agr_name
+              fill_orgs_with_star   = space
+              fill_fields_with_star = 'X'
+              no_dialog             = 'X'
+              rebuild_auth_data     = space
+              generate_profile      = 'X'
+            IMPORTING
+              return                = lt_bapiret
+            EXCEPTIONS
+              OTHERS                = 1.
+        ENDIF.
+
+        " Clean Description tab: Keep ONLY exact Role Description, remove auto-comments
+        UPDATE agr_texts SET text = @ls_role-role_desc
+          WHERE agr_name = @ls_role-agr_name AND line = '00000'.
+        DELETE FROM agr_texts
+          WHERE agr_name = @ls_role-agr_name AND line > '00000'.
         COMMIT WORK AND WAIT.
+
         ls_res-status = '@08@'. " Green
         ls_res-action = 'CREATED'.
-        ls_res-message = |Role created. Folder '{ ls_role-role_desc }' populated with { ls_role-tcode_cnt } TCodes.|.
-      ELSEIF sy-subrc = 11 OR sy-subrc = 12.
-        " Role and menu created, but profile generation had warnings/exceptions
-        COMMIT WORK AND WAIT.
-        ls_res-status = '@09@'. " Yellow
-        ls_res-action = 'CREATED'.
-        ls_res-message = |Role & menu folder created. Auth profile requires maintenance/generation in PFCG (code: { sy-subrc }).|.
+        ls_res-message = |Master role created. Folder '{ ls_role-role_desc }' populated with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
       ELSE.
         ROLLBACK WORK.
         ls_res-status = '@0A@'. " Red
@@ -689,9 +706,9 @@ FORM process_role_generation.
         ls_res-action  = 'SKIPPED'.
         ls_res-message = 'Role already exists. Skipping (Update option not enabled).'.
       ELSE.
-        " Update role description
-        UPDATE agr_texts SET text = ls_role-role_desc
-          WHERE agr_name = ls_role-agr_name AND line = '00000'.
+        " Update role description & remove auto comments
+        UPDATE agr_texts SET text = @ls_role-role_desc
+          WHERE agr_name = @ls_role-agr_name AND line = '00000'.
         IF sy-subrc <> 0.
           INSERT agr_texts FROM @( VALUE #( mandt    = sy-mandt
                                             agr_name = ls_role-agr_name
@@ -699,6 +716,8 @@ FORM process_role_generation.
                                             line     = '00000'
                                             text     = ls_role-role_desc ) ).
         ENDIF.
+        DELETE FROM agr_texts
+          WHERE agr_name = @ls_role-agr_name AND line > '00000'.
 
         " Update Menu Tree
         CALL FUNCTION 'PRGN_RFC_CHANGE_TRANSACTIONS'
@@ -720,26 +739,33 @@ FORM process_role_generation.
             OTHERS                  = 8.
 
         IF sy-subrc = 0.
+          " Maintain Org Levels as '-' for Master Role
+          PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+
           " Profile regeneration
           IF p_genprf = abap_true.
-            CALL FUNCTION 'PRGN_AUTO_GENERATE_PROFILE_NEW'
+            CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
               EXPORTING
-                activity_group              = ls_role-agr_name
-                rebuild_auth_data           = 'X'
-                org_levels_with_star        = 'X'
-                fill_empty_fields_with_star = 'X'
-                generate_profile            = 'X'
-                no_dialog                   = 'X'
-              TABLES
-                return                      = lt_bapiret
+                activity_group        = ls_role-agr_name
+                fill_orgs_with_star   = space
+                fill_fields_with_star = 'X'
+                no_dialog             = 'X'
+                rebuild_auth_data     = space
+                generate_profile      = 'X'
+              IMPORTING
+                return                = lt_bapiret
               EXCEPTIONS
-                OTHERS                      = 1.
+                OTHERS                = 1.
           ENDIF.
 
+          " Ensure auto-comments remain deleted after any profile update
+          DELETE FROM agr_texts
+            WHERE agr_name = @ls_role-agr_name AND line > '00000'.
           COMMIT WORK AND WAIT.
+
           ls_res-status  = '@08@'. " Green
           ls_res-action  = 'UPDATED'.
-          ls_res-message = |Role updated. Folder '{ ls_role-role_desc }' refreshed with { ls_role-tcode_cnt } TCodes.|.
+          ls_res-message = |Master role updated. Folder '{ ls_role-role_desc }' refreshed with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
         ELSE.
           ROLLBACK WORK.
           ls_res-status = '@0A@'. " Red
@@ -778,6 +804,63 @@ FORM format_bapi_message USING    it_bapiret TYPE bapiret2_t
       CONCATENATE cv_msg '|' ls_bapi-message INTO cv_msg SEPARATED BY space.
     ENDIF.
   ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form set_org_levels_to_hyphen
+*&---------------------------------------------------------------------*
+* Sets all Organizational Levels for Master Roles to '-'
+* (Used as template default for subsequent derived role specialization)
+*&---------------------------------------------------------------------*
+FORM set_org_levels_to_hyphen USING iv_agr_name TYPE agr_name.
+  DATA: lt_org_levels TYPE TABLE OF pt1252,
+        lv_org_mod    TYPE abap_bool.
+
+  CLEAR: lt_org_levels, lv_org_mod.
+  CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
+    EXPORTING
+      activity_group    = iv_agr_name
+    TABLES
+      org_levels        = lt_org_levels
+    EXCEPTIONS
+      no_data_available = 1
+      OTHERS            = 2.
+
+  IF sy-subrc = 0 AND lt_org_levels IS NOT INITIAL.
+    LOOP AT lt_org_levels ASSIGNING FIELD-SYMBOL(<ls_org>).
+      <ls_org>-low = '-'.
+      lv_org_mod   = abap_true.
+    ENDLOOP.
+
+    IF lv_org_mod = abap_true.
+      CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+        EXPORTING
+          activity_group = iv_agr_name
+        TABLES
+          org_levels     = lt_org_levels.
+      CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+    ENDIF.
+  ENDIF.
+
+  " Directly ensure database table AGR_1252 has low = '-'
+  UPDATE agr_1252 SET low = '-'
+    WHERE agr_name = @iv_agr_name.
+
+  " Propagate '-' into AGR_1251 for all fields mapped to Org Levels in USORG
+  SELECT varbl, field FROM usorg INTO TABLE @DATA(lt_usorg_map).
+  IF sy-subrc = 0 AND lt_usorg_map IS NOT INITIAL.
+    LOOP AT lt_usorg_map INTO DATA(ls_um).
+      SELECT SINGLE varbl FROM agr_1252 INTO @DATA(lv_chk_var)
+        WHERE agr_name = @iv_agr_name AND varbl = @ls_um-varbl.
+      IF sy-subrc = 0.
+        UPDATE agr_1251 SET low = '-'
+          WHERE agr_name = @iv_agr_name
+            AND field    = @ls_um-field.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  COMMIT WORK AND WAIT.
 ENDFORM.
 
 *----------------------------------------------------------------------*

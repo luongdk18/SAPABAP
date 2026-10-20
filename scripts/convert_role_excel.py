@@ -48,7 +48,8 @@ def convert_role_excel(input_path):
 
     # Iterate over columns (each column starting from col 2 is a Role)
     for col in range(2, ws_in.max_column + 1):
-        role_desc = str(ws_in.cell(1, col).value or '').strip()
+        cell_desc_val = ws_in.cell(1, col).value
+        role_desc = str(cell_desc_val) if cell_desc_val is not None else ''
         role_name = str(ws_in.cell(2, col).value or '').strip()
         if not role_name:
             continue
