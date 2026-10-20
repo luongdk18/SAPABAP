@@ -127,7 +127,8 @@ function executeDeployment(targetFile, customProgName) {
         // Step 2: Handle Update response
         if (msg.id === 10) {
           if (msg.error || (msg.result && msg.result.isError)) {
-            console.log(`⚠️ UpdateProgram returned notice. Attempting CreateProgram instead...`);
+            console.log(`⚠️ UpdateProgram returned notice:`, JSON.stringify(msg, null, 2));
+            console.log(`Attempting CreateProgram instead...`);
             send({
               jsonrpc: '2.0',
               id: 20,

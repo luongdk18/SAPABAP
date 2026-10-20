@@ -44,15 +44,16 @@ TYPES: BEGIN OF ty_tcode_entry,
        END OF ty_tcode_entry.
 
 TYPES: BEGIN OF ty_alv_result,
-         status      TYPE char4,          " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
-         action      TYPE char12,         " Action: Created / Updated / Simulated / Error
-         agr_name    TYPE agr_name,       " Role ID (Hotspot to PFCG)
-         role_desc   TYPE agr_title,      " Role Description
-         folder_name TYPE agr_title,      " Menu Folder Name (= Role Description)
-         tcode_cnt   TYPE i,              " Count of TCodes
-         tcodes      TYPE string,         " Comma-separated list of TCodes
-         profile     TYPE xuprofile,      " Generated Profile Name
-         message     TYPE string,         " Execution Status / BAPI Message
+         status         TYPE char4,          " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         action         TYPE char12,         " Action: Created / Updated / Up-To-Date / Simulated / Skipped / Error
+         agr_name       TYPE agr_name,       " Role ID (Hotspot to PFCG)
+         role_desc      TYPE agr_title,      " Role Description
+         folder_name    TYPE agr_title,      " Menu Folder Name (= Role Description)
+         tcode_cnt      TYPE i,              " Count of TCodes
+         tcodes         TYPE string,         " Comma-separated list of TCodes
+         invalid_tcodes TYPE string,         " Invalid TCodes (Not found in TSTC)
+         profile        TYPE xuprofile,      " Generated Profile Name
+         message        TYPE string,         " Execution Status / BAPI Message
        END OF ty_alv_result.
 
 DATA: gt_raw_rows TYPE STANDARD TABLE OF ty_raw_row,
@@ -501,18 +502,31 @@ ENDFORM.
 *& Form process_role_generation
 *&---------------------------------------------------------------------*
 FORM process_role_generation.
-  DATA: lt_nodes       TYPE TABLE OF smensapnew,
-        lt_texts       TYPE TABLE OF smencust,
-        lt_bapiret     TYPE TABLE OF bapiret2,
-        ls_res         TYPE ty_alv_result,
-        lv_obj_num     TYPE numc5,
-        lv_exists      TYPE abap_bool,
-        lv_dummy_agr   TYPE agr_name,
-        lv_invalid_cnt TYPE i,
-        lv_tcd_list    TYPE string.
+  DATA: lt_nodes         TYPE TABLE OF smensapnew,
+        lt_texts         TYPE TABLE OF smencust,
+        lt_curr_nodes    TYPE TABLE OF agr_shier,
+        lt_curr_texts    TYPE TABLE OF agr_shiert,
+        lt_tcodes_to_add TYPE TABLE OF ty_tcode_entry,
+        lt_bapiret       TYPE TABLE OF bapiret2,
+        ls_res           TYPE ty_alv_result,
+        ls_stck          TYPE smen_stck,
+        lv_obj_num       TYPE numc5,
+        lv_exists        TYPE abap_bool,
+        lv_dummy_agr     TYPE agr_name,
+        lv_invalid_cnt   TYPE i,
+        lv_invalid_list  TYPE string,
+        lv_tcd_list      TYPE string,
+        lv_target_folder TYPE menu_num_8,
+        lv_max_id        TYPE menu_num_8,
+        lv_max_sort      TYPE menu_num_8,
+        lv_err_flag      TYPE char01,
+        lv_skipped_cnt   TYPE i,
+        lv_added_cnt     TYPE i,
+        lv_sim_exist_cnt TYPE i,
+        lv_sim_add_cnt   TYPE i.
 
   LOOP AT gt_roles INTO DATA(ls_role).
-    CLEAR: ls_res, lt_nodes, lt_texts, lt_bapiret, lv_tcd_list, lv_invalid_cnt.
+    CLEAR: ls_res, lt_nodes, lt_texts, lt_bapiret, lv_tcd_list, lv_invalid_cnt, lv_invalid_list.
 
     ls_res-agr_name    = ls_role-agr_name.
     ls_res-role_desc   = ls_role-role_desc.
@@ -528,9 +542,15 @@ FORM process_role_generation.
       ENDIF.
       IF ls_tc-is_valid = abap_false.
         lv_invalid_cnt = lv_invalid_cnt + 1.
+        IF lv_invalid_list IS INITIAL.
+          lv_invalid_list = ls_tc-tcode.
+        ELSE.
+          CONCATENATE lv_invalid_list ',' ls_tc-tcode INTO lv_invalid_list SEPARATED BY space.
+        ENDIF.
       ENDIF.
     ENDLOOP.
-    ls_res-tcodes = lv_tcd_list.
+    ls_res-tcodes         = lv_tcd_list.
+    ls_res-invalid_tcodes = lv_invalid_list.
 
     " Check if role already exists in SAP
     CLEAR lv_dummy_agr.
@@ -543,7 +563,7 @@ FORM process_role_generation.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " Build Menu Hierarchy Nodes:
+    " Build Menu Hierarchy Nodes (used for new role creation / empty menu)
     " Node 1: Folder = Role Description (parent_id = '00000', menu_level = 1)
     " Nodes 2..N: TCodes (parent_id = '00001', menu_level = 2)
     " -----------------------------------------------------------------
@@ -588,6 +608,11 @@ FORM process_role_generation.
         text      = ls_tc-ttext
       ).
       APPEND ls_tcode_txt TO lt_texts.
+
+      IF sy-langu NE 'E'.
+        ls_tcode_txt-spras = 'E'.
+        APPEND ls_tcode_txt TO lt_texts.
+      ENDIF.
     ENDLOOP.
 
     " -----------------------------------------------------------------
@@ -599,19 +624,40 @@ FORM process_role_generation.
 
       IF lv_exists = abap_true.
         IF p_upd = abap_true.
-          ls_res-message = |Simulation OK: Role exists. Would update folder '{ ls_role-role_desc }' with { ls_role-tcode_cnt } TCodes.|.
+          " Check existing TCodes in role
+          SELECT tcode FROM agr_tcodes INTO TABLE @DATA(lt_sim_tcodes)
+            WHERE agr_name = @ls_role-agr_name AND type = 'TR'.
+
+          CLEAR: lv_sim_exist_cnt, lv_sim_add_cnt.
+          LOOP AT gt_tcodes INTO DATA(ls_sim_chk) WHERE agr_name = ls_role-agr_name.
+            READ TABLE lt_sim_tcodes WITH KEY tcode = ls_sim_chk-tcode TRANSPORTING NO FIELDS.
+            IF sy-subrc = 0.
+              lv_sim_exist_cnt = lv_sim_exist_cnt + 1.
+            ELSE.
+              lv_sim_add_cnt = lv_sim_add_cnt + 1.
+            ENDIF.
+          ENDLOOP.
+
+          IF lv_sim_add_cnt = 0.
+            ls_res-action  = 'UP-TO-DATE'.
+            ls_res-message = |Simulation: Role already exists with all { ls_role-tcode_cnt } TCodes in menu. Up-to-date (no changes needed).|.
+          ELSE.
+            ls_res-action  = 'SIMULATED'.
+            ls_res-message = |Simulation OK: Role exists ({ lv_sim_exist_cnt } existing TCodes). Would add { lv_sim_add_cnt } missing TCode(s) under existing folder '{ ls_role-role_desc }'.|.
+          ENDIF.
         ELSE.
           ls_res-status  = '@09@'. " Yellow LED
           ls_res-action  = 'SKIPPED'.
           ls_res-message = |Role already exists. Skipping because Update Existing Roles is unchecked.|.
         ENDIF.
       ELSE.
-        ls_res-message = |Simulation OK: Would create new role with folder '{ ls_role-role_desc }' and { ls_role-tcode_cnt } TCodes.|.
+        ls_res-action  = 'SIMULATED'.
+        ls_res-message = |Simulation OK: Would create new Master role with folder '{ ls_role-role_desc }' and { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
       ENDIF.
 
       IF lv_invalid_cnt > 0.
         ls_res-status  = '@09@'.
-        ls_res-message = |{ ls_res-message } Warning: { lv_invalid_cnt } TCode(s) not found in TSTC.|.
+        ls_res-message = |{ ls_res-message } Warning: { lv_invalid_cnt } TCode(s) not found in TSTC: [{ lv_invalid_list }].|.
       ENDIF.
 
       APPEND ls_res TO gt_results.
@@ -673,6 +719,7 @@ FORM process_role_generation.
               return                = lt_bapiret
             EXCEPTIONS
               OTHERS                = 1.
+          PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
         ENDIF.
 
         " Clean Description tab: Keep ONLY exact Role Description, remove auto-comments
@@ -682,16 +729,20 @@ FORM process_role_generation.
           WHERE agr_name = @ls_role-agr_name AND line > '00000'.
         COMMIT WORK AND WAIT.
 
-        ls_res-status = '@08@'. " Green
-        ls_res-action = 'CREATED'.
+        ls_res-status  = '@08@'. " Green
+        ls_res-action  = 'CREATED'.
         ls_res-message = |Master role created. Folder '{ ls_role-role_desc }' populated with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
       ELSE.
         ROLLBACK WORK.
-        ls_res-status = '@0A@'. " Red
-        ls_res-action = 'ERROR'.
+        ls_res-status  = '@0A@'. " Red
+        ls_res-action  = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
-          ls_res-message = |Role creation failed with exception sy-subrc = { sy-subrc }.|.
+          IF sy-subrc = 9.
+            ls_res-message = |Role creation failed: Illegal transaction code(s) (sy-subrc = 9). Invalid: [{ lv_invalid_list }].|.
+          ELSE.
+            ls_res-message = |Role creation failed with exception sy-subrc = { sy-subrc }.|.
+          ENDIF.
         ENDIF.
       ENDIF.
 
@@ -715,60 +766,235 @@ FORM process_role_generation.
         DELETE FROM agr_texts
           WHERE agr_name = @ls_role-agr_name AND line > '00000'.
 
-        " Update Menu Tree
-        CALL FUNCTION 'PRGN_RFC_CHANGE_TRANSACTIONS'
+        " Load existing menu hierarchy
+        CLEAR: lt_curr_nodes, lt_curr_texts.
+        CALL FUNCTION 'PRGN_STRU_LOAD_NODES'
           EXPORTING
-            activity_group          = ls_role-agr_name
-            no_dialog               = 'X'
+            activity_group = ls_role-agr_name
           TABLES
-            hierarchy_nodes         = lt_nodes
-            hierarchy_texts         = lt_texts
-            return                  = lt_bapiret
+            i_nodes_out    = lt_curr_nodes
+            i_texts_out    = lt_curr_texts
           EXCEPTIONS
-            activity_group_enqueued = 1
-            activity_group_does_not_exist = 2
-            tcodes_inherited_from_parent = 3
-            illegal_tcodes          = 4
-            not_authorized          = 5
-            no_data_selected        = 6
-            profgen_tables_not_updated = 7
-            OTHERS                  = 8.
+            OTHERS         = 0.
 
-        IF sy-subrc = 0.
-          " Maintain Org Levels as '-' for Master Role
-          PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+        " Query existing TCodes in role
+        SELECT tcode FROM agr_tcodes INTO TABLE @DATA(lt_curr_tcds)
+          WHERE agr_name = @ls_role-agr_name AND type = 'TR'.
 
-          " Profile regeneration
-          IF p_genprf = abap_true.
-            CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
-              EXPORTING
-                activity_group        = ls_role-agr_name
-                fill_orgs_with_star   = space
-                fill_fields_with_star = 'X'
-                no_dialog             = 'X'
-                rebuild_auth_data     = space
-                generate_profile      = 'X'
-              IMPORTING
-                return                = lt_bapiret
-              EXCEPTIONS
-                OTHERS                = 1.
+        " Filter: determine missing TCodes to add vs existing to skip
+        CLEAR: lt_tcodes_to_add, lv_skipped_cnt.
+        LOOP AT gt_tcodes INTO DATA(ls_chk_tc) WHERE agr_name = ls_role-agr_name.
+          READ TABLE lt_curr_tcds WITH KEY tcode = ls_chk_tc-tcode TRANSPORTING NO FIELDS.
+          IF sy-subrc = 0.
+            lv_skipped_cnt = lv_skipped_cnt + 1.
+          ELSE.
+            APPEND ls_chk_tc TO lt_tcodes_to_add.
+          ENDIF.
+        ENDLOOP.
+
+        IF lt_curr_nodes IS INITIAL.
+          " Case A: Role currently has NO menu at all -> Create menu with Folder + TCodes
+          CALL FUNCTION 'PRGN_RFC_CHANGE_TRANSACTIONS'
+            EXPORTING
+              activity_group          = ls_role-agr_name
+              no_dialog               = 'X'
+            TABLES
+              hierarchy_nodes         = lt_nodes
+              hierarchy_texts         = lt_texts
+              return                  = lt_bapiret
+            EXCEPTIONS
+              activity_group_enqueued = 1
+              activity_group_does_not_exist = 2
+              tcodes_inherited_from_parent = 3
+              illegal_tcodes          = 4
+              not_authorized          = 5
+              no_data_selected        = 6
+              profgen_tables_not_updated = 7
+              OTHERS                  = 8.
+
+          IF sy-subrc = 0.
+            PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+
+            IF p_genprf = abap_true.
+              CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
+                EXPORTING
+                  activity_group        = ls_role-agr_name
+                  fill_orgs_with_star   = space
+                  fill_fields_with_star = 'X'
+                  no_dialog             = 'X'
+                  rebuild_auth_data     = 'X'
+                  generate_profile      = 'X'
+                IMPORTING
+                  return                = lt_bapiret
+                EXCEPTIONS
+                  OTHERS                = 1.
+              PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+            ENDIF.
+
+            DELETE FROM agr_texts
+              WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+            COMMIT WORK AND WAIT.
+
+            ls_res-status  = '@08@'.
+            ls_res-action  = 'UPDATED'.
+            ls_res-message = |Role had no menu. Created menu folder '{ ls_role-role_desc }' with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
+          ELSE.
+            ROLLBACK WORK.
+            ls_res-status  = '@0A@'.
+            ls_res-action  = 'ERROR'.
+            PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
+            IF ls_res-message IS INITIAL.
+              ls_res-message = |Failed to initialize role menu (sy-subrc = { sy-subrc }).|.
+            ENDIF.
           ENDIF.
 
-          " Ensure auto-comments remain deleted after any profile update
-          DELETE FROM agr_texts
-            WHERE agr_name = @ls_role-agr_name AND line > '00000'.
-          COMMIT WORK AND WAIT.
-
-          ls_res-status  = '@08@'. " Green
-          ls_res-action  = 'UPDATED'.
-          ls_res-message = |Master role updated. Folder '{ ls_role-role_desc }' refreshed with { ls_role-tcode_cnt } TCodes; Org levels defaulted to '-'.|.
         ELSE.
-          ROLLBACK WORK.
-          ls_res-status = '@0A@'. " Red
-          ls_res-action = 'ERROR'.
-          PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
-          IF ls_res-message IS INITIAL.
-            ls_res-message = |Failed to update role menu (sy-subrc = { sy-subrc }).|.
+          " Case B: Role ALREADY has a menu structure!
+          IF lt_tcodes_to_add IS INITIAL.
+            " All TCodes already exist! Skip menu modifications (idempotent, no duplicate folders/nodes)
+            PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+
+            IF p_genprf = abap_true.
+              CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
+                EXPORTING
+                  activity_group        = ls_role-agr_name
+                  fill_orgs_with_star   = space
+                  fill_fields_with_star = 'X'
+                  no_dialog             = 'X'
+                  rebuild_auth_data     = space
+                  generate_profile      = 'X'
+                IMPORTING
+                  return                = lt_bapiret
+                EXCEPTIONS
+                  OTHERS                = 1.
+              PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+            ENDIF.
+
+            DELETE FROM agr_texts
+              WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+            COMMIT WORK AND WAIT.
+
+            ls_res-status  = '@08@'.
+            ls_res-action  = 'UP-TO-DATE'.
+            ls_res-message = |Role menu up-to-date. All { ls_role-tcode_cnt } TCodes already exist. No duplicates added; Org levels defaulted to '-'.|.
+
+          ELSE.
+            " Missing TCodes exist -> Append ONLY missing TCodes under existing folder
+            lv_target_folder = 1.
+            lv_max_id        = 1.
+            lv_max_sort      = 0.
+            CLEAR lv_err_flag.
+
+            " Locate existing folder node matching role description
+            LOOP AT lt_curr_texts ASSIGNING FIELD-SYMBOL(<ls_ct>) WHERE text = ls_role-role_desc.
+              READ TABLE lt_curr_nodes ASSIGNING FIELD-SYMBOL(<ls_cn>)
+                WITH KEY object_id = <ls_ct>-object_id folder = 'X'.
+              IF sy-subrc = 0.
+                lv_target_folder = <ls_cn>-object_id.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+
+            IF lv_target_folder = 1.
+              READ TABLE lt_curr_nodes ASSIGNING <ls_cn> WITH KEY folder = 'X'.
+              IF sy-subrc = 0.
+                lv_target_folder = <ls_cn>-object_id.
+              ENDIF.
+            ENDIF.
+
+            " Find max object_id and max sort_order
+            LOOP AT lt_curr_nodes ASSIGNING <ls_cn>.
+              IF <ls_cn>-object_id > lv_max_id.
+                lv_max_id = <ls_cn>-object_id.
+              ENDIF.
+              IF <ls_cn>-parent_id = lv_target_folder AND <ls_cn>-sort_order > lv_max_sort.
+                lv_max_sort = <ls_cn>-sort_order.
+              ENDIF.
+            ENDLOOP.
+
+            " Append each missing TCode under the existing folder
+            LOOP AT lt_tcodes_to_add INTO DATA(ls_add_tc).
+              lv_max_id   = lv_max_id + 1.
+              lv_max_sort = lv_max_sort + 10.
+
+              DATA(ls_new_node) = VALUE agr_shier(
+                object_id  = lv_max_id
+                parent_id  = lv_target_folder
+                menu_level = 2
+                sort_order = lv_max_sort
+              ).
+              CLEAR ls_stck.
+              ls_stck-reporttype  = 'TR'.
+              ls_stck-report      = ls_add_tc-tcode.
+              ls_new_node-string1 = ls_stck.
+              APPEND ls_new_node TO lt_curr_nodes.
+
+              DATA(ls_new_txt) = VALUE agr_shiert(
+                object_id = lv_max_id
+                spras     = sy-langu
+                text      = ls_add_tc-ttext
+              ).
+              APPEND ls_new_txt TO lt_curr_texts.
+
+              IF sy-langu NE 'E'.
+                ls_new_txt-spras = 'E'.
+                APPEND ls_new_txt TO lt_curr_texts.
+              ENDIF.
+            ENDLOOP.
+
+            " Save updated menu hierarchy directly
+            CALL FUNCTION 'PRGN_STRU_SAVE_NODES'
+              EXPORTING
+                activity_group    = ls_role-agr_name
+                use_global_tables = space
+                enqueue           = 'X'
+              IMPORTING
+                error_flag        = lv_err_flag
+              TABLES
+                menu_hierarchy    = lt_curr_nodes
+                menu_texts        = lt_curr_texts
+                return            = lt_bapiret
+              EXCEPTIONS
+                not_authorized          = 1
+                activity_group_enqueued = 2
+                OTHERS                  = 3.
+
+            IF sy-subrc = 0 AND lv_err_flag IS INITIAL.
+              PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+
+              IF p_genprf = abap_true.
+                CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
+                  EXPORTING
+                    activity_group        = ls_role-agr_name
+                    fill_orgs_with_star   = space
+                    fill_fields_with_star = 'X'
+                    no_dialog             = 'X'
+                    rebuild_auth_data     = 'X'
+                    generate_profile      = 'X'
+                  IMPORTING
+                    return                = lt_bapiret
+                  EXCEPTIONS
+                    OTHERS                = 1.
+                PERFORM set_org_levels_to_hyphen USING ls_role-agr_name.
+              ENDIF.
+
+              DELETE FROM agr_texts
+                WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+              COMMIT WORK AND WAIT.
+
+              lv_added_cnt = lines( lt_tcodes_to_add ).
+              ls_res-status  = '@08@'.
+              ls_res-action  = 'UPDATED'.
+              ls_res-message = |Added { lv_added_cnt } new TCode(s) under existing folder '{ ls_role-role_desc }'; Skipped { lv_skipped_cnt } existing TCode(s); Org levels defaulted to '-'.|.
+            ELSE.
+              ROLLBACK WORK.
+              ls_res-status  = '@0A@'.
+              ls_res-action  = 'ERROR'.
+              PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
+              IF ls_res-message IS INITIAL.
+                ls_res-message = |Failed to save updated role menu (error_flag = { lv_err_flag }, sy-subrc = { sy-subrc }).|.
+              ENDIF.
+            ENDIF.
           ENDIF.
         ENDIF.
       ENDIF.
@@ -780,7 +1006,7 @@ FORM process_role_generation.
 
     IF lv_invalid_cnt > 0 AND ls_res-status = '@08@'.
       ls_res-status  = '@09@'.
-      ls_res-message = |{ ls_res-message } (Warning: { lv_invalid_cnt } unverified TCodes in TSTC)|.
+      ls_res-message = |{ ls_res-message } (Warning: { lv_invalid_cnt } unverified TCodes in TSTC: [{ lv_invalid_list }])|.
     ENDIF.
 
     APPEND ls_res TO gt_results.
@@ -951,6 +1177,15 @@ FORM display_alv_results.
       lo_col->set_short_text( 'TC List' ).
       lo_col->set_medium_text( 'TCodes List' ).
       lo_col->set_long_text( 'Assigned Transaction Codes' ).
+
+      " Invalid TCodes (Not in TSTC)
+      TRY.
+          lo_col ?= lo_cols->get_column( 'INVALID_TCODES' ).
+          lo_col->set_short_text( 'Invalid TC' ).
+          lo_col->set_medium_text( 'Invalid TCodes' ).
+          lo_col->set_long_text( 'Invalid TCodes (Not in TSTC)' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
 
       " Auth Profile
       lo_col ?= lo_cols->get_column( 'PROFILE' ).
