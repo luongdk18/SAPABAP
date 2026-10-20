@@ -202,6 +202,7 @@ FORM read_csv_file USING iv_file TYPE localfile.
   DATA: lt_file_records TYPE truxs_t_text_data,
         lv_filepath     TYPE string,
         lv_line         TYPE string,
+        lv_line_idx     TYPE i,
         ls_raw          TYPE ty_raw_row.
 
   lv_filepath = iv_file.
@@ -228,15 +229,21 @@ FORM read_csv_file USING iv_file TYPE localfile.
     MESSAGE 'Failed to read CSV file from client workstation.' TYPE 'E'.
   ENDIF.
 
+  CLEAR lv_line_idx.
   LOOP AT lt_file_records INTO lv_line.
+    lv_line_idx = lv_line_idx + 1.
     CLEAR ls_raw.
     PERFORM parse_csv_line USING lv_line
                            CHANGING ls_raw-col1 ls_raw-col2 ls_raw-col3.
 
-    " Skip header row
+    " Skip header row: only check line 1 or exact header column equality
     DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
     DATA(lv_c2_up) = to_upper( ls_raw-col2 ).
-    IF lv_c1_up CS 'ROLE' OR lv_c2_up CS 'ORG'.
+    IF lv_line_idx = 1 AND ( lv_c1_up CS 'ROLE' OR lv_c2_up CS 'ORG' OR lv_c2_up CS 'VAR' ).
+      CONTINUE.
+    ENDIF.
+    IF lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME' OR lv_c1_up = 'ROLE'
+       OR lv_c2_up = 'ORG LEVEL VARIABLE' OR lv_c2_up = 'ORG_LEVEL_VARIABLE' OR lv_c2_up = 'VARIABLE'.
       CONTINUE.
     ENDIF.
 
@@ -373,7 +380,10 @@ FORM read_excel_file USING iv_file TYPE localfile.
       ASSIGN lr_data->* TO <lt_sheet_data>.
 
       IF <lt_sheet_data> IS ASSIGNED.
+        DATA: lv_row_idx TYPE i.
+        CLEAR lv_row_idx.
         LOOP AT <lt_sheet_data> ASSIGNING <ls_sheet_row>.
+          lv_row_idx = lv_row_idx + 1.
           CLEAR ls_raw.
 
           ASSIGN COMPONENT 1 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
@@ -396,7 +406,11 @@ FORM read_excel_file USING iv_file TYPE localfile.
 
           DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
           DATA(lv_c2_up) = to_upper( ls_raw-col2 ).
-          IF lv_c1_up CS 'ROLE' OR lv_c2_up CS 'ORG'.
+          IF lv_row_idx = 1 AND ( lv_c1_up CS 'ROLE' OR lv_c2_up CS 'ORG' OR lv_c2_up CS 'VAR' ).
+            CONTINUE.
+          ENDIF.
+          IF lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME' OR lv_c1_up = 'ROLE'
+             OR lv_c2_up = 'ORG LEVEL VARIABLE' OR lv_c2_up = 'ORG_LEVEL_VARIABLE' OR lv_c2_up = 'VARIABLE'.
             CONTINUE.
           ENDIF.
 
