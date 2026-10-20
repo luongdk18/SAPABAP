@@ -24,7 +24,8 @@
 6. [Automated Program-by-Program Deployment](#6-automated-program-by-program-deployment)
 7. [ABAP Utilities for SAP Basis](#7-abap-utilities-for-sap-basis)
    - [7.1. Current Utility: Z_AUTH_TEST](#71-current-utility-z_auth_test)
-   - [7.2. Future Utilities Roadmap](#72-future-utilities-roadmap)
+   - [7.2. Current Utility: Z_AUTH_ROLE_CREATE](#72-current-utility-z_auth_role_create)
+   - [7.3. Future Utilities Roadmap](#73-future-utilities-roadmap)
 8. [Security & Best Practices](#8-security--best-practices)
 9. [License](#9-license)
 
@@ -61,8 +62,10 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 ├── docs/
 │   └── Z_AUTH_TEST.md          # Technical analysis & architecture documentation
 ├── scripts/
+│   ├── convert_role_excel.py   # Preprocessing script: converts matrix Excel to row format
 │   └── deploy.js               # CLI deployment engine via MCP ADT
 ├── src/
+│   ├── z_auth_role_create.prog.abap # Batch Role Creation & Menu Structuring tool
 │   └── z_auth_test.prog.abap   # ABAP operational cockpit source code
 ├── .sap.env.example            # SAP ADT connection template (never commit .sap.env)
 ├── mcp-config.example.json     # MCP server configuration snippet
@@ -339,7 +342,21 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - Resolves open Organizational Levels (`AGR_1252`) with wildcards.
   - Forces profile regeneration in background mode (`SUPRN_DARK_MANIPULATE_PROFILE`) without manual PFCG intervention.
 
-### 7.2. Future Utilities Roadmap
+### 7.2. Current Utility: Z_AUTH_ROLE_CREATE
+
+- **Source Code**: [`src/z_auth_role_create.prog.abap`](src/z_auth_role_create.prog.abap)
+- **Companion Script**: [`scripts/convert_role_excel.py`](scripts/convert_role_excel.py)
+- **Purpose**: Batch PFCG Single Role Creation, Menu Folder Generation, and Authorization Profile Build from Excel (`.xlsx`) or CSV.
+- **Workflow & Key Features**:
+  - **Excel Preprocessing**: `convert_role_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized row-based format (`Role Name`, `Role Description`, `TCode`).
+  - **Deduplication & Grouping**: Groups multiple TCodes per Role ID and deduplicates redundant assignments.
+  - **PFCG Menu Hierarchy**:
+    - Automatically creates a dedicated **Menu Folder** named after the **Role Description** (e.g. `Folder = "GL Period Control"`).
+    - Links all assigned TCodes as children under that folder.
+  - **Automated Profile Generation**: Calls `PRGN_RFC_CREATE_ACTIVITY_GROUP` and `PRGN_AUTO_GENERATE_PROFILE_NEW` (`SUPRN_DARK_MANIPULATE_PROFILE`) in background mode.
+  - **Interactive ALV Grid**: Interactive execution cockpit with simulation mode (Test Run), TCode verification against `TSTC`, and hotspot links to open `PFCG` directly.
+
+### 7.3. Future Utilities Roadmap
 
 Additional ABAP utilities for SAP Basis will be developed and added to this repository:
 - **Authorization & User Governance**: Role assignment analyzer, dormant user cleanup, and unassigned profile auditing.
