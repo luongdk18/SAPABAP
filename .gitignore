@@ -27,6 +27,11 @@ desktop.ini
 *.sublime-project
 *.sublime-workspace
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Temporary & backup files
 *.bak
 *.tmp

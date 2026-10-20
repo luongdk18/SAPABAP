@@ -7,7 +7,8 @@
     "deploy": "node scripts/deploy.js",
     "deploy:auth": "node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST",
     "deploy:role": "node scripts/deploy.js src/z_auth_role_create.prog.abap Z_AUTH_ROLE_CREATE",
-    "convert:role": "python scripts/convert_role_excel.py"
+    "convert:role": "python scripts/convert_master_role_excel.py",
+    "convert:master_role": "python scripts/convert_master_role_excel.py"
   },
   "keywords": [
     "sap",

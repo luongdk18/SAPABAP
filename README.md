@@ -62,7 +62,7 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 ├── docs/
 │   └── Z_AUTH_TEST.md          # Technical analysis & architecture documentation
 ├── scripts/
-│   ├── convert_role_excel.py   # Preprocessing script: converts matrix Excel to row format
+│   ├── convert_master_role_excel.py # Preprocessing script: converts matrix Excel to row format
 │   └── deploy.js               # CLI deployment engine via MCP ADT
 ├── src/
 │   ├── z_auth_role_create.prog.abap # Batch Role Creation & Menu Structuring tool
@@ -345,10 +345,10 @@ A primary objective of this repository is to build and maintain open-source ABAP
 ### 7.2. Current Utility: Z_AUTH_ROLE_CREATE
 
 - **Source Code**: [`src/z_auth_role_create.prog.abap`](src/z_auth_role_create.prog.abap)
-- **Companion Script**: [`scripts/convert_role_excel.py`](scripts/convert_role_excel.py)
+- **Companion Script**: [`scripts/convert_master_role_excel.py`](scripts/convert_master_role_excel.py)
 - **Purpose**: Batch PFCG Master Single Role Creation, Menu Folder Generation, and Authorization Profile Build from Excel (`.xlsx`) or CSV.
 - **Workflow & Key Features**:
-  - **Excel Preprocessing**: `convert_role_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized row-based format (`Role Name`, `Role Description`, `TCode`).
+  - **Excel Preprocessing**: `convert_master_role_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized row-based format (`Role Name`, `Role Description`, `TCode`). If a master role column has no TCodes marked with 'Y', it creates a single row with `TCode = 'N/A'`.
   - **Preserves Exact Spacing**: Role Description and Menu Folders preserve original whitespaces without stripping or condensing.
   - **Clean PFCG Descriptions**: Automatically cleans up default SAP generated comment lines (`"The role was created automatically and can be processed manually."`) from `AGR_TEXTS`.
   - **Master Role Architecture (Org Levels Defaulted to `-`)**:
