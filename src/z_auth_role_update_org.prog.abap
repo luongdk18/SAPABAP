@@ -5,13 +5,13 @@
 *& Description:
 *&   Reads an Excel (.xlsx) or CSV (.csv) file containing Organizational
 *&   Level values for roles (Role Name, Org Level Variable, Org Value),
-*&   updates table AGR_1252, synchronizes authorization fields in AGR_1251
-*&   via the USORG mapping table, regenerates authorization profiles,
-*&   and displays execution results in an interactive ALV grid cockpit.
+*&   updates table AGR_1252 via standard PFCG function modules, restores
+*&   Org Variable bindings in AGR_1251 if corrupted, regenerates authorization
+*&   profiles, and displays execution results in an interactive ALV grid.
 *&
 *& File format (Excel .xlsx or CSV .csv):
 *&   Col 1: Role Name             (e.g., DRFI01_PERIOD_CONTROL_1100)
-*&   Col 2: Org Level Variable    (e.g., $ERKRS or $BUKRS)
+*&   Col 2: Org Level Variable    (e.g., $ERKRS or $BUKRS or BUKRS)
 *&   Col 3: Org Value             (e.g., RG00, 1100, 1100*, *)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
@@ -44,7 +44,7 @@ TYPES: BEGIN OF ty_role_org,
 
 TYPES: BEGIN OF ty_alv_result,
          status        TYPE char4,     " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
-         action        TYPE char12,    " Action: UPDATED / UP-TO-DATE / SIMULATED / SKIPPED / NO_ORGS / ERROR
+         action        TYPE char12,    " Action: UPDATED / UP-TO-DATE / SIMULATE / ERROR / WARNING
          agr_name      TYPE agr_name,  " Role ID (Hotspot to PFCG)
          role_desc     TYPE agr_title, " Role Description
          parent_agr    TYPE agr_name,  " Parent Master Role (Hotspot to PFCG)
@@ -79,7 +79,8 @@ SELECTION-SCREEN END OF BLOCK b_file.
 SELECTION-SCREEN BEGIN OF BLOCK b_opt WITH FRAME TITLE b_tit2.
   PARAMETERS: p_test   TYPE abap_bool AS CHECKBOX DEFAULT 'X',
               p_genprf TYPE abap_bool AS CHECKBOX DEFAULT 'X',
-              p_sync51 TYPE abap_bool AS CHECKBOX DEFAULT 'X'.
+              p_astnon TYPE abap_bool AS CHECKBOX DEFAULT 'X',
+              p_fix51  TYPE abap_bool AS CHECKBOX DEFAULT 'X'.
 SELECTION-SCREEN END OF BLOCK b_opt.
 
 *----------------------------------------------------------------------*
@@ -95,7 +96,8 @@ INITIALIZATION.
   %_p_file_%_app_%-text   = 'File Path'.
   %_p_test_%_app_%-text   = 'Simulation (Test Run)'.
   %_p_genprf_%_app_%-text = 'Regenerate Auth Profiles'.
-  %_p_sync51_%_app_%-text = 'Synchronize Fields in AGR_1251'.
+  %_p_astnon_%_app_%-text = 'Default Unlisted Org Levels to *'.
+  %_p_fix51_%_app_%-text  = 'Restore Variables in AGR_1251'.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
   PERFORM f4_file_open CHANGING p_file.
@@ -236,7 +238,7 @@ FORM read_csv_file USING iv_file TYPE localfile.
     PERFORM parse_csv_line USING lv_line
                            CHANGING ls_raw-col1 ls_raw-col2 ls_raw-col3.
 
-    " Skip header row: only check line 1 or exact header column equality
+    " Skip header row
     DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
     DATA(lv_c2_up) = to_upper( ls_raw-col2 ).
     IF lv_line_idx = 1 AND ( lv_c1_up CS 'ROLE' OR lv_c2_up CS 'ORG' OR lv_c2_up CS 'VAR' ).
@@ -487,7 +489,7 @@ FORM aggregate_input_data.
     ) TO gt_role_orgs.
   ENDLOOP.
 
-  " Preload USORG mapping for field synchronization
+  " Preload USORG mapping for field synchronization / variable restoration
   CLEAR gt_usorg_map.
   SELECT * FROM usorg INTO TABLE @gt_usorg_map.
 ENDFORM.
@@ -496,21 +498,28 @@ ENDFORM.
 *& Form process_org_update
 *&---------------------------------------------------------------------*
 FORM process_org_update.
-  DATA: ls_res        TYPE ty_alv_result,
-        lt_curr_1252  TYPE STANDARD TABLE OF agr_1252,
-        lt_pt1252     TYPE STANDARD TABLE OF pt1252,
-        lt_bapiret    TYPE STANDARD TABLE OF bapiret2,
-        lv_agr_chk    TYPE agr_name,
-        lv_parent_chk TYPE agr_name,
-        lv_chg_cnt    TYPE i,
-        lv_match_cnt  TYPE i,
-        lv_detail     TYPE string.
+  DATA: ls_res         TYPE ty_alv_result,
+        lt_curr_1252   TYPE STANDARD TABLE OF agr_1252,
+        lt_parent_1252 TYPE STANDARD TABLE OF agr_1252,
+        lt_auth_vars   TYPE STANDARD TABLE OF agval,
+        lt_all_vars    TYPE STANDARD TABLE OF agval,
+        lt_pt1252      TYPE STANDARD TABLE OF pt1252,
+        lt_bapiret     TYPE STANDARD TABLE OF bapiret2,
+        lv_agr_chk     TYPE agr_name,
+        lv_parent_chk  TYPE agr_name,
+        lv_chg_cnt     TYPE i,
+        lv_match_cnt   TYPE i,
+        lv_detail      TYPE string,
+        lv_t_low       TYPE agval,
+        lv_t_high      TYPE agval,
+        lv_from_file   TYPE abap_bool.
 
   CLEAR gt_results.
 
   LOOP AT gt_roles INTO DATA(ls_role).
-    CLEAR: ls_res, lt_curr_1252, lt_pt1252, lt_bapiret, lv_agr_chk,
-           lv_parent_chk, lv_chg_cnt, lv_match_cnt, lv_detail.
+    CLEAR: ls_res, lt_curr_1252, lt_parent_1252, lt_auth_vars, lt_all_vars,
+           lt_pt1252, lt_bapiret, lv_agr_chk, lv_parent_chk,
+           lv_chg_cnt, lv_match_cnt, lv_detail.
 
     ls_res-agr_name      = ls_role-agr_name.
     ls_res-orgs_file_cnt = ls_role-org_cnt.
@@ -531,7 +540,7 @@ FORM process_org_update.
 
     ls_res-parent_agr = lv_parent_chk.
 
-    " Fetch Role Description
+    " Fetch Role Description from AGR_TEXTS
     SELECT SINGLE text FROM agr_texts INTO @ls_res-role_desc
       WHERE agr_name = @ls_role-agr_name AND spras = @sy-langu AND line = '00000'.
     IF sy-subrc <> 0.
@@ -540,17 +549,75 @@ FORM process_org_update.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 2. Read Existing Org Levels in Role (AGR_1252)
+    " 2. Restore Org Variable Bindings in AGR_1251 (if corrupted with '-1')
+    " -----------------------------------------------------------------
+    IF p_fix51 = abap_true AND p_test = abap_false.
+      LOOP AT gt_usorg_map INTO DATA(ls_um).
+        UPDATE agr_1251 SET low = @ls_um-varbl
+          WHERE agr_name = @ls_role-agr_name
+            AND field    = @ls_um-field
+            AND low      = '-1'.
+      ENDLOOP.
+    ENDIF.
+
+    " -----------------------------------------------------------------
+    " 3. Read Existing Org Levels in Role (AGR_1252)
     " -----------------------------------------------------------------
     SELECT * FROM agr_1252 INTO TABLE @lt_curr_1252
       WHERE agr_name = @ls_role-agr_name
       ORDER BY counter.
 
-    IF lt_curr_1252 IS INITIAL.
-      ls_res-status       = '@09@'. " Yellow LED
-      ls_res-action       = 'NO_ORGS'.
+    " -----------------------------------------------------------------
+    " 4. Read Org Levels in Parent Master Role (AGR_1252)
+    " -----------------------------------------------------------------
+    IF lv_parent_chk IS NOT INITIAL.
+      SELECT * FROM agr_1252 INTO TABLE @lt_parent_1252
+        WHERE agr_name = @lv_parent_chk
+        ORDER BY counter.
+    ENDIF.
+
+    " -----------------------------------------------------------------
+    " 5. Find Org Variables in Authorizations (AGR_1251)
+    " -----------------------------------------------------------------
+    SELECT DISTINCT low FROM agr_1251 INTO TABLE @lt_auth_vars
+      WHERE agr_name = @ls_role-agr_name AND low LIKE '$%'.
+    IF lv_parent_chk IS NOT INITIAL.
+      SELECT DISTINCT low FROM agr_1251 APPENDING TABLE @lt_auth_vars
+        WHERE agr_name = @lv_parent_chk AND low LIKE '$%'.
+    ENDIF.
+    SORT lt_auth_vars.
+    DELETE ADJACENT DUPLICATES FROM lt_auth_vars.
+
+    " -----------------------------------------------------------------
+    " 6. Assemble Full Set of Required Org Variables for Role
+    " -----------------------------------------------------------------
+    " a) Variables in Input File
+    LOOP AT gt_role_orgs INTO DATA(ls_fo) WHERE agr_name = ls_role-agr_name.
+      APPEND ls_fo-varbl TO lt_all_vars.
+    ENDLOOP.
+    " b) Variables currently in role's AGR_1252
+    LOOP AT lt_curr_1252 INTO DATA(ls_c1252).
+      APPEND ls_c1252-varbl TO lt_all_vars.
+    ENDLOOP.
+    " c) Variables in parent role's AGR_1252
+    LOOP AT lt_parent_1252 INTO DATA(ls_p1252).
+      APPEND ls_p1252-varbl TO lt_all_vars.
+    ENDLOOP.
+    " d) Variables in AGR_1251 authorizations
+    LOOP AT lt_auth_vars INTO DATA(lv_av).
+      APPEND lv_av TO lt_all_vars.
+    ENDLOOP.
+
+    SORT lt_all_vars.
+    DELETE ADJACENT DUPLICATES FROM lt_all_vars.
+    DELETE lt_all_vars WHERE table_line IS INITIAL.
+
+    " If role has NO Org Levels at all (e.g. only S_TCODE / non-org objects)
+    IF lt_all_vars IS INITIAL.
+      ls_res-status       = '@08@'. " Green LED
+      ls_res-action       = 'UP-TO-DATE'.
       ls_res-orgs_upd_cnt = 0.
-      ls_res-message      = 'Role contains no Org Levels in authorizations (0 entries in AGR_1252); skipped.'.
+      ls_res-message      = 'Role contains no Org Levels in authorizations.'.
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
         WHERE agr_name = @ls_role-agr_name.
       APPEND ls_res TO gt_results.
@@ -558,23 +625,62 @@ FORM process_org_update.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 3. Compare & Update Matching Org Levels
+    " 7. Build Updated Org Levels Table (PT1252)
     " -----------------------------------------------------------------
-    LOOP AT gt_role_orgs INTO DATA(ls_org) WHERE agr_name = ls_role-agr_name.
-      READ TABLE lt_curr_1252 ASSIGNING FIELD-SYMBOL(<ls_1252>)
-        WITH KEY varbl = ls_org-varbl.
-      IF sy-subrc = 0.
-        lv_match_cnt = lv_match_cnt + 1.
-        IF <ls_1252>-low NE ls_org-val_low OR <ls_1252>-high NE ls_org-val_high.
-          <ls_1252>-low  = ls_org-val_low.
-          <ls_1252>-high = ls_org-val_high.
-          lv_chg_cnt = lv_chg_cnt + 1.
-        ENDIF.
+    LOOP AT lt_all_vars INTO DATA(lv_varbl).
+      CLEAR: lv_t_low, lv_t_high, lv_from_file.
 
-        IF lv_detail IS INITIAL.
-          lv_detail = |{ ls_org-varbl }={ ls_org-val_low }|.
+      " Priority 1: Value from input file
+      READ TABLE gt_role_orgs INTO DATA(ls_org_in)
+        WITH KEY agr_name = ls_role-agr_name varbl = lv_varbl.
+      IF sy-subrc = 0.
+        lv_t_low     = ls_org_in-val_low.
+        lv_t_high    = ls_org_in-val_high.
+        lv_from_file = abap_true.
+        lv_match_cnt = lv_match_cnt + 1.
+      ELSE.
+        " Priority 2: Keep existing value in AGR_1252 if maintained & valid (not empty, not $, not -1)
+        READ TABLE lt_curr_1252 INTO DATA(ls_c_exist)
+          WITH KEY varbl = lv_varbl.
+        IF sy-subrc = 0 AND ls_c_exist-low IS NOT INITIAL
+                        AND ls_c_exist-low <> '$'
+                        AND ls_c_exist-low <> '-1'.
+          lv_t_low  = ls_c_exist-low.
+          lv_t_high = ls_c_exist-high.
+        ELSEIF p_astnon = abap_true.
+          " Priority 3: Default unlisted Org Levels to '*' to guarantee GREEN status
+          lv_t_low = '*'.
+          CLEAR lv_t_high.
         ELSE.
-          lv_detail = |{ lv_detail }, { ls_org-varbl }={ ls_org-val_low }|.
+          " Priority 4: Inherit from parent role if available
+          READ TABLE lt_parent_1252 INTO DATA(ls_p_exist)
+            WITH KEY varbl = lv_varbl.
+          IF sy-subrc = 0 AND ls_p_exist-low IS NOT INITIAL AND ls_p_exist-low <> '$'.
+            lv_t_low  = ls_p_exist-low.
+            lv_t_high = ls_p_exist-high.
+          ELSE.
+            lv_t_low = '*'.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+      " Check if changed or newly added
+      READ TABLE lt_curr_1252 INTO DATA(ls_old_chk) WITH KEY varbl = lv_varbl.
+      IF sy-subrc <> 0 OR ls_old_chk-low <> lv_t_low OR ls_old_chk-high <> lv_t_high.
+        lv_chg_cnt = lv_chg_cnt + 1.
+      ENDIF.
+
+      APPEND VALUE pt1252(
+        varbl = lv_varbl
+        low   = lv_t_low
+        high  = lv_t_high
+      ) TO lt_pt1252.
+
+      IF lv_from_file = abap_true.
+        IF lv_detail IS INITIAL.
+          lv_detail = |{ lv_varbl }={ lv_t_low }|.
+        ELSEIF strlen( lv_detail ) < 200.
+          lv_detail = |{ lv_detail }, { lv_varbl }={ lv_t_low }|.
         ENDIF.
       ENDIF.
     ENDLOOP.
@@ -583,17 +689,17 @@ FORM process_org_update.
     ls_res-orgs_detail  = lv_detail.
 
     " -----------------------------------------------------------------
-    " 4. Simulation Mode
+    " 8. Simulation Mode
     " -----------------------------------------------------------------
     IF p_test = abap_true.
-      IF lv_chg_cnt > 0.
+      IF lv_chg_cnt > 0 OR lines( lt_curr_1252 ) <> lines( lt_pt1252 ).
         ls_res-status  = '@08@'. " Green LED
         ls_res-action  = 'SIMULATE'.
-        ls_res-message = |[Simulated] { lv_chg_cnt } of { lines( lt_curr_1252 ) } Org Level(s) in role would be updated.|.
+        ls_res-message = |[Simulated] { lv_chg_cnt } Org Level(s) will be updated/maintained (Total: { lines( lt_pt1252 ) }).|.
       ELSE.
         ls_res-status  = '@08@'. " Green LED
         ls_res-action  = 'SIMULATE'.
-        ls_res-message = |[Simulated] Role is already up-to-date (no value change required).|.
+        ls_res-message = |[Simulated] All { lines( lt_pt1252 ) } Org Levels in role are already up-to-date.|.
       ENDIF.
 
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
@@ -603,22 +709,10 @@ FORM process_org_update.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 5. Real Execution
+    " 9. Real Execution
     " -----------------------------------------------------------------
-    IF lv_chg_cnt > 0.
-      " Update AGR_1252 database table
-      MODIFY agr_1252 FROM TABLE @lt_curr_1252.
-
+    IF lv_chg_cnt > 0 OR lines( lt_curr_1252 ) <> lines( lt_pt1252 ).
       " Save via PFCG Function Module & PRGN_UPDATE_DATABASE
-      CLEAR lt_pt1252.
-      LOOP AT lt_curr_1252 INTO DATA(ls_c1252).
-        APPEND VALUE pt1252(
-          varbl = ls_c1252-varbl
-          low   = ls_c1252-low
-          high  = ls_c1252-high
-        ) TO lt_pt1252.
-      ENDLOOP.
-
       CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
         EXPORTING
           activity_group = ls_role-agr_name
@@ -627,21 +721,9 @@ FORM process_org_update.
 
       CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
 
-      " Synchronize into AGR_1251 for all fields mapped in USORG
-      IF p_sync51 = abap_true.
-        LOOP AT lt_curr_1252 INTO DATA(ls_org_entry).
-          LOOP AT gt_usorg_map INTO DATA(ls_map) WHERE varbl = ls_org_entry-varbl.
-            UPDATE agr_1251
-              SET low  = @ls_org_entry-low,
-                  high = @ls_org_entry-high
-              WHERE agr_name = @ls_role-agr_name
-                AND field    = @ls_map-field.
-          ENDLOOP.
-        ENDLOOP.
-      ENDIF.
-
       " Regenerate Authorization Profile
       IF p_genprf = abap_true.
+        CLEAR lt_bapiret.
         CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
           EXPORTING
             activity_group        = ls_role-agr_name
@@ -664,15 +746,33 @@ FORM process_org_update.
 
       COMMIT WORK AND WAIT.
 
-      " Check profile name
+      " Retrieve Profile Name
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
         WHERE agr_name = @ls_role-agr_name.
 
-      ls_res-status  = '@08@'. " Green LED
-      ls_res-action  = 'UPDATED'.
-      ls_res-message = |Updated { lv_chg_cnt } Org Level(s).|.
-      IF p_genprf = abap_true AND ls_res-profile IS NOT INITIAL.
-        ls_res-message = |{ ls_res-message } Profile '{ ls_res-profile }' regenerated.|.
+      " Verify Final Role & Profile Status
+      DATA: lv_chk_color TYPE char10,
+            lv_chk_msg   TYPE c LENGTH 255.
+      CLEAR: lv_chk_color, lv_chk_msg.
+      CALL FUNCTION 'PRGN_CHECK_PROFILE_STATUS'
+        EXPORTING
+          activity_group = ls_role-agr_name
+        IMPORTING
+          message_text   = lv_chk_msg
+          led_color      = lv_chk_color.
+
+      IF lv_chk_color = 'GREEN'.
+        ls_res-status  = '@08@'. " Green LED
+        ls_res-action  = 'UPDATED'.
+        ls_res-message = |Maintained { lines( lt_pt1252 ) } Org Level(s) ({ lv_chg_cnt } updated). Profile '{ ls_res-profile }' is GREEN (Current).|.
+      ELSEIF lv_chk_color = 'YELLOW'.
+        ls_res-status  = '@09@'. " Yellow LED
+        ls_res-action  = 'UPDATED'.
+        ls_res-message = |Maintained { lines( lt_pt1252 ) } Org Level(s). Profile Yellow: { lv_chk_msg }|.
+      ELSE.
+        ls_res-status  = '@0A@'. " Red LED
+        ls_res-action  = 'WARNING'.
+        ls_res-message = |Profile Red: { lv_chk_msg }|.
       ENDIF.
 
     ELSE.
@@ -681,7 +781,7 @@ FORM process_org_update.
 
       ls_res-status  = '@08@'. " Green LED
       ls_res-action  = 'UP-TO-DATE'.
-      ls_res-message = |All { lv_match_cnt } Org Levels in role are already up-to-date.|.
+      ls_res-message = |All { lines( lt_pt1252 ) } Org Levels in role are already up-to-date.|.
     ENDIF.
 
     APPEND ls_res TO gt_results.
@@ -756,41 +856,43 @@ FORM display_alv_results.
 
       " Format Column: AGR_NAME (Hotspot to PFCG)
       lo_col ?= lo_cols->get_column( 'AGR_NAME' ).
-      lo_col->set_short_text( 'Role' ).
-      lo_col->set_medium_text( 'Role ID' ).
-      lo_col->set_long_text( 'Role Name' ).
+      lo_col->set_short_text( 'Role ID' ).
+      lo_col->set_medium_text( 'Role Name' ).
+      lo_col->set_long_text( 'Role Identifier' ).
       lo_col->set_cell_type( if_salv_c_cell_type=>hotspot ).
 
       " Format Column: ROLE_DESC
       lo_col ?= lo_cols->get_column( 'ROLE_DESC' ).
-      lo_col->set_short_text( 'Desc' ).
+      lo_col->set_short_text( 'Role Desc' ).
       lo_col->set_medium_text( 'Role Description' ).
       lo_col->set_long_text( 'Role Description' ).
 
       " Format Column: PARENT_AGR (Hotspot to PFCG)
       lo_col ?= lo_cols->get_column( 'PARENT_AGR' ).
       lo_col->set_short_text( 'Parent' ).
-      lo_col->set_medium_text( 'Master Role' ).
+      lo_col->set_medium_text( 'Parent Master Role' ).
       lo_col->set_long_text( 'Parent Master Role' ).
       lo_col->set_cell_type( if_salv_c_cell_type=>hotspot ).
 
       " Format Column: ORGS_FILE_CNT
       lo_col ?= lo_cols->get_column( 'ORGS_FILE_CNT' ).
-      lo_col->set_short_text( 'In File' ).
-      lo_col->set_medium_text( 'Orgs in File' ).
-      lo_col->set_long_text( 'Count of Orgs in File' ).
+      lo_col->set_short_text( 'File Orgs' ).
+      lo_col->set_medium_text( 'File Org Cnt' ).
+      lo_col->set_long_text( 'Org Levels in Input File' ).
+      lo_col->set_alignment( if_salv_c_alignment=>right ).
 
       " Format Column: ORGS_UPD_CNT
       lo_col ?= lo_cols->get_column( 'ORGS_UPD_CNT' ).
-      lo_col->set_short_text( 'Updated' ).
-      lo_col->set_medium_text( 'Orgs Updated' ).
-      lo_col->set_long_text( 'Count of Orgs Updated' ).
+      lo_col->set_short_text( 'Upd Orgs' ).
+      lo_col->set_medium_text( 'Updated Orgs' ).
+      lo_col->set_long_text( 'Org Levels Updated' ).
+      lo_col->set_alignment( if_salv_c_alignment=>right ).
 
       " Format Column: ORGS_DETAIL
       lo_col ?= lo_cols->get_column( 'ORGS_DETAIL' ).
-      lo_col->set_short_text( 'Detail' ).
-      lo_col->set_medium_text( 'Updated Org Detail' ).
-      lo_col->set_long_text( 'Updated Org Levels Summary' ).
+      lo_col->set_short_text( 'Org Values' ).
+      lo_col->set_medium_text( 'Updated Values' ).
+      lo_col->set_long_text( 'Summary of Updated Org Values' ).
 
       " Format Column: PROFILE
       lo_col ?= lo_cols->get_column( 'PROFILE' ).
@@ -800,18 +902,19 @@ FORM display_alv_results.
 
       " Format Column: MESSAGE
       lo_col ?= lo_cols->get_column( 'MESSAGE' ).
-      lo_col->set_short_text( 'Message' ).
-      lo_col->set_medium_text( 'Execution Log' ).
-      lo_col->set_long_text( 'Status Message / Log' ).
+      lo_col->set_short_text( 'Log Msg' ).
+      lo_col->set_medium_text( 'Status Message' ).
+      lo_col->set_long_text( 'Execution Message / Result Log' ).
 
-      " Set event handler for hotspots
+      " Attach Click Event Handler
       lo_events = lo_alv->get_event( ).
       SET HANDLER lcl_alv_event_handler=>on_link_click FOR lo_events.
 
+      " Display ALV Fullscreen
       lo_alv->display( ).
 
     CATCH cx_root INTO DATA(lx_salv_err).
       DATA(lv_salv_msg) = lx_salv_err->get_text( ).
-      MESSAGE |Error displaying ALV: { lv_salv_msg }| TYPE 'E'.
+      MESSAGE |Error displaying ALV grid: { lv_salv_msg }| TYPE 'E'.
   ENDTRY.
 ENDFORM.

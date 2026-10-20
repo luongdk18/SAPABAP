@@ -614,13 +614,13 @@ FORM process_role_derivation.
       DELETE FROM agr_texts
         WHERE agr_name = @ls_drv-derived_role AND line > '00000'.
 
-      " Synchronize / Adjust Auth data from master role & regenerate profile
+      " Synchronize / Adjust Auth data from master role
       CALL FUNCTION 'PRGN_RFC_CREATE_DERIVATION'
         EXPORTING
           role            = ls_drv-derived_role
           parent_role     = ls_drv-master_role
           adjust_auths    = p_adjust
-          profile_gen     = p_genprf
+          profile_gen     = space " Deferred until Org Levels are initialized
           no_dialog       = 'X'
         IMPORTING
           new_request     = lv_new_req
@@ -642,12 +642,35 @@ FORM process_role_derivation.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
-          ls_res-message = 'Error occurred during role synchronization / profile generation.'.
+          ls_res-message = 'Error occurred during role synchronization.'.
         ENDIF.
       ELSE.
-        " Ensure Org Levels are defaulted to '-1'
+        " Ensure Org Levels are populated from master role and defaulted to '-1'
         IF p_orgdef = abap_true.
-          PERFORM set_org_levels_default USING ls_drv-derived_role.
+          PERFORM set_org_levels_default USING ls_drv-derived_role ls_drv-master_role.
+        ENDIF.
+
+        " Regenerate profile after Org Levels are properly initialized
+        IF p_genprf = abap_true.
+          CLEAR lt_bapiret.
+          CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
+            EXPORTING
+              activity_group        = ls_drv-derived_role
+              fill_orgs_with_star   = space
+              fill_fields_with_star = space
+              no_dialog             = 'X'
+              rebuild_auth_data     = space
+              generate_profile      = 'X'
+            IMPORTING
+              return                = lt_bapiret
+            EXCEPTIONS
+              OTHERS                = 1.
+          CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+            EXPORTING
+              activity_group = ls_drv-derived_role
+            EXCEPTIONS
+              OTHERS         = 0.
+          COMMIT WORK AND WAIT.
         ENDIF.
 
         ls_res-status  = '@08@'. " Green LED
@@ -695,14 +718,14 @@ FORM process_role_derivation.
         WHERE agr_name = @ls_drv-derived_role AND line > '00000'.
       COMMIT WORK AND WAIT.
 
-      " Step 3: Inherit auths from Master Role & Generate Profile
+      " Step 3: Inherit auths from Master Role
       CLEAR lt_bapiret.
       CALL FUNCTION 'PRGN_RFC_CREATE_DERIVATION'
         EXPORTING
           role            = ls_drv-derived_role
           parent_role     = ls_drv-master_role
           adjust_auths    = p_adjust
-          profile_gen     = p_genprf
+          profile_gen     = space " Deferred until Org Levels are initialized
           no_dialog       = 'X'
         IMPORTING
           new_request     = lv_new_req
@@ -723,18 +746,41 @@ FORM process_role_derivation.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
-          ls_res-message = 'Error occurred during auth transfer / profile generation.'.
+          ls_res-message = 'Error occurred during auth transfer from master role.'.
         ENDIF.
       ELSE.
-        " Step 4: Default Org Levels to '-1'
+        " Step 4: Populate Org Levels from Master Role and default to '-1'
         IF p_orgdef = abap_true.
-          PERFORM set_org_levels_default USING ls_drv-derived_role.
+          PERFORM set_org_levels_default USING ls_drv-derived_role ls_drv-master_role.
+        ENDIF.
+
+        " Step 5: Regenerate profile after Org Levels are initialized
+        IF p_genprf = abap_true.
+          CLEAR lt_bapiret.
+          CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
+            EXPORTING
+              activity_group        = ls_drv-derived_role
+              fill_orgs_with_star   = space
+              fill_fields_with_star = space
+              no_dialog             = 'X'
+              rebuild_auth_data     = space
+              generate_profile      = 'X'
+            IMPORTING
+              return                = lt_bapiret
+            EXCEPTIONS
+              OTHERS                = 1.
+          CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+            EXPORTING
+              activity_group = ls_drv-derived_role
+            EXCEPTIONS
+              OTHERS         = 0.
+          COMMIT WORK AND WAIT.
         ENDIF.
 
         ls_res-status  = '@08@'. " Green LED
         ls_res-action  = 'CREATED'.
         ls_res-message = |Derived role successfully created from master '{ ls_drv-master_role }'.|.
-        IF p_genprf = abap_true AND lv_prf_ok = 'Y'.
+        IF p_genprf = abap_true.
           ls_res-message = |{ ls_res-message } Profile generated.|.
         ENDIF.
         IF p_orgdef = abap_true.
@@ -770,54 +816,54 @@ ENDFORM.
 *& Form set_org_levels_default
 *&---------------------------------------------------------------------*
 * Sets all Organizational Levels for Derived Roles to '-1'
-* (Consistent placeholder until specialized org values are populated)
+* (Copies required Org Variables from Master Role or Authorizations)
 *&---------------------------------------------------------------------*
-FORM set_org_levels_default USING iv_agr_name TYPE agr_name.
-  DATA: lt_org_levels TYPE TABLE OF pt1252,
-        lv_org_mod    TYPE abap_bool.
+FORM set_org_levels_default USING iv_agr_name    TYPE agr_name
+                                  iv_master_name TYPE agr_name.
+  DATA: lt_pt1252      TYPE TABLE OF pt1252,
+        lt_master_1252 TYPE TABLE OF agr_1252,
+        lt_auth_vars   TYPE TABLE OF agval.
 
-  CLEAR: lt_org_levels, lv_org_mod.
-  CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
-    EXPORTING
-      activity_group    = iv_agr_name
-    TABLES
-      org_levels        = lt_org_levels
-    EXCEPTIONS
-      no_data_available = 1
-      OTHERS            = 2.
+  CLEAR: lt_pt1252, lt_master_1252, lt_auth_vars.
 
-  IF sy-subrc = 0 AND lt_org_levels IS NOT INITIAL.
-    LOOP AT lt_org_levels ASSIGNING FIELD-SYMBOL(<ls_org>).
-      <ls_org>-low = '-1'.
-      lv_org_mod   = abap_true.
+  " 1. Read Master Role's AGR_1252
+  SELECT * FROM agr_1252 INTO TABLE @lt_master_1252
+    WHERE agr_name = @iv_master_name
+    ORDER BY counter.
+
+  IF lt_master_1252 IS NOT INITIAL.
+    LOOP AT lt_master_1252 INTO DATA(ls_m).
+      APPEND VALUE pt1252(
+        varbl = ls_m-varbl
+        low   = '-1'
+        high  = space
+      ) TO lt_pt1252.
     ENDLOOP.
-
-    IF lv_org_mod = abap_true.
-      CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
-        EXPORTING
-          activity_group = iv_agr_name
-        TABLES
-          org_levels     = lt_org_levels.
-      CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+  ELSE.
+    " Fallback: Read Org variables from authorizations in AGR_1251
+    SELECT DISTINCT low FROM agr_1251 INTO TABLE @lt_auth_vars
+      WHERE agr_name = @iv_agr_name AND low LIKE '$%'.
+    IF lt_auth_vars IS INITIAL.
+      SELECT DISTINCT low FROM agr_1251 INTO TABLE @lt_auth_vars
+        WHERE agr_name = @iv_master_name AND low LIKE '$%'.
     ENDIF.
+
+    LOOP AT lt_auth_vars INTO DATA(lv_var).
+      APPEND VALUE pt1252(
+        varbl = lv_var
+        low   = '-1'
+        high  = space
+      ) TO lt_pt1252.
+    ENDLOOP.
   ENDIF.
 
-  " Directly ensure database table AGR_1252 has low = '-1'
-  UPDATE agr_1252 SET low = '-1'
-    WHERE agr_name = @iv_agr_name.
-
-  " Propagate '-1' into AGR_1251 for all fields mapped to Org Levels in USORG
-  SELECT varbl, field FROM usorg INTO TABLE @DATA(lt_usorg_map).
-  IF sy-subrc = 0 AND lt_usorg_map IS NOT INITIAL.
-    LOOP AT lt_usorg_map INTO DATA(ls_um).
-      SELECT SINGLE varbl FROM agr_1252 INTO @DATA(lv_chk_var)
-        WHERE agr_name = @iv_agr_name AND varbl = @ls_um-varbl.
-      IF sy-subrc = 0.
-        UPDATE agr_1251 SET low = '-1'
-          WHERE agr_name = @iv_agr_name
-            AND field    = @ls_um-field.
-      ENDIF.
-    ENDLOOP.
+  IF lt_pt1252 IS NOT INITIAL.
+    CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+      EXPORTING
+        activity_group = iv_agr_name
+      TABLES
+        org_levels     = lt_pt1252.
+    CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
   ENDIF.
 
   COMMIT WORK AND WAIT.

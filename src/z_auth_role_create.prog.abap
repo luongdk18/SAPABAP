@@ -656,8 +656,9 @@ FORM process_role_generation.
               ls_res-action  = 'SIMULATED'.
               ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Role exists with no valid TCodes.|.
             ELSE.
+              ls_res-status  = '@09@'.
               ls_res-action  = 'UP-TO-DATE'.
-              ls_res-message = |Simulation: Role exists without TCodes (N/A). Up-to-date.|.
+              ls_res-message = |Warning: Role exists without TCodes (N/A). Up-to-date.|.
             ENDIF.
           ELSE.
             " Check existing TCodes in role
@@ -704,8 +705,9 @@ FORM process_role_generation.
             ls_res-action  = 'SIMULATED'.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Would create role without menu; Org levels defaulted to '-1'.|.
           ELSE.
+            ls_res-status  = '@09@'.
             ls_res-action  = 'SIMULATED'.
-            ls_res-message = |Simulation OK: Would create Master role without TCodes (N/A); Org levels defaulted to '-1'.|.
+            ls_res-message = |Warning: Role has no TCodes (N/A). Would create Master role without menu; Org levels defaulted to '-1'.|.
           ENDIF.
         ELSE.
           ls_res-action  = 'SIMULATED'.
@@ -752,8 +754,8 @@ FORM process_role_generation.
             ls_res-status  = '@09@'.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Role created without menu transactions; Org levels defaulted to '-1'.|.
           ELSE.
-            ls_res-status  = '@08@'.
-            ls_res-message = |Role created without TCodes (N/A); Org levels defaulted to '-1'.|.
+            ls_res-status  = '@09@'.
+            ls_res-message = |Warning: Role created without TCodes (N/A); Org levels defaulted to '-1'.|.
           ENDIF.
         ELSE.
           ROLLBACK WORK.
@@ -874,8 +876,8 @@ FORM process_role_generation.
             ls_res-status  = '@09@'.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Role exists; no valid TCodes to add.|.
           ELSE.
-            ls_res-status  = '@08@'.
-            ls_res-message = |Role exists without TCodes (N/A). Description synchronized; Org levels defaulted to '-1'.|.
+            ls_res-status  = '@09@'.
+            ls_res-message = |Warning: Role exists without TCodes (N/A). Description synchronized; Org levels defaulted to '-1'.|.
           ENDIF.
 
         ELSE.
@@ -1184,19 +1186,8 @@ FORM set_org_levels_default USING iv_agr_name TYPE agr_name.
   UPDATE agr_1252 SET low = '-1'
     WHERE agr_name = @iv_agr_name.
 
-  " Propagate '-1' into AGR_1251 for all fields mapped to Org Levels in USORG
-  SELECT varbl, field FROM usorg INTO TABLE @DATA(lt_usorg_map).
-  IF sy-subrc = 0 AND lt_usorg_map IS NOT INITIAL.
-    LOOP AT lt_usorg_map INTO DATA(ls_um).
-      SELECT SINGLE varbl FROM agr_1252 INTO @DATA(lv_chk_var)
-        WHERE agr_name = @iv_agr_name AND varbl = @ls_um-varbl.
-      IF sy-subrc = 0.
-        UPDATE agr_1251 SET low = '-1'
-          WHERE agr_name = @iv_agr_name
-            AND field    = @ls_um-field.
-      ENDIF.
-    ENDLOOP.
-  ENDIF.
+  " Note: AGR_1251 keeps standard variable references ($VARBL).
+  " Actual values are maintained in AGR_1252.
 
   COMMIT WORK AND WAIT.
 ENDFORM.
