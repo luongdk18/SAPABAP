@@ -22,8 +22,7 @@
 *&   Col 7: Function         (e.g., Finance Controller)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
-*& Package: ZBC_UT
-*& Transport: SKDK900253 / SKDK900254$TMP
+*& Package: $TMP (Local Object) or Custom Package
 *&---------------------------------------------------------------------*
 REPORT z_user_01_create.
 

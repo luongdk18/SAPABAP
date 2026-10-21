@@ -19,8 +19,7 @@
 *&   Col 3: Single / Derived Role      (e.g., Z_FI_PERIOD_CONTROL_1000 or N/A)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
-*& Package: ZBC_UT
-*& Transport: SKDK900253 / SKDK900254$TMP
+*& Package: $TMP (Local Object) or Custom Package
 *&---------------------------------------------------------------------*
 REPORT z_role_04_composite.
 

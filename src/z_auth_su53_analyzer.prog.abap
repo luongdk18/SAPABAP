@@ -3,8 +3,7 @@
 *&---------------------------------------------------------------------*
 *& Advanced SU53 Authorization Trace & Role Diagnostics Analyzer
 *& Transaction Code: ZAT
-*& Package: ZBC_UT
-*& Transport: SKDK900253 / SKDK900254$TMP (Local Object)
+*& Package: $TMP (Local Object) or Custom Package
 *& Architecture: Dual-ALV Layout (Docking Single Roles + Fullscreen Missing Auths)
 *&---------------------------------------------------------------------*
 REPORT z_auth_su53_analyzer.

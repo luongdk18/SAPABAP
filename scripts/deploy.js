@@ -52,7 +52,7 @@ function parseEnvFile(filePath) {
 }
 
 const fileEnv = parseEnvFile(envPath);
-const targetPackage = process.env.SAP_PACKAGE || fileEnv.SAP_PACKAGE || 'ZBC_UT';
+const targetPackage = process.env.SAP_PACKAGE || fileEnv.SAP_PACKAGE || '$TMP';
 const transportRequest = process.env.SAP_TRANSPORT_REQUEST || fileEnv.SAP_TRANSPORT_REQUEST || '';
 
 // Discover available programs in src/

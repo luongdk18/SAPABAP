@@ -15,8 +15,7 @@
 *&   Col 3: Org Value             (e.g., 1000, 1000*, *)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
-*& Package: ZBC_UT
-*& Transport: SKDK900253 / SKDK900254$TMP
+*& Package: $TMP (Local Object) or Custom Package
 *&---------------------------------------------------------------------*
 REPORT z_role_03_update_org.
 

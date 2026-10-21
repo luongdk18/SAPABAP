@@ -171,11 +171,11 @@ SAP_MASTER_SYSTEM=DEV
 SAP_LANGUAGE=EN
 NODE_TLS_REJECT_UNAUTHORIZED=0
 
-# Target Package for ABAP Programs (Default: ZBC_UT for transportable, or $TMP for local)
-SAP_PACKAGE=ZBC_UT
+# Target Package for ABAP Programs (Default: $TMP for local sandbox testing, no TR needed)
+SAP_PACKAGE=$TMP
 
-# Workbench Transport Request (Required when SAP_PACKAGE != $TMP)
-SAP_TRANSPORT_REQUEST=SKDK900253
+# Workbench Transport Request (Only required if SAP_PACKAGE is NOT $TMP)
+# SAP_TRANSPORT_REQUEST=DEVK900001
 ```
 
 > **Note**: `.sap.env` is excluded via `.gitignore`. Do not commit credentials to Git.
