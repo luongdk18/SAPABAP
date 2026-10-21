@@ -34,7 +34,7 @@ TABLES: usr02.
 TYPES: ty_bin_255 TYPE x LENGTH 255.
 
 TYPES: BEGIN OF ty_user_csv,
-         username   TYPE bname,
+         username   TYPE bapibname-bapibname,
          password   TYPE bapipwd-bapipwd,
          fullname   TYPE string,
          email      TYPE bapiaddr3-e_mail,
@@ -44,15 +44,15 @@ TYPES: BEGIN OF ty_user_csv,
        END OF ty_user_csv.
 
 TYPES: BEGIN OF ty_alv_result,
-         status     TYPE char4,      " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
-         action     TYPE char12,     " CREATED / UPDATED / SIM_NEW / SIM_UPD / SKIPPED / ERROR
-         username   TYPE bname,      " SAP User ID (Hotspot to SU01)
-         fullname   TYPE string,     " Last Name (Full Name)
+         status     TYPE char4,               " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         action     TYPE char12,              " CREATED / UPDATED / SIM_NEW / SIM_UPD / SKIPPED / ERROR
+         username   TYPE bapibname-bapibname, " SAP User ID (Hotspot to SU01)
+         fullname   TYPE string,              " Last Name (Full Name)
          email      TYPE bapiaddr3-e_mail,
          phone      TYPE bapiaddr3-tel1_numbr,
          department TYPE bapiaddr3-department,
          function   TYPE bapiaddr3-function,
-         message    TYPE string,     " Status Message / Execution Log
+         message    TYPE string,              " Status Message / Execution Log
        END OF ty_alv_result.
 
 DATA: gt_users   TYPE STANDARD TABLE OF ty_user_csv,
@@ -525,12 +525,15 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM create_single_user USING    is_user   TYPE ty_user_csv
                         CHANGING et_return TYPE bapiret2_t.
-  DATA: ls_logondata TYPE bapilogond,
+  DATA: lv_username  TYPE bapibname-bapibname,
+        ls_logondata TYPE bapilogond,
         ls_password  TYPE bapipwd,
         ls_defaults  TYPE bapidefaul,
         ls_address   TYPE bapiaddr3.
 
   CLEAR: et_return, ls_logondata, ls_password, ls_defaults, ls_address.
+
+  lv_username = is_user-username.
 
   " 1. Logon Data
   ls_logondata-ustyp = p_ustyp.
@@ -545,7 +548,11 @@ FORM create_single_user USING    is_user   TYPE ty_user_csv
   ls_defaults-spld  = p_spld.
 
   " 4. Address - Full Name mapped entirely into Last Name (BAPIADDR3-LASTNAME)
-  ls_address-lastname   = is_user-fullname.
+  IF strlen( is_user-fullname ) > 40.
+    ls_address-lastname = is_user-fullname(40).
+  ELSE.
+    ls_address-lastname = is_user-fullname.
+  ENDIF.
   ls_address-e_mail     = is_user-email.
   ls_address-tel1_numbr = is_user-phone.
   ls_address-department = is_user-department.
@@ -553,7 +560,7 @@ FORM create_single_user USING    is_user   TYPE ty_user_csv
 
   CALL FUNCTION 'BAPI_USER_CREATE1'
     EXPORTING
-      username  = is_user-username
+      username  = lv_username
       logondata = ls_logondata
       password  = ls_password
       defaults  = ls_defaults
@@ -567,15 +574,22 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM update_single_user USING    is_user   TYPE ty_user_csv
                         CHANGING et_return TYPE bapiret2_t.
-  DATA: ls_address  TYPE bapiaddr3,
+  DATA: lv_username TYPE bapibname-bapibname,
+        ls_address  TYPE bapiaddr3,
         ls_addressx TYPE bapiaddr3x,
         ls_password TYPE bapipwd,
         ls_pwd_x    TYPE bapipwdx.
 
   CLEAR: et_return, ls_address, ls_addressx, ls_password, ls_pwd_x.
 
+  lv_username = is_user-username.
+
   " Update Address - Full Name mapped into Last Name
-  ls_address-lastname  = is_user-fullname.
+  IF strlen( is_user-fullname ) > 40.
+    ls_address-lastname = is_user-fullname(40).
+  ELSE.
+    ls_address-lastname = is_user-fullname.
+  ENDIF.
   ls_addressx-lastname = 'X'.
 
   IF is_user-email IS NOT INITIAL.
@@ -606,7 +620,7 @@ FORM update_single_user USING    is_user   TYPE ty_user_csv
 
   CALL FUNCTION 'BAPI_USER_CHANGE'
     EXPORTING
-      username  = is_user-username
+      username  = lv_username
       address   = ls_address
       addressx  = ls_addressx
       password  = ls_password

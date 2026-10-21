@@ -7,6 +7,7 @@ Creates:
 3. Template_Roles_Derived_Org.xlsx & Template_Roles_Derived_Org_converted.csv
 4. Template_Roles_Composite.xlsx & Template_Roles_Composite_converted.csv
 5. Template_Users_Create.xlsx & Template_Users_Create_converted.csv
+6. Template_User_Assign_Role.xlsx & Template_User_Assign_Role_converted.csv
 
 Usage:
     python scripts/create_templates.py
@@ -428,6 +429,73 @@ def create_users_template():
         subprocess.run([sys.executable, script_path, xlsx_path], check=True)
 
 
+# --- 6. User Role Assignment Template (Template_User_Assign_Role.xlsx & CSV) ---
+def create_user_assign_role_template():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "User Asignment"
+
+    roles = [
+        "CR_COMMON",
+        "Z_FI_COMP_CFO_1000",
+        "Z_FI_COMP_ACCOUNTANT_1000",
+        "Z_FI_COMP_CONTROLLER_1000",
+        "Z_MM_PURCHASER_1000"
+    ]
+
+    # Row 1: Header (Col 1 is empty or 'Username', Cols 2..N are Role names)
+    ws.cell(1, 1, value="Username").font = header_font
+    ws.cell(1, 1).fill = header_fill
+    ws.cell(1, 1).alignment = left_align
+
+    for col_idx, rname in enumerate(roles, start=2):
+        c = ws.cell(1, col_idx, value=rname)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = center_align
+
+    # Sample user assignments
+    user_matrix = [
+        ("JOHND", ["CR_COMMON", "Z_FI_COMP_CFO_1000"]),
+        ("JANES", ["CR_COMMON", "Z_FI_COMP_ACCOUNTANT_1000"]),
+        ("ALEXJ", ["CR_COMMON", "Z_FI_COMP_CONTROLLER_1000"]),
+        ("MICHAELB", ["CR_COMMON", "Z_MM_PURCHASER_1000"]),
+        ("EMILYD", ["CR_COMMON"]),
+        ("DAVIDW", ["CR_COMMON", "Z_MM_PURCHASER_1000"]),
+        ("EMPTY_USER", []),  # Demonstrates N/A fallback when no roles are marked
+    ]
+
+    for row_idx, (uname, assigned_roles) in enumerate(user_matrix, start=2):
+        c_user = ws.cell(row_idx, 1, value=uname)
+        c_user.font = role_name_font
+        c_user.fill = role_name_fill
+        c_user.border = thin_border
+
+        for col_idx, rname in enumerate(roles, start=2):
+            val = "X" if rname in assigned_roles else ""
+            c_val = ws.cell(row_idx, col_idx, value=val)
+            c_val.font = data_font
+            c_val.alignment = center_align
+            c_val.border = thin_border
+
+    ws.column_dimensions['A'].width = 22
+    for col_letter in ['B', 'C', 'D', 'E', 'F']:
+        ws.column_dimensions[col_letter].width = 30
+
+    xlsx_path = os.path.join(OUT_DIR, "Template_User_Assign_Role.xlsx")
+    wb.save(xlsx_path)
+    print(f"[OK] Generated: {xlsx_path}")
+
+    # Convert using convert_users_assign_roles_excel
+    try:
+        from convert_users_assign_roles_excel import convert_users_assign_roles_excel
+        convert_users_assign_roles_excel(xlsx_path)
+    except ImportError:
+        import subprocess
+        script_path = os.path.join(os.path.dirname(__file__), "convert_users_assign_roles_excel.py")
+        subprocess.run([sys.executable, script_path, xlsx_path], check=True)
+
+
 # --- CLI Entrypoint ---
 if __name__ == "__main__":
     print("\n--- Generating SAP Role & User Templates ---")
@@ -436,4 +504,5 @@ if __name__ == "__main__":
     create_org_template()
     create_composite_template()
     create_users_template()
+    create_user_assign_role_template()
     print("\n[OK] All role & user templates and sample converted CSVs generated successfully.")

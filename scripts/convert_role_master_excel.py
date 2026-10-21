@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Convert Master Roles Matrix Excel file to flat row format for SAP Role upload.
-Filters Transaction Codes (TCodes) where cell value is 'Y'.
-If a role (column) has no 'Y' values, generates 1 row with TCode = 'N/A'.
+Filters Transaction Codes (TCodes) where cell value is marked with an indicator ('Y', 'y', 'X', 'x').
+If a role (column) has no indicator values, generates 1 row with TCode = 'N/A'.
 
 Output columns:
 1. Role Name
@@ -35,7 +35,7 @@ def convert_role_master_excel(input_path):
     Reads Master Role matrix Excel file and converts to flat CSV format.
     Row 1: Role Description (preserves exact spacing)
     Row 2: Role Name
-    Row 3+: TCodes (Column 1) and 'Y' indicators (Columns 2..N)
+    Row 3+: TCodes (Column 1) and indicator flags ('Y', 'y', 'X', 'x') (Columns 2..N)
     """
     # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
@@ -77,9 +77,9 @@ def convert_role_master_excel(input_path):
     roles_flat = []
     roles_with_tcodes = 0
     roles_without_tcodes = 0
-    no_y_role_names = []
+    no_flag_role_names = []
 
-    # --- Matrix Scanning & 'Y' Filtering ---
+    # --- Matrix Scanning & Flag Filtering ('Y', 'y', 'X', 'x') ---
     # Iterate over columns (each column starting from col 2 is a Master Role)
     for col in range(2, ws.max_column + 1):
         cell_desc_val = ws.cell(1, col).value
@@ -89,28 +89,29 @@ def convert_role_master_excel(input_path):
         if not role_name:
             continue
 
-        found_y = False
+        found_flag = False
         for row in range(3, ws.max_row + 1):
             tcode = str(ws.cell(row, 1).value or '').strip()
             val = str(ws.cell(row, col).value or '').strip().upper()
 
-            if val == 'Y' and tcode:
+            # Filter criteria: accepts Y, y, X, x
+            if val in ('Y', 'X') and tcode:
                 roles_flat.append({
                     'role_name': role_name,
                     'role_desc': role_desc,
                     'tcode': tcode
                 })
-                found_y = True
+                found_flag = True
 
-        # If no 'Y' was found for this role column, create 1 fallback row with TCode = 'N/A'
-        if not found_y:
+        # If no indicator ('Y'/'X') was found for this role column, create 1 fallback row with TCode = 'N/A'
+        if not found_flag:
             roles_flat.append({
                 'role_name': role_name,
                 'role_desc': role_desc,
                 'tcode': 'N/A'
             })
             roles_without_tcodes += 1
-            no_y_role_names.append(role_name)
+            no_flag_role_names.append(role_name)
         else:
             roles_with_tcodes += 1
 
@@ -130,8 +131,8 @@ def convert_role_master_excel(input_path):
     print(f"\n--- Execution Summary ---")
     print(f"[OK] Input File       : {input_path}")
     print(f"[OK] Total Roles      : {total_roles} ({roles_with_tcodes} with TCodes, {roles_without_tcodes} set to 'N/A')")
-    if no_y_role_names:
-        print(f"[INFO] Empty Roles    : {', '.join(no_y_role_names)} -> assigned 'N/A'")
+    if no_flag_role_names:
+        print(f"[INFO] Empty Roles    : {', '.join(no_flag_role_names)} -> assigned 'N/A'")
     print(f"[OK] Output CSV       : {out_csv_path} ({len(roles_flat)} data rows)")
 
 

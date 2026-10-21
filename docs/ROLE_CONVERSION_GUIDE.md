@@ -92,8 +92,8 @@ Business authorization matrices commonly lay out transaction codes along the ver
 * **Row 1**: Role Description (e.g., `GL Period Control`). Preserves exact whitespaces.
 * **Row 2**: Master Role Name / ID (e.g., `Z_FI_PERIOD_CONTROL`).
 * **Column 1 (Row 3+)**: SAP Transaction Code (`tcode`).
-* **Cells**: Mark with `Y` (or `y`) to assign the TCode to that role.
-* **Empty Columns / Roles without TCodes**: If a role has no `Y` marks, the script generates a single row with `TCode = 'N/A'`.
+* **Cells**: Mark with indicator flags: `Y`, `y`, `X`, or `x` (case-insensitive) to assign the TCode to that role.
+* **Empty Columns / Roles without TCodes**: If a role has no indicator marks (`Y`/`X`), the script generates a single row with `TCode = 'N/A'`.
 
 ### 1.2. Running the Conversion
 ```bash
@@ -214,8 +214,8 @@ Composite roles bundle multiple single/derived roles into operational job roles 
 * **Row 1**: Composite Role Description (e.g. `Chief Financial Officer - Entity 1000`). Preserves exact whitespaces.
 * **Row 2**: Composite Role Name (e.g. `Z_FI_COMP_CFO_1000`).
 * **Column 1 (Row 3+)**: Single/Derived Role Name (e.g. `Z_FI_PERIOD_CONTROL_1000`).
-* **Matrix Cells**: Mark with `'Y'` (case-insensitive) to include the derived role in the composite role.
-* **Empty Roles Fallback**: If a composite role column has no `'Y'` values, the script outputs 1 row with `Derived Role = 'N/A'` (e.g., `Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A`).
+* **Matrix Cells**: Mark with indicator flags: `'Y'`, `'y'`, `'X'`, or `'x'` (case-insensitive) to include the derived role in the composite role.
+* **Empty Roles Fallback**: If a composite role column has no indicator marks (`Y`/`X`), the script outputs 1 row with `Derived Role = 'N/A'` (e.g., `Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A`).
 
 | Derived Role / Composite Role Description | Chief Financial Officer - Entity 1000 | General Accountant - Entity 1000 | Empty Composite Role - Entity 1000 |
 | :--- | :--- | :--- | :--- |
