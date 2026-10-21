@@ -29,8 +29,9 @@
    - [7.4. Current Utility: Z_AUTH_ROLE_UPDATE_ORG](#74-current-utility-z_auth_role_update_org)
    - [7.5. Current Utility: Z_AUTH_ROLE_COMPOSITE](#75-current-utility-z_auth_role_composite)
    - [7.6. Current Utility: Z_AUTH_USER_CREATE](#76-current-utility-z_auth_user_create)
-   - [7.7. Python Preprocessing Pipeline Guide](#77-python-preprocessing-pipeline-guide)
-   - [7.8. Future Utilities Roadmap](#78-future-utilities-roadmap)
+   - [7.7. Current Utility: Z_AUTH_USER_ASSIGN_ROLE](#77-current-utility-z_auth_user_assign_role)
+   - [7.8. Python Preprocessing Pipeline Guide](#78-python-preprocessing-pipeline-guide)
+   - [7.9. Future Utilities Roadmap](#79-future-utilities-roadmap)
 8. [Security & Best Practices](#8-security--best-practices)
 9. [License](#9-license)
 
@@ -71,7 +72,8 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   ├── Z_AUTH_ROLE_DERIVE.md    # Derived role creation & inheritance documentation
 │   ├── Z_AUTH_ROLE_UPDATE_ORG.md# Organizational levels batch update documentation
 │   ├── Z_AUTH_TEST.md          # Technical analysis & SU53 remediation cockpit documentation
-│   └── Z_AUTH_USER_CREATE.md    # Batch user creation & update cockpit documentation
+│   ├── Z_AUTH_USER_CREATE.md    # Batch user creation & update cockpit documentation
+│   └── Z_AUTH_USER_ASSIGN_ROLE.md # Batch user role assignment cockpit documentation
 ├── excel-templates/            # Anonymized templates & sample data for role upload
 │   ├── Org_Levels.csv          # Standard SAP 71 Organizational Level definitions
 │   ├── Template_Roles_Master.xlsx
@@ -83,13 +85,16 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   ├── Template_Roles_Composite.xlsx
 │   ├── Template_Roles_Composite_converted.csv
 │   ├── Template_Users_Create.xlsx
-│   └── Template_Users_Create_converted.csv
+│   ├── Template_Users_Create_converted.csv
+│   ├── Template_User_Assign_Role.xlsx
+│   └── Template_User_Assign_Role_converted.csv
 ├── scripts/
 │   ├── convert_role_master_excel.py # Preprocessing script: converts matrix Excel to row format CSV
 │   ├── convert_role_derived_excel.py # Converts derived role creation Excel to flat CSV format
 │   ├── convert_role_org_excel.py    # Converts derived role org matrix to flat CSV referencing Org_Levels.csv
 │   ├── convert_role_composite_excel.py # Converts composite roles matrix to flat CSV format
 │   ├── convert_users_excel.py       # Converts user creation Excel to normalized CSV with secure passwords
+│   ├── convert_users_assign_roles_excel.py # Converts user role assignment matrix to flat CSV format
 │   ├── generate_org_levels_csv.py   # Generates standard Org_Levels.csv reference
 │   └── deploy.js               # CLI deployment engine via MCP ADT
 ├── src/
@@ -98,7 +103,8 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   ├── z_auth_role_derive.prog.abap     # Batch Derived Role Creation & Inheritance Synchronization
 │   ├── z_auth_role_update_org.prog.abap # Batch Organizational Levels Maintenance tool
 │   ├── z_auth_test.prog.abap            # ABAP operational cockpit source code
-│   └── z_auth_user_create.prog.abap     # Batch SAP User Creation & Update tool
+│   ├── z_auth_user_create.prog.abap     # Batch SAP User Creation & Update tool
+│   └── z_auth_user_assign_role.prog.abap # Batch User-Role Assignment tool
 ├── .sap.env.example            # SAP ADT connection template (never commit .sap.env)
 ├── mcp-config.example.json     # MCP server configuration snippet
 ├── package.json                # Project metadata & npm deploy scripts
@@ -332,6 +338,7 @@ npm run deploy:derive     # Deploys Z_AUTH_ROLE_DERIVE
 npm run deploy:org        # Deploys Z_AUTH_ROLE_UPDATE_ORG
 npm run deploy:composite  # Deploys Z_AUTH_ROLE_COMPOSITE
 npm run deploy:user       # Deploys Z_AUTH_USER_CREATE
+npm run deploy:assign     # Deploys Z_AUTH_USER_ASSIGN_ROLE
 
 # Or pass custom arguments:
 npm run deploy -- Z_AUTH_TEST
@@ -461,7 +468,24 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - **Safe Update Handling**: Skips existing users with a Yellow LED (`@09@`) by default; in-place update and password reset can be explicitly enabled via `p_upd = 'X'` and `p_pwd = 'X'`.
   - **Interactive ALV Cockpit**: Features formatted LED status indicators (`@08@` Green, `@09@` Yellow, `@0A@` Red), comprehensive execution messages, and one-click hotspot navigation on the **Username** column directly into transaction `SU01`.
 
-### 7.7. Python Preprocessing Pipeline Guide
+### 7.7. Current Utility: Z_AUTH_USER_ASSIGN_ROLE
+
+- **Source Code**: [`src/z_auth_user_assign_role.prog.abap`](src/z_auth_user_assign_role.prog.abap)
+- **Documentation**: [`docs/Z_AUTH_USER_ASSIGN_ROLE.md`](docs/Z_AUTH_USER_ASSIGN_ROLE.md) (Complete technical reference & workflow)
+- **Companion Script**: [`scripts/convert_users_assign_roles_excel.py`](scripts/convert_users_assign_roles_excel.py)
+- **CSV Template**: [`excel-templates/Template_User_Assign_Role_converted.csv`](excel-templates/Template_User_Assign_Role_converted.csv)
+- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
+- **Purpose**: Batch User-to-Role Assignment Cockpit from CSV (`.csv`).
+- **Workflow & Key Features**:
+  - **Upload Format**: Reads 2-column flat CSV format (`Username`, `Role`), preprocessed and extracted from role assignment matrices via `convert_users_assign_roles_excel.py`.
+  - **Multi-Role Aggregation**: Automatically groups and consolidates multiple role entries per user into a single structured assignment list.
+  - **Repository & User Validation**: Validates user existence against table `USR02` and role definitions against `AGR_DEFINE` (supporting single roles, derived roles, and composite roles). Missing roles are isolated into a dedicated `MISSING_ROLES` column with Yellow LED (`@09@`).
+  - **Safe Append Mode**: Default **Append Mode (`p_append = 'X'`)** queries `AGR_USERS` for currently assigned direct roles (`COL_FLAG = space`) and merges them with the new roles, safely preserving existing user authorizations. Full replace mode can be activated by unchecking the option.
+  - **Graceful Empty Handling (`N/A`)**: Gracefully handles users without assigned roles (`N/A`) with a Warning status (`@09@`), avoiding unintended error blocks.
+  - **Direct Assignment & Composite Expansion**: Automatically handles composite roles: assigning a composite role prompts SAP to provision and manage all underlying single roles.
+  - **Interactive ALV Cockpit**: Features formatted LED status indicators (`@08@` Green, `@09@` Yellow, `@0A@` Red), counts of CSV vs. valid vs. assigned roles, and one-click hotspot navigation on the **Username** column directly into transaction `SU01`.
+
+### 7.8. Python Preprocessing Pipeline Guide
 
 - **Documentation**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
 - **Purpose**: Complete guide on preparing Excel matrix sheets, converting them to normalized 3-column CSVs, and validating them before uploading to the SAP ABAP programs.
@@ -471,10 +495,11 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - `npm run convert:role:org`: Converts Derived Org Matrix (`.xlsx`) referencing `excel-templates/Org_Levels.csv` to `_converted.csv`.
   - `npm run convert:role:composite`: Converts Composite Roles Matrix (`.xlsx`) to `_converted.csv`.
   - `npm run convert:role:all`: Runs all role matrix converters sequentially.
-  - `npm run convert:user:create`: Converts User Creation Excel (`.xlsx`) to normalized CSV with auto-generated initial passwords and (+<country>)<number> phone numbers.
+  - `npm run convert:user:create`: Converts User Creation Excel (`.xlsx`) to normalized CSV with auto-generated initial passwords and (<country>)<number> phone numbers.
+  - `npm run convert:user:assign`: Converts User Role Assignment Matrix (`.xlsx`) to flat `Username,Role` CSV format.
 - **Smart Directory Resolution**: Scripts prioritize real files in `excel-working/` (git-ignored) first, then fallback to `excel-templates/`, preserving confidential corporate data.
 
-### 7.8. Future Utilities Roadmap
+### 7.9. Future Utilities Roadmap
 
 Additional ABAP utilities for SAP Basis will be developed and added to this repository:
 - **Authorization & User Governance**: Role assignment analyzer, dormant user cleanup, and unassigned profile auditing.

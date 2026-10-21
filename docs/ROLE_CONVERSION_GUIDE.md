@@ -9,6 +9,7 @@ This guide explains how to prepare business authorization matrices in Excel and 
 3. **Organizational Levels**: `convert_role_org_excel.py` ➔ Import into **`Z_AUTH_ROLE_UPDATE_ORG`**
 4. **Composite Roles**: `convert_role_composite_excel.py` ➔ Import into **`Z_AUTH_ROLE_COMPOSITE`**
 5. **User Creation**: `convert_users_excel.py` ➔ Import into **`Z_AUTH_USER_CREATE`**
+6. **User Role Assignment**: `convert_users_assign_roles_excel.py` ➔ Import into **`Z_AUTH_USER_ASSIGN_ROLE`**
 
 ---
 
@@ -45,6 +46,13 @@ flowchart TD
         B5 --> C5["Template_Users_Create_converted.csv\n(Username, Password, Name, Email, Phone, Dept, Func)"]
         C5 --> D5["ABAP Program: Z_AUTH_USER_CREATE\nCreates & Updates SAP Users via BAPI"]
     end
+
+    subgraph S6["6. User Role Assignment Matrix"]
+        A6["Template_User_Assign_Role.xlsx\n(Users in Col 1, Roles in Row 1, X/Y flags)"] --> B6["convert_users_assign_roles_excel.py\n(or npm run convert:user:assign)"]
+        C6["Template_User_Assign_Role_converted.csv\n(Username, Role)"]
+        B6 --> C6
+        C6 --> D6["ABAP Program: Z_AUTH_USER_ASSIGN_ROLE\nAssigns Roles via BAPI_USER_ACTGROUPS_ASSIGN"]
+    end
 ```
 
 ---
@@ -68,6 +76,9 @@ npm run convert:role:composite
 
 # 5. Convert User Creation List
 npm run convert:user:create
+
+# 6. Convert User Role Assignment Matrix
+npm run convert:user:assign
 ```
 
 > [!TIP]
@@ -277,9 +288,9 @@ Corporate user list collected during system implementation:
    * Starts with an uppercase letter (`A-Z`), includes lowercase letters, digits, and safe special characters (`!@#$%*-_=+`), avoiding characters that interfere with CSV delimiters.
    * Guarantees no 3 identical consecutive characters and does not contain the username.
 3. **Phone Number Normalization**:
-   * Standardizes all phone numbers to unified format `(+<CountryCode>)<Number>` (e.g. `(+84)985176887`, `(+996)500040737`).
-   * Automatically recognizes Vietnam (`+84`) and Kyrgyzstan (`+996`) local dialing formats, strips leading zeros from the subscriber number, and eliminates spaces, dashes, parentheses, and dots.
-   * Format avoids formula errors when CSV files are opened in Microsoft Excel.
+   * Standardizes all phone numbers to unified format `(<CountryCode>)<Number>` (e.g. `(84)985176887`, `(996)500040737`) without the `+` sign for SAP compatibility.
+   * Automatically recognizes Vietnam (`84`) and Kyrgyzstan (`996`) local dialing formats, strips leading zeros from the subscriber number, and eliminates spaces, dashes, parentheses, and dots.
+   * Format avoids formula errors when CSV files are opened in Microsoft Excel and prevents SAP address creation errors.
 4. **Department & Function Cleanup**:
    * Corrects capitalization (e.g., `operation` ➔ `Operation`).
    * Corrects typos and title-casing (e.g., `Planing Director` ➔ `Planning Director`, `Civil engineer` ➔ `Civil Engineer`, `Qs` ➔ `Quantity Surveyor`).
@@ -297,12 +308,56 @@ python scripts/convert_users_excel.py excel-working/Users_Create.xlsx
 Produces UTF-8 (with BOM) encoded CSV ready for batch user creation in SAP ABAP via `BAPI_USER_CREATE1`:
 ```csv
 Username,Initial Password,Full Name,Email,Phone No.,Department,Function
-JOHND,N8l0%GO_UVkK,John Doe,johnd@company.com,(+84)981234567,Finance & Accounting,Finance Controller
-JANES,D6tN7$WYDCd#,Jane Smith,janes@company.com,(+84)971888999,Finance & Accounting,Senior Accountant
-ALEXJ,Xh5R%#y0z#TO,Alex Johnson,alexj@company.com,(+996)555123456,PMU,Project Director
-MICHAELB,Z=+36kLg5SBp,Michael Brown,michaelb@company.com,(+996)500654321,PMU,Civil Engineer
-EMILYD,Z=0Yga@eS3z6,Emily Davis,emilyd,,Administration,HR Specialist
-DAVIDW,Mr0E=#65Hy_c,David Wilson,davidw@company.com,(+84)987654321,Operation,OM
+JOHND,PVy6Dj2+1n$s,John Doe,johnd@company.com,(84)981234567,Finance & Accounting,Finance Controller
+JANES,M*6SW3-fyNiS,Jane Smith,janes@company.com,(84)971888999,Finance & Accounting,Senior Accountant
+ALEXJ,W+cKV89N-kvR,Alex Johnson,alexj@company.com,(996)555123456,PMU,Project Director
+MICHAELB,ZM!0oHN!92h2,Michael Brown,michaelb@company.com,(996)500654321,PMU,Civil Engineer
+EMILYD,P9*a!Lhib9OU,Emily Davis,emilyd,,Administration,HR Specialist
+DAVIDW,YVi*5T!Ss4J_,David Wilson,davidw@company.com,(84)987654321,Operation,OM
+```
+
+---
+
+## 6. User Role Assignment Preprocessing (`convert_users_assign_roles_excel.py`)
+
+### 6.1. Excel Input Format (`Template_User_Assign_Role.xlsx` / `User_Assign_Role.xlsx`)
+Wide assignment matrix mapping system users to single or composite business roles:
+
+* **Sheet Name**: `User Asignment` (or `Assignment`, or active sheet).
+* **Row 1**: Role Names (Columns 2..N, e.g. `CR_COMMON`, `CRPS00_PRJ_COST_CTRL_1101`).
+* **Column 1 (Rows 2..N)**: Username (e.g. `HUNGDV`, `NURZATS`, `JOHND`).
+* **Matrix Cells**: Mark with indicator flags: `Y`, `y`, `X`, or `x` (case-insensitive) to assign the role to that user.
+
+| Username | CR_COMMON | Z_FI_COMP_CFO_1000 | Z_FI_COMP_ACCOUNTANT_1000 | Z_FI_COMP_CONTROLLER_1000 | Z_MM_PURCHASER_1000 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `JOHND` | **X** | **X** | | | |
+| `JANES` | **X** | | **X** | | |
+| `ALEXJ` | **X** | | | **X** | |
+| `MICHAELB` | **X** | | | | **X** |
+| `EMPTY_USER` | | | | | |
+
+### 6.2. Running the Conversion
+```bash
+# Automatic candidate lookup (checks excel-working/ then excel-templates/):
+python scripts/convert_users_assign_roles_excel.py
+
+# Or specify a custom file:
+python scripts/convert_users_assign_roles_excel.py excel-working/User_Assign_Role.xlsx
+```
+
+### 6.3. Output CSV Format (`*_converted.csv`)
+Produces UTF-8 (with BOM) encoded 2-column CSV ready for direct upload into SAP role assignment utilities:
+```csv
+Username,Role
+JOHND,CR_COMMON
+JOHND,Z_FI_COMP_CFO_1000
+JANES,CR_COMMON
+JANES,Z_FI_COMP_ACCOUNTANT_1000
+ALEXJ,CR_COMMON
+ALEXJ,Z_FI_COMP_CONTROLLER_1000
+MICHAELB,CR_COMMON
+MICHAELB,Z_MM_PURCHASER_1000
+EMPTY_USER,N/A
 ```
 
 ---

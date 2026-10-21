@@ -47,6 +47,7 @@ TYPES: BEGIN OF ty_alv_result,
          status     TYPE char4,               " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
          action     TYPE char12,              " CREATED / UPDATED / SIM_NEW / SIM_UPD / SKIPPED / ERROR
          username   TYPE bapibname-bapibname, " SAP User ID (Hotspot to SU01)
+         password   TYPE bapipwd-bapipwd,     " Initial Password
          fullname   TYPE string,              " Last Name (Full Name)
          email      TYPE bapiaddr3-e_mail,
          phone      TYPE bapiaddr3-tel1_numbr,
@@ -380,7 +381,22 @@ FORM process_users.
   LOOP AT gt_users INTO DATA(ls_user).
     CLEAR: ls_res, lt_return, lv_errmsg, lv_has_err.
 
+    " Validate email: if invalid, automatically clear it
+    DATA: lv_clean_email TYPE bapiaddr3-e_mail,
+          lv_email_valid TYPE abap_bool.
+
+    IF ls_user-email IS NOT INITIAL.
+      PERFORM validate_email USING ls_user-email
+                             CHANGING lv_clean_email lv_email_valid.
+      IF lv_email_valid = abap_false.
+        CLEAR ls_user-email.
+      ELSE.
+        ls_user-email = lv_clean_email.
+      ENDIF.
+    ENDIF.
+
     ls_res-username   = ls_user-username.
+    ls_res-password   = ls_user-password.
     ls_res-fullname   = ls_user-fullname.
     ls_res-email      = ls_user-email.
     ls_res-phone      = ls_user-phone.
@@ -632,6 +648,48 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *& Form format_return_messages
 *&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Form validate_email
+*&---------------------------------------------------------------------*
+FORM validate_email USING    iv_email    TYPE bapiaddr3-e_mail
+                    CHANGING cv_email    TYPE bapiaddr3-e_mail
+                             ev_is_valid TYPE abap_bool.
+  DATA: ls_addr_in TYPE sx_address.
+  CLEAR: cv_email, ev_is_valid.
+
+  IF iv_email IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  " Syntactic basic checks: must contain '@' and domain must contain '.'
+  IF iv_email NA '@' OR iv_email NA '.'.
+    RETURN.
+  ENDIF.
+
+  ls_addr_in-type    = 'INT'.
+  ls_addr_in-address = iv_email.
+
+  CALL FUNCTION 'SX_INTERNET_ADDRESS_TO_NORMAL'
+    EXPORTING
+      address_unstruct    = ls_addr_in
+    EXCEPTIONS
+      error_address_type  = 1
+      error_address       = 2
+      error_group_address = 3
+      OTHERS              = 4.
+
+  IF sy-subrc = 0.
+    cv_email    = iv_email.
+    ev_is_valid = abap_true.
+  ELSE.
+    CLEAR cv_email.
+    ev_is_valid = abap_false.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form format_return_messages
+*&---------------------------------------------------------------------*
 FORM format_return_messages USING    it_return  TYPE bapiret2_t
                             CHANGING ev_message TYPE string
                                      ev_error   TYPE abap_bool.
@@ -729,6 +787,12 @@ FORM display_alv_results.
       lo_col->set_medium_text( 'SAP User' ).
       lo_col->set_long_text( 'SAP User (Click to open SU01)' ).
       lo_col->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+      " Initial Password Column
+      lo_col ?= lo_cols->get_column( 'PASSWORD' ).
+      lo_col->set_short_text( 'Password' ).
+      lo_col->set_medium_text( 'Initial Password' ).
+      lo_col->set_long_text( 'Initial Logon Password' ).
 
       " Full Name (Last Name)
       lo_col ?= lo_cols->get_column( 'FULLNAME' ).

@@ -8,7 +8,7 @@ Key transformations:
 2. Column 2: 'Initial Password' - generated cryptographically secure 12-character password compliant with SAP S/4HANA 2023.
 3. Column 3: 'Full Name' - trimmed and normalized.
 4. Column 4: 'Email' - trimmed.
-5. Column 5: 'Phone No.' - standardized to unified format (+<CountryCode>)<Number> (e.g. (+84)985176887).
+5. Column 5: 'Phone No.' - standardized to unified format (<CountryCode>)<Number> (e.g. (84)985176887) without '+' sign for SAP compatibility.
 6. Column 6: 'Department' - typo and casing corrections.
 7. Column 7: 'Function' - typo, casing, and title-case corrections.
 
@@ -107,9 +107,9 @@ def generate_sap_password(length=12, username=""):
 
 def normalize_phone(raw_phone):
     """
-    Normalizes phone numbers to standard format (+<CountryCode>)<Number> for SAP upload.
-    Handles Vietnam (+84) and Kyrgyzstan (+996) prefixes.
-    Ensures format (+<mã quốc gia>)<số điện thoại>, stripping leading zeros from subscriber number.
+    Normalizes phone numbers to standard format (<CountryCode>)<Number> without '+' sign for SAP.
+    Handles Vietnam (84) and Kyrgyzstan (996) prefixes.
+    Ensures format (<mã quốc gia>)<số điện thoại>, stripping leading zeros from subscriber number.
     """
     if raw_phone is None:
         return ""
@@ -166,7 +166,7 @@ def normalize_phone(raw_phone):
     # Remove any leading zeros from subscriber number
     sub_number = sub_number.lstrip('0')
 
-    return f"(+{country_code}){sub_number}"
+    return f"({country_code}){sub_number}"
 
 
 def clean_department(raw_dept):
