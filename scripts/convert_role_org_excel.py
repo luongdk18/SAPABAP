@@ -9,16 +9,14 @@ For each Org Level, loops through all Derived Roles to output:
 - Org Level Variable ($VARBL)
 - Org Value
 
-Outputs plain unformatted Excel sheet and CSV file:
-- <original_name>_converted.xlsx
-- <original_name>_converted.csv
+Outputs CSV file (_converted.csv) for SAP import.
 
 Usage:
-    python scripts/convert_derived_role_org_excel.py [input_excel_file] [org_levels_csv_file]
+    python scripts/convert_role_org_excel.py [input_excel_file] [org_levels_csv_file]
 
 Example:
-    python scripts/convert_derived_role_org_excel.py FICO_Roles_Derived_Org.xlsx Org_Levels.csv
-    -> Outputs: FICO_Roles_Derived_Org_converted.xlsx and FICO_Roles_Derived_Org_converted.csv
+    python scripts/convert_role_org_excel.py Roles_Derived_Org.xlsx Org_Levels.csv
+    -> Outputs: Roles_Derived_Org_converted.csv
 """
 
 import os
@@ -144,7 +142,7 @@ def resolve_org_variable(header_raw, org_levels_list, by_var, by_desc):
 
     return None, "Unmapped"
 
-def convert_derived_role_org_excel(input_path, org_levels_path=None):
+def convert_role_org_excel(input_path, org_levels_path=None):
     # Resolve input path
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -165,9 +163,7 @@ def convert_derived_role_org_excel(input_path, org_levels_path=None):
         else:
             org_levels_path = "Org_Levels.csv"
 
-    out_excel_name = f"{stem}_converted.xlsx"
     out_csv_name = f"{stem}_converted.csv"
-    out_excel_path = os.path.join(dir_name, out_excel_name) if dir_name else out_excel_name
     out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
 
     # Load Org_Levels reference
@@ -247,25 +243,7 @@ def convert_derived_role_org_excel(input_path, org_levels_path=None):
         if col_emitted > 0:
             cols_processed += 1
 
-    # 1. Export unformatted Excel
-    try:
-        wb_out = openpyxl.Workbook()
-        ws_out = wb_out.active
-        ws_out.title = "Role_Org_Rows"
-
-        # Header
-        ws_out.append(["Role Name", "Org Level Variable", "Org Value"])
-
-        # Data rows
-        for item in flat_rows:
-            ws_out.append([item['role_name'], item['org_var'], item['org_val']])
-
-        wb_out.save(out_excel_path)
-    except PermissionError:
-        print(f"[ERROR] Permission denied when writing to '{out_excel_path}'. Please close the file in Excel and try again.")
-        sys.exit(1)
-
-    # 2. Export CSV (UTF-8 with BOM)
+    # Export CSV (UTF-8 with BOM)
     try:
         with open(out_csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
@@ -279,7 +257,6 @@ def convert_derived_role_org_excel(input_path, org_levels_path=None):
     print("\n--- Execution Summary ---")
     print(f"[OK] Input File       : {input_path}")
     print(f"[OK] Reference File   : {org_levels_path}")
-    print(f"[OK] Output Excel     : {out_excel_path} (Sheet: 'Role_Org_Rows', {len(flat_rows)} data rows, unformatted)")
     print(f"[OK] Output CSV       : {out_csv_path} ({len(flat_rows)} data rows)")
     print(f"[OK] Processed Orgs   : {cols_processed} Org Level column(s) populated")
     print(f"[OK] Total Records    : {len(flat_rows)} flat rows generated")
@@ -287,6 +264,11 @@ def convert_derived_role_org_excel(input_path, org_levels_path=None):
         print(f"[INFO] Empty Values   : {empty_cells_skipped} empty/null cell(s) skipped")
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+        print("Usage: python scripts/convert_role_org_excel.py [path_to_excel_file] [org_levels_csv_file]")
+        print("Example: python scripts/convert_role_org_excel.py Roles_Derived_Org.xlsx Org_Levels.csv")
+        sys.exit(0)
+
     target_excel = None
     target_org_csv = None
 
@@ -296,12 +278,19 @@ if __name__ == "__main__":
         target_org_csv = sys.argv[2]
 
     if not target_excel:
-        default_file = "FICO_Roles_Derived_Org.xlsx"
-        if os.path.exists(default_file):
-            target_excel = default_file
+        candidates = [
+            os.path.join("excel-working", "FICO_Roles_Derived_Org.xlsx"),
+            os.path.join("excel-templates", "Template_Roles_Derived_Org.xlsx"),
+            "FICO_Roles_Derived_Org.xlsx",
+            "Roles_Derived_Org.xlsx"
+        ]
+        for cand in candidates:
+            if os.path.exists(cand):
+                target_excel = cand
+                break
         else:
-            print("Usage: python scripts/convert_derived_role_org_excel.py <path_to_excel_file> [org_levels_csv_file]")
-            print("Example: python scripts/convert_derived_role_org_excel.py FICO_Roles_Derived_Org.xlsx Org_Levels.csv")
+            print("Usage: python scripts/convert_role_org_excel.py <path_to_excel_file> [org_levels_csv_file]")
+            print("Example: python scripts/convert_role_org_excel.py Roles_Derived_Org.xlsx Org_Levels.csv")
             sys.exit(1)
 
-    convert_derived_role_org_excel(target_excel, target_org_csv)
+    convert_role_org_excel(target_excel, target_org_csv)

@@ -61,14 +61,24 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   └── logo.svg                # Repository brand logo
 ├── docs/
 │   └── Z_AUTH_TEST.md          # Technical analysis & architecture documentation
+├── excel-templates/            # Anonymized templates & sample data for role upload
+│   ├── Template_Roles_Master.xlsx
+│   ├── Template_Roles_Master_converted.csv
+│   ├── Template_Roles_Derived.xlsx
+│   ├── Template_Roles_Derived_converted.csv
+│   ├── Template_Roles_Derived_Org.xlsx
+│   └── Template_Roles_Derived_Org_converted.csv
 ├── scripts/
-│   ├── convert_master_role_excel.py # Preprocessing script: converts matrix Excel to row format
-│   ├── convert_derived_role_create_excel.py # Converts derived role creation Excel to flat CSV format
-│   ├── convert_derived_role_org_excel.py    # Converts derived role org matrix to flat CSV referencing Org_Levels.csv
+│   ├── convert_role_master_excel.py # Preprocessing script: converts matrix Excel to row format CSV
+│   ├── convert_role_derived_excel.py # Converts derived role creation Excel to flat CSV format
+│   ├── convert_role_org_excel.py    # Converts derived role org matrix to flat CSV referencing Org_Levels.csv
+│   ├── generate_org_levels_csv.py   # Generates standard Org_Levels.csv reference
 │   └── deploy.js               # CLI deployment engine via MCP ADT
 ├── src/
-│   ├── z_auth_role_create.prog.abap # Batch Role Creation & Menu Structuring tool
-│   └── z_auth_test.prog.abap   # ABAP operational cockpit source code
+│   ├── z_auth_role_create.prog.abap     # Batch Master Role Creation & Menu Structuring tool
+│   ├── z_auth_role_derive.prog.abap     # Batch Derived Role Creation & Inheritance Synchronization
+│   ├── z_auth_role_update_org.prog.abap # Batch Organizational Levels Maintenance tool
+│   └── z_auth_test.prog.abap            # ABAP operational cockpit source code
 ├── .sap.env.example            # SAP ADT connection template (never commit .sap.env)
 ├── mcp-config.example.json     # MCP server configuration snippet
 ├── package.json                # Project metadata & npm deploy scripts
@@ -295,10 +305,14 @@ Deployment is explicitly designed to be **selective per program**—you choose e
 
 ### Option 1: Direct CLI by Program Name
 ```bash
-# Specify the program name
-npm run deploy -- Z_AUTH_TEST
+# Convenient npm scripts defined in package.json:
+npm run deploy:auth     # Deploys Z_AUTH_TEST
+npm run deploy:role     # Deploys Z_AUTH_ROLE_CREATE
+npm run deploy:derive   # Deploys Z_AUTH_ROLE_DERIVE
+npm run deploy:org      # Deploys Z_AUTH_ROLE_UPDATE_ORG
 
-# Or pass file path directly
+# Or pass custom arguments:
+npm run deploy -- Z_AUTH_TEST
 node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST
 ```
 
@@ -347,10 +361,10 @@ A primary objective of this repository is to build and maintain open-source ABAP
 ### 7.2. Current Utility: Z_AUTH_ROLE_CREATE
 
 - **Source Code**: [`src/z_auth_role_create.prog.abap`](src/z_auth_role_create.prog.abap)
-- **Companion Script**: [`scripts/convert_master_role_excel.py`](scripts/convert_master_role_excel.py)
-- **Purpose**: Batch PFCG Master Single Role Creation, Menu Folder Generation, and Authorization Profile Build from Excel (`.xlsx`) or CSV.
+- **Companion Script**: [`scripts/convert_role_master_excel.py`](scripts/convert_role_master_excel.py)
+- **Purpose**: Batch PFCG Master Single Role Creation, Menu Folder Generation, and Authorization Profile Build from CSV (`.csv`).
 - **Workflow & Key Features**:
-  - **Excel Preprocessing**: `convert_master_role_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized row-based format (`Role Name`, `Role Description`, `TCode`). If a master role column has no TCodes marked with 'Y', it creates a single row with `TCode = 'N/A'`.
+  - **Excel Preprocessing**: `convert_role_master_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized CSV format (`Role Name`, `Role Description`, `TCode`). If a master role column has no TCodes marked with 'Y', it creates a single row with `TCode = 'N/A'`.
   - **Preserves Exact Spacing**: Role Description and Menu Folders preserve original whitespaces without stripping or condensing.
   - **Clean PFCG Descriptions**: Automatically cleans up default SAP generated comment lines (`"The role was created automatically and can be processed manually."`) from `AGR_TEXTS`.
   - **Master Role Architecture (Org Levels Defaulted to `-`)**:
@@ -365,9 +379,10 @@ A primary objective of this repository is to build and maintain open-source ABAP
 ### 7.3. Current Utility: Z_AUTH_ROLE_DERIVE
 
 - **Source Code**: [`src/z_auth_role_derive.prog.abap`](src/z_auth_role_derive.prog.abap)
-- **Purpose**: Batch PFCG Derived Role Creation & Inheritance Synchronization from Excel (`.xlsx`) or CSV (`.csv`).
+- **Companion Script**: [`scripts/convert_role_derived_excel.py`](scripts/convert_role_derived_excel.py)
+- **Purpose**: Batch PFCG Derived Role Creation & Inheritance Synchronization from CSV (`.csv`).
 - **Workflow & Key Features**:
-  - **Upload Format**: Reads mapping spreadsheets (`Master Role`, `Derived Role`, `Derived Role Description`).
+  - **Upload Format**: Reads mapping CSV file (`Master Role`, `Derived Role`, `Derived Role Description`), generated via `convert_role_derived_excel.py`.
   - **Master Role Validation**: Validates that the imparting Master Role exists in SAP (`AGR_DEFINE`) and is a single role.
   - **Derived Role Creation**: Calls `PRGN_RFC_CREATE_AGR_MULTIPLE` to generate the derived role shell with `PARENT_AGR = master_role` and custom description without automatic comments.
   - **Authorization Inheritance & Profile Generation**: Calls `PRGN_RFC_CREATE_DERIVATION` to synchronize all authorization data from the Master Role and compile the authorization profile.
@@ -377,10 +392,10 @@ A primary objective of this repository is to build and maintain open-source ABAP
 ### 7.4. Current Utility: Z_AUTH_ROLE_UPDATE_ORG
 
 - **Source Code**: [`src/z_auth_role_update_org.prog.abap`](src/z_auth_role_update_org.prog.abap)
-- **Companion Script**: [`scripts/convert_derived_role_org_excel.py`](scripts/convert_derived_role_org_excel.py)
-- **Purpose**: Batch Update Organizational Levels in PFCG Roles from Excel (`.xlsx`) or CSV (`.csv`).
+- **Companion Script**: [`scripts/convert_role_org_excel.py`](scripts/convert_role_org_excel.py)
+- **Purpose**: Batch Update Organizational Levels in PFCG Roles from CSV (`.csv`).
 - **Workflow & Key Features**:
-  - **Upload Format**: Reads 3-column flat format (`Role Name`, `Org Level Variable`, `Org Value`), e.g., derived from matrix sheets via `convert_derived_role_org_excel.py`.
+  - **Upload Format**: Reads 3-column flat CSV format (`Role Name`, `Org Level Variable`, `Org Value`), generated from matrix sheets via `convert_role_org_excel.py`.
   - **Selective Role Org Maintenance**: Matches Org Level variables (`$BUKRS`, `$KOKRS`, `$ERKRS`, `$PRCTR`, etc.) against existing entries in `AGR_1252`, updating only the fields relevant to each role's authorization scope.
   - **Field Synchronization (`AGR_1251`)**: Automatically synchronizes authorization fields mapped via table `USORG` to ensure consistency between Org Level headers and concrete field authorization values.
   - **Profile Regeneration**: Calls `SUPRN_DARK_MANIPULATE_PROFILE` without dialog to regenerate the authorization profile in background mode.

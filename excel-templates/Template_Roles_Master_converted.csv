@@ -1,0 +1,19 @@
+﻿Role Name,Role Description,TCode
+Z_FI_PERIOD_CONTROL,GL Period Control,OB52
+Z_FI_PERIOD_CONTROL,GL Period Control,S_ALR_87003642
+Z_FI_GL_MASTER_MAINT,GL Master Data Maintenance,FS00
+Z_FI_GL_MASTER_MAINT,GL Master Data Maintenance,FSP0
+Z_FI_GL_MASTER_MAINT,GL Master Data Maintenance,FSS0
+Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB01
+Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB02
+Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB03
+Z_FI_JOURNAL_POST,General Ledger Journal Posting,F-02
+Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB50
+Z_FI_JOURNAL_DISPLAY,General Ledger Journal Display,FB03
+Z_FI_JOURNAL_DISPLAY,General Ledger Journal Display,FBL3N
+Z_FI_JOURNAL_DISPLAY,General Ledger Journal Display,FS10N
+Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,FB02
+Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,FB03
+Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,FB60
+Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,F-53
+Z_FI_GL_REPORTS_EMPTY,General Ledger Custom Reporting,N/A

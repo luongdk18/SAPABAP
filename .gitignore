@@ -5,6 +5,9 @@
 !.env.example
 !.sap.env.example
 
+# Confidential / Real Data directories (NEVER commit!)
+excel-working/
+
 # Node.js
 node_modules/
 npm-debug.log*

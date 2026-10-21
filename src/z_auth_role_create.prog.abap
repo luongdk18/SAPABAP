@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report Z_AUTH_ROLE_CREATE
 *&---------------------------------------------------------------------*
-*& Purpose: Batch Role Creation & Menu Structuring from Excel / CSV
+*& Purpose: Batch Role Creation & Menu Structuring from CSV
 *& Description:
 *&   Uploads role definitions containing Role Name, Role Description,
 *&   and Transaction Codes (TCodes). Groups multiple TCodes into single
@@ -9,10 +9,10 @@
 *&   Description, nests all assigned TCodes under this folder, and
 *&   automatically generates the authorization profiles.
 *&
-*& File format (Excel .xlsx or CSV .csv):
-*&   Col 1: Role Name        (e.g., LRFI01_PERIOD_CONTROL)
-*&   Col 2: Role Description (e.g., GL Period Control)
-*&   Col 3: TCode            (e.g., S_ALR_87003642)
+*& File format (CSV .csv):
+*&   Col 1: Role Name        (e.g., Z_FI_GL_ACCOUNTING)
+*&   Col 2: Role Description (e.g., General Ledger Accounting Role)
+*&   Col 3: TCode            (e.g., FB01, FS00, or N/A)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
@@ -66,14 +66,6 @@ DATA: gt_raw_rows TYPE STANDARD TABLE OF ty_raw_row,
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b_file WITH FRAME TITLE b_tit1.
   PARAMETERS: p_file TYPE localfile OBLIGATORY.
-  SELECTION-SCREEN BEGIN OF LINE.
-    PARAMETERS: p_auto RADIOBUTTON GROUP grp1 DEFAULT 'X'.
-    SELECTION-SCREEN COMMENT 3(20) c_auto FOR FIELD p_auto.
-    PARAMETERS: p_xlsx RADIOBUTTON GROUP grp1.
-    SELECTION-SCREEN COMMENT 26(15) c_xlsx FOR FIELD p_xlsx.
-    PARAMETERS: p_csv  RADIOBUTTON GROUP grp1.
-    SELECTION-SCREEN COMMENT 44(15) c_csv FOR FIELD p_csv.
-  SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN END OF BLOCK b_file.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_opt WITH FRAME TITLE b_tit2.
@@ -87,11 +79,8 @@ SELECTION-SCREEN END OF BLOCK b_opt.
 * 3. INITIALIZATION & SCREEN EVENTS
 *----------------------------------------------------------------------*
 INITIALIZATION.
-  b_tit1 = 'Input File (Excel .xlsx / CSV)'(b01).
+  b_tit1 = 'Input CSV File (.csv)'(b01).
   b_tit2 = 'Execution & Authorization Options'(b02).
-  c_auto = 'Auto Detect File'(t01).
-  c_xlsx = 'Excel (.xlsx)'(t02).
-  c_csv  = 'CSV / Text (.csv)'(t03).
 
   %_p_file_%_app_%-text   = 'File Path'.
   %_p_test_%_app_%-text   = 'Simulation (Test Run)'.
@@ -120,8 +109,8 @@ FORM f4_file_open CHANGING cv_file TYPE localfile.
 
   cl_gui_frontend_services=>file_open_dialog(
     EXPORTING
-      window_title            = 'Select Role Mapping File'
-      file_filter             = 'All Supported (*.xlsx;*.csv)|*.xlsx;*.csv|Excel Files (*.xlsx)|*.xlsx|CSV Files (*.csv)|*.csv|All Files (*.*)|*.*'
+      window_title            = 'Select Role CSV File'
+      file_filter             = 'CSV Files (*.csv)|*.csv|All Files (*.*)|*.*'
     CHANGING
       file_table              = lt_file_table
       rc                      = lv_rc
@@ -157,34 +146,9 @@ ENDFORM.
 *& Form upload_and_parse_file
 *&---------------------------------------------------------------------*
 FORM upload_and_parse_file.
-  DATA: lv_ext       TYPE string,
-        lv_file_str  TYPE string,
-        lv_is_xlsx   TYPE abap_bool VALUE abap_false.
-
   CLEAR: gt_raw_rows, gt_roles, gt_tcodes, gt_results.
 
-  lv_file_str = p_file.
-  TRANSLATE lv_file_str TO UPPER CASE.
-
-  " Determine file format
-  IF p_xlsx = abap_true.
-    lv_is_xlsx = abap_true.
-  ELSEIF p_csv = abap_true.
-    lv_is_xlsx = abap_false.
-  ELSE.
-    " Auto detection
-    IF lv_file_str CP '*.XLSX'.
-      lv_is_xlsx = abap_true.
-    ELSE.
-      lv_is_xlsx = abap_false.
-    ENDIF.
-  ENDIF.
-
-  IF lv_is_xlsx = abap_true.
-    PERFORM read_excel_file USING p_file.
-  ELSE.
-    PERFORM read_csv_file USING p_file.
-  ENDIF.
+  PERFORM read_csv_file USING p_file.
 
   IF gt_raw_rows IS INITIAL.
     MESSAGE 'No valid data found in the uploaded file.' TYPE 'S' DISPLAY LIKE 'E'.
@@ -295,123 +259,6 @@ FORM parse_csv_line USING    iv_line TYPE string
   ENDIF.
 ENDFORM.
 
-*&---------------------------------------------------------------------*
-*& Form read_excel_file
-*&---------------------------------------------------------------------*
-FORM read_excel_file USING iv_file TYPE localfile.
-  DATA: lt_bin_data    TYPE solix_tab,
-        lv_filelen     TYPE i,
-        lv_filepath    TYPE string,
-        lv_xstring     TYPE xstring,
-        lo_excel       TYPE REF TO cl_fdt_xl_spreadsheet,
-        lt_sheet_names TYPE if_fdt_doc_spreadsheet=>t_worksheet_names,
-        lv_sheet_name  TYPE string,
-        lr_data        TYPE REF TO data,
-        ls_raw         TYPE ty_raw_row.
-
-  FIELD-SYMBOLS: <lt_sheet_data> TYPE STANDARD TABLE,
-                 <ls_sheet_row>  TYPE any,
-                 <lv_field>      TYPE any.
-
-  lv_filepath = iv_file.
-
-  cl_gui_frontend_services=>gui_upload(
-    EXPORTING
-      filename                = lv_filepath
-      filetype                = 'BIN'
-    IMPORTING
-      filelength              = lv_filelen
-    CHANGING
-      data_tab                = lt_bin_data
-    EXCEPTIONS
-      file_open_error         = 1
-      file_read_error         = 2
-      no_batch                = 3
-      gui_refuse_filetransfer = 4
-      invalid_type            = 5
-      no_authority            = 6
-      unknown_error           = 7
-      bad_data_format         = 8
-      OTHERS                  = 9 ).
-
-  IF sy-subrc <> 0.
-    MESSAGE 'Failed to read Excel (.xlsx) file from client workstation.' TYPE 'E'.
-  ENDIF.
-
-  CALL FUNCTION 'SCMS_BINARY_TO_XSTRING'
-    EXPORTING
-      input_length = lv_filelen
-    IMPORTING
-      buffer       = lv_xstring
-    TABLES
-      binary_tab   = lt_bin_data
-    EXCEPTIONS
-      failed       = 1
-      OTHERS       = 2.
-
-  IF sy-subrc <> 0 OR lv_xstring IS INITIAL.
-    MESSAGE 'Failed to convert binary Excel data to xstring.' TYPE 'E'.
-  ENDIF.
-
-  TRY.
-      CREATE OBJECT lo_excel
-        EXPORTING
-          document_name = lv_filepath
-          xdocument     = lv_xstring.
-
-      lo_excel->if_fdt_doc_spreadsheet~get_worksheet_names(
-        IMPORTING
-          worksheet_names = lt_sheet_names
-      ).
-
-      READ TABLE lt_sheet_names INTO lv_sheet_name INDEX 1.
-      IF sy-subrc <> 0.
-        MESSAGE 'No worksheet found in Excel file.' TYPE 'E'.
-      ENDIF.
-
-      lr_data = lo_excel->if_fdt_doc_spreadsheet~get_itab_from_worksheet( lv_sheet_name ).
-      ASSIGN lr_data->* TO <lt_sheet_data>.
-
-      IF <lt_sheet_data> IS ASSIGNED.
-        LOOP AT <lt_sheet_data> ASSIGNING <ls_sheet_row>.
-          CLEAR ls_raw.
-
-          ASSIGN COMPONENT 1 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
-          IF sy-subrc = 0 AND <lv_field> IS ASSIGNED.
-            ls_raw-col1 = <lv_field>.
-            ls_raw-col1 = condense( ls_raw-col1 ).
-          ENDIF.
-
-          ASSIGN COMPONENT 2 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
-          IF sy-subrc = 0 AND <lv_field> IS ASSIGNED.
-            ls_raw-col2 = <lv_field>. " Keep exact spacing as in input file (no trim/condense)
-          ENDIF.
-
-          ASSIGN COMPONENT 3 OF STRUCTURE <ls_sheet_row> TO <lv_field>.
-          IF sy-subrc = 0 AND <lv_field> IS ASSIGNED.
-            ls_raw-col3 = <lv_field>.
-            ls_raw-col3 = condense( ls_raw-col3 ).
-          ENDIF.
-
-          DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
-          IF lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME' OR lv_c1_up = 'ROLE ID'.
-            CONTINUE.
-          ENDIF.
-
-          IF ls_raw-col1 IS NOT INITIAL.
-            IF ls_raw-col3 IS INITIAL.
-              ls_raw-col3 = 'N/A'.
-            ENDIF.
-            APPEND ls_raw TO gt_raw_rows.
-          ENDIF.
-        ENDLOOP.
-      ENDIF.
-
-    CATCH cx_root INTO DATA(lx_err).
-      DATA(lv_msg) = lx_err->get_text( ).
-      MESSAGE lv_msg TYPE 'E'.
-  ENDTRY.
-ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Form aggregate_and_validate_data
