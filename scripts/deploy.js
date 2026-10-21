@@ -161,7 +161,31 @@ function executeDeployment(targetFile, customProgName) {
             child.kill();
             process.exit(1);
           } else {
-            console.log(`✅ Success! Program ${programName} created and activated successfully.`);
+            console.log(`✅ Program shell ${programName} created. Now updating source code and activating...`);
+            send({
+              jsonrpc: '2.0',
+              id: 30,
+              method: 'tools/call',
+              params: {
+                name: 'UpdateProgram',
+                arguments: {
+                  program_name: programName,
+                  source_code: sourceCode,
+                  activate: true
+                }
+              }
+            });
+          }
+        }
+
+        // Step 4: Handle Update response after Create
+        if (msg.id === 30) {
+          if (msg.error || (msg.result && msg.result.isError)) {
+            console.error(`❌ Failed to update and activate source for ${programName}:`, JSON.stringify(msg, null, 2));
+            child.kill();
+            process.exit(1);
+          } else {
+            console.log(`✅ Success! Program ${programName} source updated and activated successfully.`);
             if (msg.result && msg.result.content) {
               console.log(msg.result.content[0].text);
             }

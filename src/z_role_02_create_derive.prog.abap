@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_ROLE_DERIVE
+*& Report Z_ROLE_02_CREATE_DERIVE
 *&---------------------------------------------------------------------*
 *& Purpose: Batch PFCG Derived Role Creation & Inheritance Synchronization
 *& Description:
@@ -18,7 +18,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
 *&---------------------------------------------------------------------*
-REPORT z_auth_role_derive.
+REPORT z_role_02_create_derive.
 
 TABLES: agr_define, agr_texts, agr_1252, agr_1016.
 

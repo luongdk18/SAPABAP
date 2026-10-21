@@ -1,12 +1,12 @@
-# 🧬 Z_AUTH_ROLE_DERIVE: Batch PFCG Derived Role Creation & Inheritance Synchronization
+# 🧬 Z_ROLE_02_CREATE_DERIVE: Batch PFCG Derived Role Creation & Inheritance Synchronization
 
 > **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
-> **Source Code**: [`src/z_auth_role_derive.prog.abap`](../src/z_auth_role_derive.prog.abap)  
-> **Companion Script**: [`scripts/convert_role_derived_excel.py`](../scripts/convert_role_derived_excel.py)  
+> **Source Code**: [`src/z_role_02_create_derive.prog.abap`](../src/z_role_02_create_derive.prog.abap)  
+> **Companion Script**: [`scripts/convert_role_02_derive.py`](../scripts/convert_role_02_derive.py)  
 > **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](ROLE_CONVERSION_GUIDE.md)  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-The ABAP utility **`Z_AUTH_ROLE_DERIVE`** is an enterprise-grade automation tool for SAP Security Administrators and Authorization Architects. It automates the mass generation of **Derived Single Roles** (imparted roles) from existing **Master Roles** (parent template roles) directly from flat CSV data. 
+The ABAP utility **`Z_ROLE_02_CREATE_DERIVE`** is an enterprise-grade automation tool for SAP Security Administrators and Authorization Architects. It automates the mass generation of **Derived Single Roles** (imparted roles) from existing **Master Roles** (parent template roles) directly from flat CSV data. 
 
 The program establishes the formal derivation link (`PARENT_AGR`), inherits complete menu structures and authorizations, initializes Organizational Levels to a secure template default (`-1`), suppresses intrusive automatic SAP comment lines, and compiles background runtime authorization profiles without requiring tedious manual intervention in transaction `PFCG`.
 
@@ -43,7 +43,7 @@ In enterprise SAP authorization architectures, the **Master / Derived Role model
 3. **Menu Inconsistencies**: Without automated synchronization, derived roles easily fall out of sync when functional master roles are updated.
 4. **Cluttered System Comments**: Standard SAP automatically appends boilerplates like `"The role was created automatically and can be processed manually."` to `AGR_TEXTS`, cluttering role search dialogs.
 
-`Z_AUTH_ROLE_DERIVE` addresses all these challenges in a single, automated, repeatable batch transaction.
+`Z_ROLE_02_CREATE_DERIVE` addresses all these challenges in a single, automated, repeatable batch transaction.
 
 ---
 
@@ -51,7 +51,7 @@ In enterprise SAP authorization architectures, the **Master / Derived Role model
 
 ```mermaid
 flowchart TD
-    A["Input File: Role_Derived_converted.csv\n(Master Role, Derived Role, Description)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
+    A["Input File: Template_Role_02_Derived_converted.csv\n(Master Role, Derived Role, Description)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
     B --> C["Parse CSV Lines & Preserve Whitespace"]
     C --> D["Validate Master Role in AGR_DEFINE & AGR_FLAGS"]
     
@@ -88,7 +88,7 @@ flowchart TD
 ## 3. Key Architectural & Functional Features
 
 ### 3.1. Master Role Integrity & Type Verification
-Before attempting to create or synchronize any derived role, `Z_AUTH_ROLE_DERIVE` performs rigorous checks:
+Before attempting to create or synchronize any derived role, `Z_ROLE_02_CREATE_DERIVE` performs rigorous checks:
 * **Existence in `AGR_DEFINE`**: Verifies that the Master Role actually exists in the target SAP system.
 * **Role Type Verification**: Inspects table `AGR_FLAGS` (`flag_type = 'COLL_AGR'`). Collective roles **cannot** be used as master template roles. Any derivation attempt targeting a collective role is blocked with a descriptive error.
 * **Master Description Lookup**: Pulls the master role's description from `AGR_TEXTS` for clear correlation in the ALV cockpit.
@@ -96,7 +96,7 @@ Before attempting to create or synchronize any derived role, `Z_AUTH_ROLE_DERIVE
 ### 3.2. Derived Role Definition & Clean Description Handling
 * Calls `PRGN_RFC_CREATE_AGR_MULTIPLE` with `parent_role` populated. This assigns `AGR_DEFINE-PARENT_AGR` natively in standard SAP tables.
 * **Whitespace Preservation**: Custom descriptions from column 3 are stored without destructive `CONDENSE`, preserving business formatting.
-* **Comment Line Sanitization**: Standard SAP modules write generic comments (`line > '00000'`) into `AGR_TEXTS`. `Z_AUTH_ROLE_DERIVE` deletes these redundant lines, leaving only the official single-line business title.
+* **Comment Line Sanitization**: Standard SAP modules write generic comments (`line > '00000'`) into `AGR_TEXTS`. `Z_ROLE_02_CREATE_DERIVE` deletes these redundant lines, leaving only the official single-line business title.
 
 ### 3.3. Menu Inheritance & Authorization Transfer
 * Calls standard SAP function module `PRGN_RFC_CREATE_DERIVATION` with `adjust_auths = 'X'`.
@@ -135,7 +135,7 @@ The report displays comprehensive audit logs in an ALV grid (`CL_SALV_TABLE`):
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ Selection Screen: Z_AUTH_ROLE_DERIVE                                     ║
+║ Selection Screen: Z_ROLE_02_CREATE_DERIVE                                ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ [Input CSV File (.csv)]                                                  ║
 ║   File Path:             [ D:\PROJECTS\SAPABAP\excel-templates\... ] 📁 ║
@@ -187,15 +187,15 @@ The report displays comprehensive audit logs in an ALV grid (`CL_SALV_TABLE`):
 ## 6. Operational Step-by-Step Guide
 
 ### Step 1: Prepare Mapping Data with Python Preprocessor
-Prepare your derived role spreadsheet (e.g. `Template_Roles_Derived.xlsx` or working copy in `excel-working/`) and run the conversion script:
+Prepare your derived role spreadsheet (e.g. `Template_Role_02_Derived.xlsx` or working copy in `excel-working/`) and run the conversion script:
 ```bash
-npm run convert:role:derived
-# Output generated: excel-templates/Template_Roles_Derived_converted.csv
+npm run convert:role:02
+# Output generated: excel-templates/Template_Role_02_Derived_converted.csv
 ```
 
-### Step 2: Launch `Z_AUTH_ROLE_DERIVE` in SAP
+### Step 2: Launch `Z_ROLE_02_CREATE_DERIVE` in SAP
 1. Open transaction **`SE38`** or **`SA38`**.
-2. Enter program name: `Z_AUTH_ROLE_DERIVE` and click **Execute (F8)**.
+2. Enter program name: `Z_ROLE_02_CREATE_DERIVE` and click **Execute (F8)**.
 3. Browse and select the converted `.csv` file.
 4. Keep **Simulation (Test Run)** checked (`p_test = 'X'`).
 5. Execute to review planned actions.
@@ -221,7 +221,7 @@ Review the ALV table:
 **Answer**: In SAP PFCG architecture, derived roles can only inherit from **Single Roles**. A collective role is merely a container of other roles and contains no authorization objects or menus of its own. Check the role matrix and replace the master role with an appropriate single master role.
 
 ### Q2: Why are Organizational Levels set to `'-1'` instead of leaving them empty?
-**Answer**: If Org Levels are left completely empty, SAP's profile generation engine will either flag the role as having unmaintained org levels (Yellow or Red status) or prompt interactively for input. Defaulting to `'-1'` allows profiles to compile cleanly in background mode while ensuring no broad authorization (`'*'`) is inadvertently granted before the specialized Org values are imported via `Z_AUTH_ROLE_UPDATE_ORG`.
+**Answer**: If Org Levels are left completely empty, SAP's profile generation engine will either flag the role as having unmaintained org levels (Yellow or Red status) or prompt interactively for input. Defaulting to `'-1'` allows profiles to compile cleanly in background mode while ensuring no broad authorization (`'*'`) is inadvertently granted before the specialized Org values are imported via `Z_ROLE_03_UPDATE_ORG`.
 
 ### Q3: How do I handle new authorizations added to the Master Role later?
-**Answer**: Simply rerun `Z_AUTH_ROLE_DERIVE` with the same CSV file and ensure **Update Existing Derived Roles** (`p_upd = 'X'`) and **Inherit / Adjust Auth from Master** (`p_adjust = 'X'`) are checked. The program will automatically update existing derived roles, pull the latest master authorizations, and regenerate profiles.
+**Answer**: Simply rerun `Z_ROLE_02_CREATE_DERIVE` with the same CSV file and ensure **Update Existing Derived Roles** (`p_upd = 'X'`) and **Inherit / Adjust Auth from Master** (`p_adjust = 'X'`) are checked. The program will automatically update existing derived roles, pull the latest master authorizations, and regenerate profiles.

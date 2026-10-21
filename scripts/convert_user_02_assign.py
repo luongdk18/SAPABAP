@@ -3,7 +3,7 @@
 Convert User Role Assignment Matrix Excel file to flat row format for SAP upload.
 Filters user-role assignments where cell value is marked with an indicator ('Y', 'y', 'X', 'x').
 Generates normalized flat CSV format: Username, Role.
-Prepares input file for ABAP batch role assignment program (via BAPI_USER_ACTGROUPS_ASSIGN / AGR_USERS).
+Prepares input file for ABAP batch role assignment program Z_USER_02_ASSIGN_ROLE (via BAPI_USER_ACTGROUPS_ASSIGN / AGR_USERS).
 
 Output columns:
 1. Username
@@ -13,11 +13,11 @@ Output:
 - <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
 
 Usage:
-    python scripts/convert_users_assign_roles_excel.py [input_excel_file]
+    python scripts/convert_user_02_assign.py [input_excel_file]
 
 Example:
-    python scripts/convert_users_assign_roles_excel.py excel-working/User_Assign_Role.xlsx
-    -> Outputs: excel-working/User_Assign_Role_converted.csv
+    python scripts/convert_user_02_assign.py excel-templates/Template_User_02_Assign.xlsx
+    -> Outputs: excel-templates/Template_User_02_Assign_converted.csv
 """
 
 import os
@@ -30,7 +30,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_users_assign_roles_excel(input_path):
+def convert_user_02_assign(input_path):
     """
     Reads User Role Assignment matrix Excel file and converts to flat CSV format.
     Row 1: Role Names (Columns 2..N)
@@ -59,19 +59,13 @@ def convert_users_assign_roles_excel(input_path):
         print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
         sys.exit(1)
 
-    # Locate 'User Asignment' / 'Assignment' sheet or fallback to active sheet
+    # Sheet discovery: look for 'assign' or 'user' or active sheet
     target_sheet = None
     for name in wb_in.sheetnames:
-        clean_name = name.strip().lower()
-        if 'user' in clean_name and ('asign' in clean_name or 'assign' in clean_name):
+        low_name = name.strip().lower()
+        if 'assign' in low_name or 'gan' in low_name:
             target_sheet = wb_in[name]
             break
-
-    if target_sheet is None:
-        for name in wb_in.sheetnames:
-            if 'assign' in name.strip().lower() or 'role' in name.strip().lower():
-                target_sheet = wb_in[name]
-                break
 
     if target_sheet is None:
         target_sheet = wb_in.active
@@ -81,88 +75,77 @@ def convert_users_assign_roles_excel(input_path):
 
     ws = target_sheet
 
-    # --- Header Roles Extraction (Row 1, Cols 2..max_column) ---
+    # --- Read Headers (Row 1: Role Names from Col 2..N) ---
     role_columns = []
     for col in range(2, ws.max_column + 1):
-        raw_role = ws.cell(1, col).value
-        if raw_role:
-            role_name = str(raw_role).strip().upper()
-            role_columns.append((col, role_name))
+        role_val = str(ws.cell(1, col).value or '').strip().upper()
+        if role_val:
+            role_columns.append((col, role_val))
 
-    if not role_columns:
-        print(f"[ERROR] No role headers found in Row 1 (starting from Column 2).")
-        sys.exit(1)
+    print(f"[INFO] Found {len(role_columns)} Role column(s) in header.")
 
-    print(f"[INFO] Detected {len(role_columns)} Role columns in header.")
-
-    # --- Matrix Scanning & Flag Filtering ('Y', 'y', 'X', 'x') ---
     records = []
-    users_with_roles = 0
-    users_without_roles = 0
-    empty_user_names = []
+    skipped_empty = 0
     unique_users = set()
-    unique_roles_assigned = set()
+    unique_roles = set()
+    users_with_assignments = 0
+    users_without_assignments = 0
 
+    # --- Matrix Scanning (Rows 2..N) ---
     for row in range(2, ws.max_row + 1):
-        raw_user = ws.cell(row, 1).value
-        if not raw_user:
+        username_val = str(ws.cell(row, 1).value or '').strip().upper()
+
+        if not username_val:
+            skipped_empty += 1
             continue
 
-        username = str(raw_user).strip().upper()
-        unique_users.add(username)
-        found_flag = False
-
-        for col, role_name in role_columns:
-            val = str(ws.cell(row, col).value or '').strip().upper()
-
-            # Filter criteria: accepts Y, y, X, x
-            if val in ('Y', 'X'):
+        assigned_for_user = 0
+        for col_idx, role_name in role_columns:
+            cell_val = str(ws.cell(row, col_idx).value or '').strip().upper()
+            if cell_val in ('Y', 'X'):
                 records.append({
-                    'username': username,
+                    'username': username_val,
                     'role': role_name
                 })
-                unique_roles_assigned.add(role_name)
-                found_flag = True
+                unique_roles.add(role_name)
+                assigned_for_user += 1
 
-        # Fallback if no roles were marked for this user
-        if not found_flag:
-            records.append({
-                'username': username,
-                'role': 'N/A'
-            })
-            users_without_roles += 1
-            empty_user_names.append(username)
+        unique_users.add(username_val)
+        if assigned_for_user > 0:
+            users_with_assignments += 1
         else:
-            users_with_roles += 1
+            users_without_assignments += 1
 
     # --- CSV Export (UTF-8 with BOM) ---
     try:
         with open(out_csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Username", "Role"])
-            for item in records:
-                writer.writerow([item['username'], item['role']])
+            for r in records:
+                writer.writerow([r['username'], r['role']])
     except PermissionError:
         print(f"[ERROR] Permission denied when writing to '{out_csv_path}'. Please close the file in Excel and try again.")
         sys.exit(1)
 
     # --- Execution Summary ---
-    total_users = users_with_roles + users_without_roles
     print(f"\n--- Execution Summary ---")
     print(f"[OK] Input File       : {input_path}")
-    print(f"[OK] Total Users      : {total_users} ({users_with_roles} with roles, {users_without_roles} set to 'N/A')")
-    if empty_user_names:
-        print(f"[INFO] Empty Users    : {', '.join(empty_user_names)} -> assigned 'N/A'")
-    print(f"[OK] Roles In Scope   : {len(role_columns)} available roles in matrix")
-    print(f"[OK] Assigned Roles   : {len(unique_roles_assigned)} unique roles assigned")
     print(f"[OK] Output CSV       : {out_csv_path} ({len(records)} assignment rows)")
+    print(f"[OK] Total Users      : {len(unique_users)} ({users_with_assignments} with roles, {users_without_assignments} without)")
+    print(f"[OK] Total Roles Used : {len(unique_roles)} distinct roles assigned")
+    if skipped_empty > 0:
+        print(f"[INFO] Empty Rows     : {skipped_empty} empty row(s) skipped")
+
+
+# Compatibility alias
+convert_users_assign_roles_excel = convert_user_02_assign
 
 
 # --- CLI Entrypoint ---
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
-        print("Usage: python scripts/convert_users_assign_roles_excel.py [path_to_excel_file]")
-        print("Example: python scripts/convert_users_assign_roles_excel.py excel-working/User_Assign_Role.xlsx")
+        print("Usage: python scripts/convert_user_02_assign.py [path_to_excel_file]")
+        print("Example: python scripts/convert_user_02_assign.py excel-templates/Template_User_02_Assign.xlsx")
         sys.exit(0)
 
     target_file = None
@@ -173,10 +156,10 @@ if __name__ == "__main__":
         # Default candidates lookup
         candidates = [
             os.path.join("excel-working", "User_Assign_Role.xlsx"),
+            os.path.join("excel-templates", "Template_User_02_Assign.xlsx"),
             os.path.join("excel-templates", "Template_User_Assign_Role.xlsx"),
-            "User_Assign_Role.xlsx",
-            "Users_Assign_Roles.xlsx",
-            "User_Assign_Roles.xlsx"
+            "Template_User_02_Assign.xlsx",
+            "User_Assign_Role.xlsx"
         ]
         for cand in candidates:
             if os.path.exists(cand):
@@ -185,8 +168,8 @@ if __name__ == "__main__":
 
     if not target_file:
         print("[ERROR] No input file provided or found in default locations.")
-        print("Usage: python scripts/convert_users_assign_roles_excel.py <path_to_excel_file>")
-        print("Example: python scripts/convert_users_assign_roles_excel.py excel-working/User_Assign_Role.xlsx")
+        print("Usage: python scripts/convert_user_02_assign.py <path_to_excel_file>")
+        print("Example: python scripts/convert_user_02_assign.py excel-templates/Template_User_02_Assign.xlsx")
         sys.exit(1)
 
-    convert_users_assign_roles_excel(target_file)
+    convert_user_02_assign(target_file)

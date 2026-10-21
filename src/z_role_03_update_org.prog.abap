@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_ROLE_UPDATE_ORG
+*& Report Z_ROLE_03_UPDATE_ORG
 *&---------------------------------------------------------------------*
 *& Purpose: Batch Update Organizational Levels for PFCG Roles
 *& Description:
@@ -17,7 +17,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
 *&---------------------------------------------------------------------*
-REPORT z_auth_role_update_org.
+REPORT z_role_03_update_org.
 
 TABLES: agr_define, agr_texts, agr_1252, agr_1251, agr_1016, usorg.
 

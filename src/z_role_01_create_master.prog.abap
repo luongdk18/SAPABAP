@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_ROLE_CREATE
+*& Report Z_ROLE_01_CREATE_MASTER
 *&---------------------------------------------------------------------*
 *& Purpose: Batch Role Creation & Menu Structuring from CSV
 *& Description:
@@ -17,7 +17,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
 *&---------------------------------------------------------------------*
-REPORT z_auth_role_create.
+REPORT z_role_01_create_master.
 
 TABLES: agr_define, agr_texts, tstc.
 

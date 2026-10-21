@@ -1,12 +1,12 @@
-# 📦 Z_AUTH_ROLE_COMPOSITE: Batch Composite Role Creation & Single Role Assignment
+# 📦 Z_ROLE_04_COMPOSITE: Batch Composite Role Creation & Single Role Assignment
 
 > **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
-> **Source Code**: [`src/z_auth_role_composite.prog.abap`](../src/z_auth_role_composite.prog.abap)  
-> **Companion Script**: [`scripts/convert_role_composite_excel.py`](../scripts/convert_role_composite_excel.py)  
+> **Source Code**: [`src/z_role_04_composite.prog.abap`](../src/z_role_04_composite.prog.abap)  
+> **Companion Script**: [`scripts/convert_role_04_composite.py`](../scripts/convert_role_04_composite.py)  
 > **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](ROLE_CONVERSION_GUIDE.md)  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-The ABAP utility **`Z_AUTH_ROLE_COMPOSITE`** is an operational tool designed for SAP Security Administrators and Authorization Architects. It automates the mass creation and updating of **Composite Roles** (Collective Roles / *Sammelrollen*) and bundles member **Single Roles** (or Derived Single Roles) directly from flat CSV data.
+The ABAP utility **`Z_ROLE_04_COMPOSITE`** is an operational tool designed for SAP Security Administrators and Authorization Architects. It automates the mass creation and updating of **Composite Roles** (Collective Roles / *Sammelrollen*) and bundles member **Single Roles** (or Derived Single Roles) directly from flat CSV data.
 
 The program creates the composite role shell (`AGR_DEFINE-ATTRIBUTES = 'COLLECTIVE'`, `AGR_FLAGS-COLL_AGR = 'X'`), preserves custom business descriptions while stripping intrusive auto-generated SAP comment lines, validates member single roles against the SAP repository, assigns member roles atomically via standard PFCG BAPIs (`PRGN_RFC_ADD_AGRS_TO_COLL_AGR`), handles role synchronization, and reports execution details in an interactive ALV cockpit with direct navigation to transaction `PFCG`.
 
@@ -40,7 +40,7 @@ In enterprise SAP security frameworks, **Composite Roles** represent user job de
 3. **Overwriting Protection**: Accidentally creating a composite role with the same name as an existing single role can corrupt authorization profiles or role flags.
 4. **No Mass Synchronization Cockpit**: When business job matrices change, adjusting member roles across dozens of composite roles manually leads to role assignment discrepancies.
 
-`Z_AUTH_ROLE_COMPOSITE` automates this entire lifecycle, converting matrix CSV definitions into verified, synchronized composite roles in seconds.
+`Z_ROLE_04_COMPOSITE` automates this entire lifecycle, converting matrix CSV definitions into verified, synchronized composite roles in seconds.
 
 ---
 
@@ -48,7 +48,7 @@ In enterprise SAP security frameworks, **Composite Roles** represent user job de
 
 ```mermaid
 flowchart TD
-    A["Input File: Role_Composite_converted.csv\n(Composite Role, Description, Single Role)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
+    A["Input File: Template_Role_04_Composite_converted.csv\n(Composite Role, Description, Single Role)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
     B --> C["Parse CSV Lines & Group by Composite Role"]
     C --> D["Validate Role Name Length (<= 30 chars)"]
     
@@ -155,7 +155,7 @@ The output ALV grid (`CL_SALV_TABLE`) provides full auditing transparency:
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ Selection Screen: Z_AUTH_ROLE_COMPOSITE                                  ║
+║ Selection Screen: Z_ROLE_04_COMPOSITE                                    ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ [Input CSV File (.csv)]                                                  ║
 ║   File Path:             [ D:\PROJECTS\SAPABAP\excel-templates\... ] 📁 ║
@@ -201,15 +201,15 @@ The output ALV grid (`CL_SALV_TABLE`) provides full auditing transparency:
 ## 6. Operational Step-by-Step Guide
 
 ### Step 1: Preprocess Matrix with Python Script
-Prepare your composite role spreadsheet (e.g. `Template_Roles_Composite.xlsx` or working matrix in `excel-working/`) and run the preprocessor:
+Prepare your composite role spreadsheet (e.g. `Template_Role_04_Composite.xlsx` or working matrix in `excel-working/`) and run the preprocessor:
 ```bash
-npm run convert:role:composite
-# Output generated: excel-templates/Template_Roles_Composite_converted.csv
+npm run convert:role:04
+# Output generated: excel-templates/Template_Role_04_Composite_converted.csv
 ```
 
-### Step 2: Launch `Z_AUTH_ROLE_COMPOSITE` in SAP
+### Step 2: Launch `Z_ROLE_04_COMPOSITE` in SAP
 1. Open transaction **`SE38`** or **`SA38`**.
-2. Enter program name: `Z_AUTH_ROLE_COMPOSITE` and click **Execute (F8)**.
+2. Enter program name: `Z_ROLE_04_COMPOSITE` and click **Execute (F8)**.
 3. Select the converted `.csv` file.
 4. Keep **Simulation (Test Run)** checked (`p_test = 'X'`).
 5. Execute (**F8**).
@@ -237,7 +237,7 @@ npm run convert:role:composite
 **Answer**: An existing role in SAP with that name was created as a Single Role (it lacks the `COLL_AGR = 'X'` flag). In SAP architecture, you cannot convert an existing single role with authorizations into a composite role without deleting it first. Rename your composite role or decommission the conflicting single role.
 
 ### Q2: Why are some single roles shown in the `MISSING_ROLES` column?
-**Answer**: When parameter `p_chksgl = 'X'` is active, the program checks each single role in `AGR_DEFINE`. If the single role has not yet been imported or derived (e.g. via `Z_AUTH_ROLE_CREATE` or `Z_AUTH_ROLE_DERIVE`), it is flagged as missing. Once the single roles are created in SAP, simply rerun `Z_AUTH_ROLE_COMPOSITE` with `p_upd = 'X'` to assign them.
+**Answer**: When parameter `p_chksgl = 'X'` is active, the program checks each single role in `AGR_DEFINE`. If the single role has not yet been imported or derived (e.g. via `Z_ROLE_01_CREATE_MASTER` or `Z_ROLE_02_CREATE_DERIVE`), it is flagged as missing. Once the single roles are created in SAP, simply rerun `Z_ROLE_04_COMPOSITE` with `p_upd = 'X'` to assign them.
 
 ### Q3: Do composite roles need authorization profile generation?
 **Answer**: No. Composite roles in SAP do **not** have authorization profiles of their own. Authorizations are inherited entirely from the assigned member single roles. When a composite role is assigned to a user in transaction `SU01`, SAP user master comparison assigns all member single roles and their corresponding profiles to the user.

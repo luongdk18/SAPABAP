@@ -2,12 +2,12 @@
 """
 Generate standardized, masked template files for SAP Role upload in 'excel-templates/'.
 Creates:
-1. Template_Roles_Master.xlsx & Template_Roles_Master_converted.csv
-2. Template_Roles_Derived.xlsx & Template_Roles_Derived_converted.csv
-3. Template_Roles_Derived_Org.xlsx & Template_Roles_Derived_Org_converted.csv
-4. Template_Roles_Composite.xlsx & Template_Roles_Composite_converted.csv
-5. Template_Users_Create.xlsx & Template_Users_Create_converted.csv
-6. Template_User_Assign_Role.xlsx & Template_User_Assign_Role_converted.csv
+1. Template_Role_01_Master.xlsx & Template_Role_01_Master_converted.csv
+2. Template_Role_02_Derived.xlsx & Template_Role_02_Derived_converted.csv
+3. Template_Role_03_Org.xlsx & Template_Role_03_Org_converted.csv
+4. Template_Role_04_Composite.xlsx & Template_Role_04_Composite_converted.csv
+5. Template_User_01_Create.xlsx & Template_User_01_Create_converted.csv
+6. Template_User_02_Assign.xlsx & Template_User_02_Assign_converted.csv
 
 Usage:
     python scripts/create_templates.py
@@ -110,10 +110,10 @@ def create_master_template():
     for col_letter in ['B', 'C', 'D', 'E', 'F', 'G']:
         ws.column_dimensions[col_letter].width = 32
 
-    xlsx_path = os.path.join(OUT_DIR, "Template_Roles_Master.xlsx")
+    xlsx_path = os.path.join(OUT_DIR, "Template_Role_01_Master.xlsx")
     wb.save(xlsx_path)
 
-    csv_path = os.path.join(OUT_DIR, "Template_Roles_Master_converted.csv")
+    csv_path = os.path.join(OUT_DIR, "Template_Role_01_Master_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(["Role Name", "Role Description", "TCode"])
@@ -161,10 +161,10 @@ def create_derived_template():
     ws.column_dimensions['B'].width = 32
     ws.column_dimensions['C'].width = 45
 
-    xlsx_path = os.path.join(OUT_DIR, "Template_Roles_Derived.xlsx")
+    xlsx_path = os.path.join(OUT_DIR, "Template_Role_02_Derived.xlsx")
     wb.save(xlsx_path)
 
-    csv_path = os.path.join(OUT_DIR, "Template_Roles_Derived_converted.csv")
+    csv_path = os.path.join(OUT_DIR, "Template_Role_02_Derived_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
@@ -225,7 +225,7 @@ def create_org_template():
     for col_letter in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']:
         ws.column_dimensions[col_letter].width = 28
 
-    xlsx_path = os.path.join(OUT_DIR, "Template_Roles_Derived_Org.xlsx")
+    xlsx_path = os.path.join(OUT_DIR, "Template_Role_03_Org.xlsx")
     wb.save(xlsx_path)
 
     # Flat CSV export (Column-major: for each mapped org variable, output rows)
@@ -237,7 +237,7 @@ def create_org_template():
             val = r[col_idx]
             flat_csv_rows.append([role_name, var, val])
 
-    csv_path = os.path.join(OUT_DIR, "Template_Roles_Derived_Org_converted.csv")
+    csv_path = os.path.join(OUT_DIR, "Template_Role_03_Org_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(["Role Name", "Org Level Variable", "Org Value"])
@@ -368,10 +368,10 @@ def create_composite_template():
     for col_letter in ['B', 'C', 'D', 'E', 'F', 'G']:
         ws.column_dimensions[col_letter].width = 36
 
-    xlsx_path = os.path.join(OUT_DIR, "Template_Roles_Composite.xlsx")
+    xlsx_path = os.path.join(OUT_DIR, "Template_Role_04_Composite.xlsx")
     wb.save(xlsx_path)
 
-    csv_path = os.path.join(OUT_DIR, "Template_Roles_Composite_converted.csv")
+    csv_path = os.path.join(OUT_DIR, "Template_Role_04_Composite_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(["Composite Role Name", "Composite Role Description", "Derived Role"])
@@ -415,17 +415,17 @@ def create_users_template():
     ws.column_dimensions['D'].width = 25
     ws.column_dimensions['E'].width = 30
 
-    xlsx_path = os.path.join(OUT_DIR, "Template_Users_Create.xlsx")
+    xlsx_path = os.path.join(OUT_DIR, "Template_User_01_Create.xlsx")
     wb.save(xlsx_path)
     print(f"[OK] Generated: {xlsx_path}")
 
-    # Convert using convert_users_excel
+    # Convert using convert_user_01_create
     try:
-        from convert_users_excel import convert_users_excel
-        convert_users_excel(xlsx_path)
+        from convert_user_01_create import convert_user_01_create
+        convert_user_01_create(xlsx_path)
     except ImportError:
         import subprocess
-        script_path = os.path.join(os.path.dirname(__file__), "convert_users_excel.py")
+        script_path = os.path.join(os.path.dirname(__file__), "convert_user_01_create.py")
         subprocess.run([sys.executable, script_path, xlsx_path], check=True)
 
 
@@ -482,17 +482,17 @@ def create_user_assign_role_template():
     for col_letter in ['B', 'C', 'D', 'E', 'F']:
         ws.column_dimensions[col_letter].width = 30
 
-    xlsx_path = os.path.join(OUT_DIR, "Template_User_Assign_Role.xlsx")
+    xlsx_path = os.path.join(OUT_DIR, "Template_User_02_Assign.xlsx")
     wb.save(xlsx_path)
     print(f"[OK] Generated: {xlsx_path}")
 
-    # Convert using convert_users_assign_roles_excel
+    # Convert using convert_user_02_assign
     try:
-        from convert_users_assign_roles_excel import convert_users_assign_roles_excel
-        convert_users_assign_roles_excel(xlsx_path)
+        from convert_user_02_assign import convert_user_02_assign
+        convert_user_02_assign(xlsx_path)
     except ImportError:
         import subprocess
-        script_path = os.path.join(os.path.dirname(__file__), "convert_users_assign_roles_excel.py")
+        script_path = os.path.join(os.path.dirname(__file__), "convert_user_02_assign.py")
         subprocess.run([sys.executable, script_path, xlsx_path], check=True)
 
 

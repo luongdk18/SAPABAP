@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_USER_CREATE
+*& Report Z_USER_01_CREATE
 *&---------------------------------------------------------------------*
 *& Purpose: Batch SAP User Creation & Update from CSV file
 *& Description:
@@ -24,7 +24,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
 *&---------------------------------------------------------------------*
-REPORT z_auth_user_create.
+REPORT z_user_01_create.
 
 TABLES: usr02.
 

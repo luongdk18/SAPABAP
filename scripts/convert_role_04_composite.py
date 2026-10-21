@@ -13,11 +13,11 @@ Output:
 - <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
 
 Usage:
-    python scripts/convert_role_composite_excel.py [input_excel_file]
+    python scripts/convert_role_04_composite.py [input_excel_file]
 
 Example:
-    python scripts/convert_role_composite_excel.py excel-working/FICO_Roles_Composite.xlsx
-    -> Outputs: excel-working/FICO_Roles_Composite_converted.csv
+    python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx
+    -> Outputs: excel-templates/Template_Role_04_Composite_converted.csv
 """
 
 import os
@@ -30,7 +30,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_role_composite_excel(input_path):
+def convert_role_04_composite(input_path):
     """
     Reads Composite Role matrix Excel file and converts to flat CSV format.
     Row 1: Composite Role Description (preserves exact spacing)
@@ -59,7 +59,7 @@ def convert_role_composite_excel(input_path):
         print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
         sys.exit(1)
 
-    # Locate target sheet: prefer sheet with 'COMPOSITE' in title, else active sheet
+    # Locate target sheet: prefer sheet with 'composite' in title, else active sheet
     target_sheet = None
     for name in wb_in.sheetnames:
         if 'composite' in name.strip().lower():
@@ -97,16 +97,16 @@ def convert_role_composite_excel(input_path):
             # Filter criteria: accepts Y, y, X, x
             if val in ('Y', 'X') and derived_role:
                 roles_flat.append({
-                    'composite_role': role_name,
+                    'role_name': role_name,
                     'role_desc': role_desc,
                     'derived_role': derived_role
                 })
                 found_flag = True
 
-        # If no indicator ('Y'/'X') was found for this composite role column, create 1 fallback row with Derived Role = 'N/A'
+        # If no indicator ('Y'/'X') was found for this role column, create 1 fallback row with Derived Role = 'N/A'
         if not found_flag:
             roles_flat.append({
-                'composite_role': role_name,
+                'role_name': role_name,
                 'role_desc': role_desc,
                 'derived_role': 'N/A'
             })
@@ -121,7 +121,7 @@ def convert_role_composite_excel(input_path):
             writer = csv.writer(f)
             writer.writerow(["Composite Role Name", "Composite Role Description", "Derived Role"])
             for item in roles_flat:
-                writer.writerow([item['composite_role'], item['role_desc'], item['derived_role']])
+                writer.writerow([item['role_name'], item['role_desc'], item['derived_role']])
     except PermissionError:
         print(f"[ERROR] Permission denied when writing to '{out_csv_path}'. Please close the file in Excel and try again.")
         sys.exit(1)
@@ -136,11 +136,15 @@ def convert_role_composite_excel(input_path):
     print(f"[OK] Output CSV       : {out_csv_path} ({len(roles_flat)} data rows)")
 
 
+# Compatibility alias
+convert_role_composite_excel = convert_role_04_composite
+
+
 # --- CLI Entrypoint ---
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
-        print("Usage: python scripts/convert_role_composite_excel.py [path_to_excel_file]")
-        print("Example: python scripts/convert_role_composite_excel.py excel-working/FICO_Roles_Composite.xlsx")
+        print("Usage: python scripts/convert_role_04_composite.py [path_to_excel_file]")
+        print("Example: python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx")
         sys.exit(0)
 
     target_file = None
@@ -151,7 +155,9 @@ if __name__ == "__main__":
         # Default candidates lookup
         candidates = [
             os.path.join("excel-working", "FICO_Roles_Composite.xlsx"),
+            os.path.join("excel-templates", "Template_Role_04_Composite.xlsx"),
             os.path.join("excel-templates", "Template_Roles_Composite.xlsx"),
+            "Template_Role_04_Composite.xlsx",
             "FICO_Roles_Composite.xlsx",
             "Roles_Composite.xlsx"
         ]
@@ -162,8 +168,8 @@ if __name__ == "__main__":
 
     if not target_file:
         print("[ERROR] No input file provided or found in default locations.")
-        print("Usage: python scripts/convert_role_composite_excel.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_composite_excel.py excel-working/FICO_Roles_Composite.xlsx")
+        print("Usage: python scripts/convert_role_04_composite.py <path_to_excel_file>")
+        print("Example: python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx")
         sys.exit(1)
 
-    convert_role_composite_excel(target_file)
+    convert_role_04_composite(target_file)

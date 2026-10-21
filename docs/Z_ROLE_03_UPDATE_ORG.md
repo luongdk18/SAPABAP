@@ -1,13 +1,13 @@
-# 🏢 Z_AUTH_ROLE_UPDATE_ORG: Batch Organizational Levels Maintenance & Profile Regeneration
+# 🏢 Z_ROLE_03_UPDATE_ORG: Batch Organizational Levels Maintenance & Profile Regeneration
 
 > **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
-> **Source Code**: [`src/z_auth_role_update_org.prog.abap`](../src/z_auth_role_update_org.prog.abap)  
-> **Companion Script**: [`scripts/convert_role_org_excel.py`](../scripts/convert_role_org_excel.py)  
+> **Source Code**: [`src/z_role_03_update_org.prog.abap`](../src/z_role_03_update_org.prog.abap)  
+> **Companion Script**: [`scripts/convert_role_03_org.py`](../scripts/convert_role_03_org.py)  
 > **Org Levels Reference**: [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv)  
 > **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](ROLE_CONVERSION_GUIDE.md)  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-The ABAP utility **`Z_AUTH_ROLE_UPDATE_ORG`** is an operational cockpit designed for SAP Basis Administrators, Security Consultants, and Authorization Managers. It automates the mass maintenance and update of **Organizational Levels** (`AGR_1252`) across hundreds of SAP Single and Derived Roles directly from flat CSV data.
+The ABAP utility **`Z_ROLE_03_UPDATE_ORG`** is an operational cockpit designed for SAP Basis Administrators, Security Consultants, and Authorization Managers. It automates the mass maintenance and update of **Organizational Levels** (`AGR_1252`) across hundreds of SAP Single and Derived Roles directly from flat CSV data.
 
 The program reads mapped organizational variables (`$BUKRS`, `$WERKS`, `$EKORG`, `$VKORG`, etc.), ensures proper synchronization with underlying authorization objects (`AGR_1251`) via SAP table `USORG`, automatically defaults unmaintained organizational levels to wildcard (`*`) when configured to guarantee a **GREEN** profile status, regenerates authorization profiles in dark mode, and reports execution details in an interactive ALV grid with one-click navigation to transaction `PFCG`.
 
@@ -41,7 +41,7 @@ In enterprise SAP rollouts, each functional template role (Master Role) is deriv
 3. **Corrupted Variable Bindings in `AGR_1251`**: In some derivation scenarios or automated imports, authorization field values in `AGR_1251-LOW` are inadvertently overwritten with literal strings (such as `'-1'`) instead of retaining their dynamic variable pointers (e.g. `$BUKRS`), severing the link between the Org Level dialog and the concrete authorization objects.
 4. **Lack of Mass Auditing & Validation**: Standard SAP offers no transaction to view a tabular comparison between business matrix expectations and actual database values in `AGR_1252`.
 
-`Z_AUTH_ROLE_UPDATE_ORG` completely automates this process, updating organizational levels in batch, healing corrupted variable pointers, and generating clean profiles in seconds.
+`Z_ROLE_03_UPDATE_ORG` completely automates this process, updating organizational levels in batch, healing corrupted variable pointers, and generating clean profiles in seconds.
 
 ---
 
@@ -49,7 +49,7 @@ In enterprise SAP rollouts, each functional template role (Master Role) is deriv
 
 ```mermaid
 flowchart TD
-    A["Input File: Role_Derived_Org_converted.csv\n(Role Name, Org Variable, Org Value)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
+    A["Input File: Template_Role_03_Org_converted.csv\n(Role Name, Org Variable, Org Value)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
     B --> C["Parse CSV Lines & Group by Role Name"]
     C --> D["Validate Role Existence in AGR_DEFINE & Fetch Parent Role"]
     
@@ -105,7 +105,7 @@ When determining the final value for any Organizational Level variable in a role
 
 ### 3.3. USORG Field Mapping & AGR_1251 Binding Restoration (`p_fix51`)
 When derived roles are generated or manipulated, field entries in `AGR_1251` can become severed if `LOW` is set to literal `'-1'`:
-* `Z_AUTH_ROLE_UPDATE_ORG` queries SAP control table `USORG` to map authorization fields back to their corresponding organizational variables (e.g. field `BUKRS` maps to `$BUKRS`).
+* `Z_ROLE_03_UPDATE_ORG` queries SAP control table `USORG` to map authorization fields back to their corresponding organizational variables (e.g. field `BUKRS` maps to `$BUKRS`).
 * When **Restore Variables in AGR_1251** is checked (`p_fix51 = 'X'`), it automatically repairs broken `-1` values in `AGR_1251-LOW`, reconnecting the authorization field to the Org Level variable before saving.
 
 ### 3.4. Guaranteed Green Status: Default Unlisted Org Levels to `*` (`p_astnon`)
@@ -114,7 +114,7 @@ In many role matrices, business analysts only specify the key differentiating or
 * This guarantees that the role achieves a **100% Green Status** in `PFCG` without any lingering "Unmaintained Org Level" warnings.
 
 ### 3.5. Standard Database Updates (`PRGN_1252_SAVE_ORG_LEVELS`)
-Rather than executing raw database modifications that bypass SAP kernel logic, `Z_AUTH_ROLE_UPDATE_ORG` uses standard PFCG APIs:
+Rather than executing raw database modifications that bypass SAP kernel logic, `Z_ROLE_03_UPDATE_ORG` uses standard PFCG APIs:
 * `PRGN_1252_SAVE_ORG_LEVELS`: Transfers `PT1252` structures into PFCG internal buffers.
 * `PRGN_UPDATE_DATABASE`: Flushes buffers into `AGR_1252` and recalculates dependent tables.
 * `PRGN_SET_ACTGROUP_TIMESTAMP`: Updates the change history (`CHANGE_DAT`, `CHANGE_TIM`, `CHANGE_USR`) in `AGR_DEFINE`.
@@ -140,7 +140,7 @@ The output cockpit provides comprehensive operational transparency:
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ Selection Screen: Z_AUTH_ROLE_UPDATE_ORG                                 ║
+║ Selection Screen: Z_ROLE_03_UPDATE_ORG                                   ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ [Input CSV File (.csv)]                                                  ║
 ║   File Path:             [ D:\PROJECTS\SAPABAP\excel-templates\... ] 📁 ║
@@ -189,16 +189,16 @@ The output cockpit provides comprehensive operational transparency:
 ## 6. Operational Step-by-Step Guide
 
 ### Step 1: Generate Converted CSV via Python Preprocessor
-Prepare your matrix Excel file (e.g. `Template_Roles_Derived_Org.xlsx` or working matrix in `excel-working/`) and run the preprocessor:
+Prepare your matrix Excel file (e.g. `Template_Role_03_Org.xlsx` or working matrix in `excel-working/`) and run the preprocessor:
 ```bash
-npm run convert:role:org
-# Output generated: excel-templates/Template_Roles_Derived_Org_converted.csv
+npm run convert:role:03
+# Output generated: excel-templates/Template_Role_03_Org_converted.csv
 ```
 The script automatically references `excel-templates/Org_Levels.csv` to map technical variable names (e.g. `Company Code` -> `$BUKRS`).
 
-### Step 2: Launch `Z_AUTH_ROLE_UPDATE_ORG` in SAP
+### Step 2: Launch `Z_ROLE_03_UPDATE_ORG` in SAP
 1. Open transaction **`SE38`** or **`SA38`**.
-2. Enter program name: `Z_AUTH_ROLE_UPDATE_ORG` and press **Execute (F8)**.
+2. Enter program name: `Z_ROLE_03_UPDATE_ORG` and press **Execute (F8)**.
 3. Select the converted `.csv` file.
 4. Keep **Simulation (Test Run)** checked (`p_test = 'X'`).
 5. Execute (**F8**).
@@ -225,7 +225,7 @@ The script automatically references `excel-templates/Org_Levels.csv` to map tech
 **Answer**: A yellow LED indicates that while the Organizational Levels were saved, the authorization profile requires manual review (e.g. unmaintained non-organizational fields in standard authorization objects, or deactivated objects). Double-click the role in the ALV grid to inspect it in `PFCG`.
 
 ### Q2: Can I update roles that are not derived roles?
-**Answer**: Yes! `Z_AUTH_ROLE_UPDATE_ORG` works on any SAP Single Role, whether it is a standalone single role or a derived single role. If the role has no parent role, the parent role column in the ALV will simply remain blank.
+**Answer**: Yes! `Z_ROLE_03_UPDATE_ORG` works on any SAP Single Role, whether it is a standalone single role or a derived single role. If the role has no parent role, the parent role column in the ALV will simply remain blank.
 
 ### Q3: What happens if an Org Level variable is not present in the role's authorizations?
 **Answer**: If an input file assigns an Org Level variable (e.g. `$VKORG`) to a role whose authorizations do not use sales organization checks, the program safely saves the value in `AGR_1252` without breaking the profile. When authorization objects are later added to that role, the Org Level will already be populated.

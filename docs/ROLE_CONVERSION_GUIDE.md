@@ -1,15 +1,17 @@
-# 🔄 Guide: Preprocessing Excel Files to CSV for ABAP Role Automation
+# 🔄 Guide: Preprocessing Excel Files to CSV for ABAP Role & User Automation
 
-> **SAP Role Lifecycle Automation Toolset**  
+> **SAP Role & User Lifecycle Automation Toolset**  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-This guide explains how to prepare business authorization matrices in Excel and convert them into flat, standardized CSV files ready for direct import into the ABAP utilities:
-1. **Master Roles**: `convert_role_master_excel.py` ➔ Import into **`Z_AUTH_ROLE_CREATE`**
-2. **Derived Roles Mapping**: `convert_role_derived_excel.py` ➔ Import into **`Z_AUTH_ROLE_DERIVE`**
-3. **Organizational Levels**: `convert_role_org_excel.py` ➔ Import into **`Z_AUTH_ROLE_UPDATE_ORG`**
-4. **Composite Roles**: `convert_role_composite_excel.py` ➔ Import into **`Z_AUTH_ROLE_COMPOSITE`**
-5. **User Creation**: `convert_users_excel.py` ➔ Import into **`Z_AUTH_USER_CREATE`**
-6. **User Role Assignment**: `convert_users_assign_roles_excel.py` ➔ Import into **`Z_AUTH_USER_ASSIGN_ROLE`**
+This guide explains how to prepare business authorization matrices in Excel and convert them into flat, standardized CSV files ready for direct import into the modular ABAP utilities:
+1. **Module 1 (Role Management)**:
+   - **01. Master Roles**: `convert_role_01_master.py` ➔ Import into **`Z_ROLE_01_CREATE_MASTER`**
+   - **02. Derived Roles Mapping**: `convert_role_02_derive.py` ➔ Import into **`Z_ROLE_02_CREATE_DERIVE`**
+   - **03. Organizational Levels**: `convert_role_03_org.py` ➔ Import into **`Z_ROLE_03_UPDATE_ORG`**
+   - **04. Composite Roles**: `convert_role_04_composite.py` ➔ Import into **`Z_ROLE_04_COMPOSITE`**
+2. **Module 2 (User Management)**:
+   - **01. User Creation**: `convert_user_01_create.py` ➔ Import into **`Z_USER_01_CREATE`**
+   - **02. User Role Assignment**: `convert_user_02_assign.py` ➔ Import into **`Z_USER_02_ASSIGN_ROLE`**
 
 ---
 
@@ -18,40 +20,40 @@ This guide explains how to prepare business authorization matrices in Excel and 
 ```mermaid
 flowchart TD
     subgraph S1["1. Master Roles Matrix"]
-        A1["Template_Roles_Master.xlsx\n(Row 1: Desc, Row 2: Role, Col 1: TCodes)"] --> B1["convert_role_master_excel.py\n(or npm run convert:role:master)"]
-        B1 --> C1["Template_Roles_Master_converted.csv\n(Role Name, Role Desc, TCode)"]
-        C1 --> D1["ABAP Program: Z_AUTH_ROLE_CREATE\nCreates Master Roles & PFCG Menus"]
+        A1["Template_Role_01_Master.xlsx\n(Row 1: Desc, Row 2: Role, Col 1: TCodes)"] --> B1["convert_role_01_master.py\n(or npm run convert:role:01)"]
+        B1 --> C1["Template_Role_01_Master_converted.csv\n(Role Name, Role Desc, TCode)"]
+        C1 --> D1["ABAP Program: Z_ROLE_01_CREATE_MASTER\nCreates Master Roles & PFCG Menus"]
     end
 
     subgraph S2["2. Derived Roles Mapping"]
-        A2["Template_Roles_Derived.xlsx\n(Master Role, Derived Role, Description)"] --> B2["convert_role_derived_excel.py\n(or npm run convert:role:derived)"]
-        B2 --> C2["Template_Roles_Derived_converted.csv\n(Master Role, Derived Role, Description)"]
-        C2 --> D2["ABAP Program: Z_AUTH_ROLE_DERIVE\nCreates Derived Roles & Links PARENT_AGR"]
+        A2["Template_Role_02_Derived.xlsx\n(Master Role, Derived Role, Description)"] --> B2["convert_role_02_derive.py\n(or npm run convert:role:02)"]
+        B2 --> C2["Template_Role_02_Derived_converted.csv\n(Master Role, Derived Role, Description)"]
+        C2 --> D2["ABAP Program: Z_ROLE_02_CREATE_DERIVE\nCreates Derived Roles & Links PARENT_AGR"]
     end
 
     subgraph S3["3. Organizational Levels Matrix"]
-        A3["Template_Roles_Derived_Org.xlsx\n(Roles in rows, Org Levels in columns)"] --> B3["convert_role_org_excel.py\n(References Org_Levels.csv)"]
-        B3 --> C3["Template_Roles_Derived_Org_converted.csv\n(Role Name, Org Variable, Org Value)"]
-        C3 --> D3["ABAP Program: Z_AUTH_ROLE_UPDATE_ORG\nPopulates AGR_1252 & Generates Profiles"]
+        A3["Template_Role_03_Org.xlsx\n(Roles in rows, Org Levels in columns)"] --> B3["convert_role_03_org.py\n(References Org_Levels.csv)"]
+        B3 --> C3["Template_Role_03_Org_converted.csv\n(Role Name, Org Variable, Org Value)"]
+        C3 --> D3["ABAP Program: Z_ROLE_03_UPDATE_ORG\nPopulates AGR_1252 & Generates Profiles"]
     end
 
     subgraph S4["4. Composite Roles Matrix"]
-        A4["Template_Roles_Composite.xlsx\n(Row 1: Desc, Row 2: Role, Col 1: Derived Roles)"] --> B4["convert_role_composite_excel.py\n(or npm run convert:role:composite)"]
-        B4 --> C4["Template_Roles_Composite_converted.csv\n(Composite Role, Description, Derived Role)"]
-        C4 --> D4["ABAP Program: Z_AUTH_ROLE_COMPOSITE\nCreates Composite Roles & Assigns Single Roles"]
+        A4["Template_Role_04_Composite.xlsx\n(Row 1: Desc, Row 2: Role, Col 1: Derived Roles)"] --> B4["convert_role_04_composite.py\n(or npm run convert:role:04)"]
+        B4 --> C4["Template_Role_04_Composite_converted.csv\n(Composite Role, Description, Derived Role)"]
+        C4 --> D4["ABAP Program: Z_ROLE_04_COMPOSITE\nCreates Composite Roles & Assigns Single Roles"]
     end
 
     subgraph S5["5. User Creation List"]
-        A5["Template_Users_Create.xlsx\n(Name, Email, Phone, Dept, Func)"] --> B5["convert_users_excel.py\n(or npm run convert:user:create)"]
-        B5 --> C5["Template_Users_Create_converted.csv\n(Username, Password, Name, Email, Phone, Dept, Func)"]
-        C5 --> D5["ABAP Program: Z_AUTH_USER_CREATE\nCreates & Updates SAP Users via BAPI"]
+        A5["Template_User_01_Create.xlsx\n(Name, Email, Phone, Dept, Func)"] --> B5["convert_user_01_create.py\n(or npm run convert:user:01)"]
+        B5 --> C5["Template_User_01_Create_converted.csv\n(Username, Password, Name, Email, Phone, Dept, Func)"]
+        C5 --> D5["ABAP Program: Z_USER_01_CREATE\nCreates & Updates SAP Users via BAPI"]
     end
 
     subgraph S6["6. User Role Assignment Matrix"]
-        A6["Template_User_Assign_Role.xlsx\n(Users in Col 1, Roles in Row 1, X/Y flags)"] --> B6["convert_users_assign_roles_excel.py\n(or npm run convert:user:assign)"]
-        C6["Template_User_Assign_Role_converted.csv\n(Username, Role)"]
+        A6["Template_User_02_Assign.xlsx\n(Users in Col 1, Roles in Row 1, X/Y flags)"] --> B6["convert_user_02_assign.py\n(or npm run convert:user:02)"]
+        C6["Template_User_02_Assign_converted.csv\n(Username, Role)"]
         B6 --> C6
-        C6 --> D6["ABAP Program: Z_AUTH_USER_ASSIGN_ROLE\nAssigns Roles via BAPI_USER_ACTGROUPS_ASSIGN"]
+        C6 --> D6["ABAP Program: Z_USER_02_ASSIGN_ROLE\nAssigns Roles via BAPI_USER_ACTGROUPS_ASSIGN"]
     end
 ```
 
@@ -62,23 +64,15 @@ flowchart TD
 Convenient npm commands are preconfigured in `package.json`:
 
 ```bash
-# 1. Convert Master Role Matrix
-npm run convert:role:master
+# Module 1: Role Management
+npm run convert:role:01      # Master Roles Matrix
+npm run convert:role:02      # Derived Roles Creation Mapping
+npm run convert:role:03      # Derived Role Organizational Levels
+npm run convert:role:04      # Composite Roles Matrix
 
-# 2. Convert Derived Roles Creation Mapping
-npm run convert:role:derived
-
-# 3. Convert Derived Role Organizational Levels
-npm run convert:role:org
-
-# 4. Convert Composite Roles Matrix
-npm run convert:role:composite
-
-# 5. Convert User Creation List
-npm run convert:user:create
-
-# 6. Convert User Role Assignment Matrix
-npm run convert:user:assign
+# Module 2: User Management
+npm run convert:user:01      # User Creation List
+npm run convert:user:02      # User Role Assignment Matrix
 ```
 
 > [!TIP]
@@ -86,9 +80,9 @@ npm run convert:user:assign
 
 ---
 
-## 1. Master Roles Preprocessing (`convert_role_master_excel.py`)
+## 1. Master Roles Preprocessing (`convert_role_01_master.py`)
 
-### 1.1. Excel Input Format (`Template_Roles_Master.xlsx`)
+### 1.1. Excel Input Format (`Template_Role_01_Master.xlsx`)
 Business authorization matrices commonly lay out transaction codes along the vertical axis (rows) and functional roles across the horizontal axis (columns):
 
 | TCode / Role Description | GL Period Control | GL Master Data Maintenance | GL Journal Posting | Custom Reporting (No TCodes) |
@@ -109,10 +103,10 @@ Business authorization matrices commonly lay out transaction codes along the ver
 ### 1.2. Running the Conversion
 ```bash
 # Automatic candidate lookup:
-python scripts/convert_role_master_excel.py
+python scripts/convert_role_01_master.py
 
 # Or specify a custom file:
-python scripts/convert_role_master_excel.py excel-templates/Template_Roles_Master.xlsx
+python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx
 ```
 
 ### 1.3. Output CSV Format (`*_converted.csv`)
@@ -129,9 +123,9 @@ Z_FI_GL_REPORTS_EMPTY,General Ledger Custom Reporting,N/A
 
 ---
 
-## 2. Derived Roles Mapping (`convert_role_derived_excel.py`)
+## 2. Derived Roles Mapping (`convert_role_02_derive.py`)
 
-### 2.1. Excel Input Format (`Template_Roles_Derived.xlsx`)
+### 2.1. Excel Input Format (`Template_Role_02_Derived.xlsx`)
 Defines how Master template roles are specialized into operational Derived Single Roles:
 
 * **Sheet Name**: `DERIVED ROLES` (or the active sheet).
@@ -150,10 +144,10 @@ Defines how Master template roles are specialized into operational Derived Singl
 ### 2.2. Running the Conversion
 ```bash
 # Automatic candidate lookup:
-python scripts/convert_role_derived_excel.py
+python scripts/convert_role_02_derive.py
 
 # Or specify a custom file:
-python scripts/convert_role_derived_excel.py excel-templates/Template_Roles_Derived.xlsx
+python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx
 ```
 
 ### 2.3. Output CSV Format (`*_converted.csv`)
@@ -167,9 +161,9 @@ Z_FI_JOURNAL_POST,Z_FI_JOURNAL_POST_2000,GL Journal Posting - EU Entity 2000
 
 ---
 
-## 3. Organizational Levels Preprocessing (`convert_role_org_excel.py`)
+## 3. Organizational Levels Preprocessing (`convert_role_03_org.py`)
 
-### 3.1. Excel Input Format (`Template_Roles_Derived_Org.xlsx`)
+### 3.1. Excel Input Format (`Template_Role_03_Org.xlsx`)
 Typically prepared by authorization designers as a wide table with roles as rows and organizational levels as columns:
 
 * **Sheet Name**: `DERIVED ROLES`
@@ -192,10 +186,10 @@ The script references `excel-templates/Org_Levels.csv` (containing 71 SAP standa
 ### 3.3. Running the Conversion
 ```bash
 # Automatic candidate lookup (reads excel-templates/Org_Levels.csv by default):
-python scripts/convert_role_org_excel.py
+python scripts/convert_role_03_org.py
 
 # Or specify custom files:
-python scripts/convert_role_org_excel.py excel-templates/Template_Roles_Derived_Org.xlsx excel-templates/Org_Levels.csv
+python scripts/convert_role_03_org.py excel-templates/Template_Role_03_Org.xlsx excel-templates/Org_Levels.csv
 ```
 
 ### 3.4. Output CSV Format (`*_converted.csv`)
@@ -216,9 +210,9 @@ Z_FI_PERIOD_CONTROL_2000,$PRCTR,PC2000*
 
 ---
 
-## 4. Composite Roles Preprocessing (`convert_role_composite_excel.py`)
+## 4. Composite Roles Preprocessing (`convert_role_04_composite.py`)
 
-### 4.1. Excel Input Format (`Template_Roles_Composite.xlsx` / `FICO_Roles_Composite.xlsx`)
+### 4.1. Excel Input Format (`Template_Role_04_Composite.xlsx`)
 Composite roles bundle multiple single/derived roles into operational job roles (e.g. Chief Financial Officer, General Accountant):
 
 * **Sheet Name**: `COMPOSITE ROLES` (or the active sheet).
@@ -226,7 +220,7 @@ Composite roles bundle multiple single/derived roles into operational job roles 
 * **Row 2**: Composite Role Name (e.g. `Z_FI_COMP_CFO_1000`).
 * **Column 1 (Row 3+)**: Single/Derived Role Name (e.g. `Z_FI_PERIOD_CONTROL_1000`).
 * **Matrix Cells**: Mark with indicator flags: `'Y'`, `'y'`, `'X'`, or `'x'` (case-insensitive) to include the derived role in the composite role.
-* **Empty Roles Fallback**: If a composite role column has no indicator marks (`Y`/`X`), the script outputs 1 row with `Derived Role = 'N/A'` (e.g., `Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A`).
+* **Empty Roles Fallback**: If a composite role column has no indicator marks (`Y`/`X`), the script outputs 1 row with `Derived Role = 'N/A'`.
 
 | Derived Role / Composite Role Description | Chief Financial Officer - Entity 1000 | General Accountant - Entity 1000 | Empty Composite Role - Entity 1000 |
 | :--- | :--- | :--- | :--- |
@@ -240,10 +234,10 @@ Composite roles bundle multiple single/derived roles into operational job roles 
 ### 4.2. Running the Conversion
 ```bash
 # Automatic candidate lookup (checks excel-working/ then excel-templates/):
-python scripts/convert_role_composite_excel.py
+python scripts/convert_role_04_composite.py
 
 # Or specify a custom file:
-python scripts/convert_role_composite_excel.py excel-templates/Template_Roles_Composite.xlsx
+python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx
 ```
 
 ### 4.3. Output CSV Format (`*_converted.csv`)
@@ -259,9 +253,9 @@ Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A
 
 ---
 
-## 5. User Creation Preprocessing (`convert_users_excel.py`)
+## 5. User Creation Preprocessing (`convert_user_01_create.py`)
 
-### 5.1. Excel Input Format (`Template_Users_Create.xlsx` / `Users_Create.xlsx`)
+### 5.1. Excel Input Format (`Template_User_01_Create.xlsx`)
 Corporate user list collected during system implementation:
 
 * **Sheet Name**: `User Asignment` (or `Users`, or active sheet).
@@ -282,26 +276,22 @@ Corporate user list collected during system implementation:
 ### 5.2. Transformation Rules
 1. **Username Extraction**:
    * Reads from the `Email` column: takes all characters before `@`, strips whitespace, and converts to uppercase (`BNAME` format in SAP).
-   * **Fallback**: If the value contains no `@` (e.g. `emilyd`, `anhpp5`), uses the raw value directly as the Username.
+   * **Fallback**: If the value contains no `@`, uses the raw value directly as the Username.
 2. **Initial Password Generation**:
-   * Generates a 12-character cryptographically secure password compliant with SAP S/4HANA 2023 password policies.
+   * Generates a 12-character cryptographically secure password compliant with SAP password policies.
    * Starts with an uppercase letter (`A-Z`), includes lowercase letters, digits, and safe special characters (`!@#$%*-_=+`), avoiding characters that interfere with CSV delimiters.
-   * Guarantees no 3 identical consecutive characters and does not contain the username.
 3. **Phone Number Normalization**:
-   * Standardizes all phone numbers to unified format `(<CountryCode>)<Number>` (e.g. `(84)985176887`, `(996)500040737`) without the `+` sign for SAP compatibility.
-   * Automatically recognizes Vietnam (`84`) and Kyrgyzstan (`996`) local dialing formats, strips leading zeros from the subscriber number, and eliminates spaces, dashes, parentheses, and dots.
-   * Format avoids formula errors when CSV files are opened in Microsoft Excel and prevents SAP address creation errors.
+   * Standardizes all phone numbers to unified format `(<CountryCode>)<Number>` (e.g. `(84)985176887`) without the `+` sign for SAP compatibility.
 4. **Department & Function Cleanup**:
-   * Corrects capitalization (e.g., `operation` ➔ `Operation`).
-   * Corrects typos and title-casing (e.g., `Planing Director` ➔ `Planning Director`, `Civil engineer` ➔ `Civil Engineer`, `Qs` ➔ `Quantity Surveyor`).
+   * Corrects capitalization and common typos.
 
 ### 5.3. Running the Conversion
 ```bash
 # Automatic candidate lookup (checks excel-working/ then excel-templates/):
-python scripts/convert_users_excel.py
+python scripts/convert_user_01_create.py
 
 # Or specify a custom file:
-python scripts/convert_users_excel.py excel-working/Users_Create.xlsx
+python scripts/convert_user_01_create.py excel-templates/Template_User_01_Create.xlsx
 ```
 
 ### 5.4. Output CSV Format (`*_converted.csv`)
@@ -318,14 +308,14 @@ DAVIDW,YVi*5T!Ss4J_,David Wilson,davidw@company.com,(84)987654321,Operation,OM
 
 ---
 
-## 6. User Role Assignment Preprocessing (`convert_users_assign_roles_excel.py`)
+## 6. User Role Assignment Preprocessing (`convert_user_02_assign.py`)
 
-### 6.1. Excel Input Format (`Template_User_Assign_Role.xlsx` / `User_Assign_Role.xlsx`)
+### 6.1. Excel Input Format (`Template_User_02_Assign.xlsx`)
 Wide assignment matrix mapping system users to single or composite business roles:
 
 * **Sheet Name**: `User Asignment` (or `Assignment`, or active sheet).
-* **Row 1**: Role Names (Columns 2..N, e.g. `CR_COMMON`, `CRPS00_PRJ_COST_CTRL_1101`).
-* **Column 1 (Rows 2..N)**: Username (e.g. `HUNGDV`, `NURZATS`, `JOHND`).
+* **Row 1**: Role Names (Columns 2..N, e.g. `CR_COMMON`, `Z_FI_COMP_CFO_1000`).
+* **Column 1 (Rows 2..N)**: Username (e.g. `JOHND`, `JANES`).
 * **Matrix Cells**: Mark with indicator flags: `Y`, `y`, `X`, or `x` (case-insensitive) to assign the role to that user.
 
 | Username | CR_COMMON | Z_FI_COMP_CFO_1000 | Z_FI_COMP_ACCOUNTANT_1000 | Z_FI_COMP_CONTROLLER_1000 | Z_MM_PURCHASER_1000 |
@@ -339,14 +329,14 @@ Wide assignment matrix mapping system users to single or composite business role
 ### 6.2. Running the Conversion
 ```bash
 # Automatic candidate lookup (checks excel-working/ then excel-templates/):
-python scripts/convert_users_assign_roles_excel.py
+python scripts/convert_user_02_assign.py
 
 # Or specify a custom file:
-python scripts/convert_users_assign_roles_excel.py excel-working/User_Assign_Role.xlsx
+python scripts/convert_user_02_assign.py excel-templates/Template_User_02_Assign.xlsx
 ```
 
 ### 6.3. Output CSV Format (`*_converted.csv`)
-Produces UTF-8 (with BOM) encoded 2-column CSV ready for direct upload into SAP role assignment utilities:
+Produces UTF-8 (with BOM) encoded 2-column CSV ready for direct upload into `Z_USER_02_ASSIGN_ROLE`:
 ```csv
 Username,Role
 JOHND,CR_COMMON
@@ -368,6 +358,6 @@ EMPTY_USER,N/A
    * All CSV files exported by these scripts use `utf-8-sig` (UTF-8 with BOM). This prevents corruption of accented characters or foreign descriptions when uploaded into SAP GUI via `cl_gui_frontend_services=>gui_upload`.
 2. **Confidentiality / Data Segregation**:
    * Keep real production or client authorization files in `excel-working/`. This folder is ignored by `.gitignore`.
-   * Only anonymized files should ever be placed in `excel-templates/`.
+   * Only anonymized template files should ever be placed in `excel-templates/`.
 3. **Empty Org Level Values**:
-   * Blank/empty cells in `Template_Roles_Derived_Org.xlsx` are ignored by the script. In the ABAP program `Z_AUTH_ROLE_UPDATE_ORG`, use parameter `p_astnon = 'X'` to automatically default any unlisted authorization org fields to `*` (wildcard) so profile generation remains **Green**.
+   * Blank/empty cells in `Template_Role_03_Org.xlsx` are ignored by the script. In the ABAP program `Z_ROLE_03_UPDATE_ORG`, use parameter `p_astnon = 'X'` to automatically default any unlisted authorization org fields to `*` (wildcard) so profile generation remains **Green**.

@@ -1,11 +1,11 @@
-# 🏗️ Z_AUTH_ROLE_CREATE: Batch Master Single Role Creation & Menu Structuring
+# 🏗️ Z_ROLE_01_CREATE_MASTER: Batch Master Single Role Creation & Menu Structuring
 
 > **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
-> **Source Code**: [`src/z_auth_role_create.prog.abap`](../src/z_auth_role_create.prog.abap)  
-> **Companion Script**: [`scripts/convert_role_master_excel.py`](../scripts/convert_role_master_excel.py)  
+> **Source Code**: [`src/z_role_01_create_master.prog.abap`](../src/z_role_01_create_master.prog.abap)  
+> **Companion Script**: [`scripts/convert_role_01_master.py`](../scripts/convert_role_01_master.py)  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-The ABAP program **`Z_AUTH_ROLE_CREATE`** is an operational utility designed for SAP Security Administrators and Authorization Designers. It automates the mass creation and updating of **Master Single Roles** directly from flat CSV data, builds structured menu folder hierarchies, validates transaction codes against the SAP repository (`TSTC`), applies template-grade Organizational Level defaults (`-1`), cleans up unwanted automatic text comments, and compiles runtime authorization profiles in the background.
+The ABAP program **`Z_ROLE_01_CREATE_MASTER`** is an operational utility designed for SAP Security Administrators and Authorization Designers. It automates the mass creation and updating of **Master Single Roles** directly from flat CSV data, builds structured menu folder hierarchies, validates transaction codes against the SAP repository (`TSTC`), applies template-grade Organizational Level defaults (`-1`), cleans up unwanted automatic text comments, and compiles runtime authorization profiles in the background.
 
 ---
 
@@ -43,11 +43,10 @@ In large enterprise SAP implementations (S/4HANA or ECC), authorization design t
 
 ```mermaid
 flowchart TD
-    A["Input File: Role_Master_converted.csv\n(Role Name, Role Description, TCode)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
+    A["Input File: Template_Role_01_Master_converted.csv\n(Role Name, Role Description, TCode)"] --> B["Upload via cl_gui_frontend_services=>gui_upload"]
     B --> C["Parse CSV Lines (Preserve Exact Description Whitespace)"]
     C --> D["Group TCodes by Role & Validate in TSTC / TSTCT"]
     D --> E{"Role has Valid TCodes?"}
-    
     E -->|No Valid TCodes / N/A| F["Create Role Definition: PRGN_RFC_CREATE_AGR_MULTIPLE"]
     F --> G["Default AGR_1252 to '-1' & Clean AGR_TEXTS"]
     G --> H["Report Status: Warning @09@ (Yellow LED)"]
@@ -71,13 +70,13 @@ flowchart TD
 ## 3. Key Architectural & Functional Features
 
 ### 3.1. Preserving Exact Spacing & Formatting
-When reading role descriptions from CSV (column 2), `Z_AUTH_ROLE_CREATE` preserves original whitespace and punctuation without running destructive `CONDENSE` or trimming. The exact casing and spacing are replicated in the role title (`AGR_TEXTS`) and the menu folder title.
+When reading role descriptions from CSV (column 2), `Z_ROLE_01_CREATE_MASTER` preserves original whitespace and punctuation without running destructive `CONDENSE` or trimming. The exact casing and spacing are replicated in the role title (`AGR_TEXTS`) and the menu folder title.
 
 ### 3.2. Automatic Cleanup of Generic PFCG Comment Lines
 When SAP standard function modules create roles, they automatically append the English/German system comment:
 > *"The role was created automatically and can be processed manually."*
 
-`Z_AUTH_ROLE_CREATE` automatically deletes these secondary comment lines (`DELETE FROM agr_texts WHERE agr_name = ... AND line > '00000'`), keeping `PFCG` documentation neat and professional.
+`Z_ROLE_01_CREATE_MASTER` automatically deletes these secondary comment lines (`DELETE FROM agr_texts WHERE agr_name = ... AND line > '00000'`), keeping `PFCG` documentation neat and professional.
 
 ### 3.3. Menu Folder Creation & Nesting
 For every master role with valid transaction codes, the program builds a 2-level hierarchy in `SMENSAPNEW`:
@@ -114,7 +113,7 @@ When **Update Existing Roles** (`p_upd = 'X'`) is enabled:
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ Selection Screen: Z_AUTH_ROLE_CREATE                                     ║
+║ Selection Screen: Z_ROLE_01_CREATE_MASTER                                ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ [Input CSV File (.csv)]                                                  ║
 ║   File Path:             [ D:\PROJECTS\SAPABAP\excel-templates\... ] 📁 ║
@@ -152,16 +151,16 @@ When **Update Existing Roles** (`p_upd = 'X'`) is enabled:
 ## 6. Operational Step-by-Step Guide
 
 ### Step 1: Prepare & Convert Business Matrix
-1. Download [excel-templates/Template_Roles_Master.xlsx](../excel-templates/Template_Roles_Master.xlsx).
+1. Download [excel-templates/Template_Role_01_Master.xlsx](../excel-templates/Template_Role_01_Master.xlsx).
 2. Maintain your role names (Row 2), descriptions (Row 1), and mark assigned TCodes with `Y`.
 3. Convert to CSV:
    ```bash
-   npm run convert:role:master
-   # Produces Template_Roles_Master_converted.csv
+   npm run convert:role:01
+   # Produces Template_Role_01_Master_converted.csv
    ```
 
 ### Step 2: Run Simulation in SAP
-1. Execute transaction **`SE38`** or **`SA38`** and run **`Z_AUTH_ROLE_CREATE`**.
+1. Execute transaction **`SE38`** or **`SA38`** and run **`Z_ROLE_01_CREATE_MASTER`**.
 2. Select the converted `.csv` file.
 3. Keep **Simulation (Test Run)** checked.
 4. Review the ALV output:

@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_ROLE_COMPOSITE
+*& Report Z_ROLE_04_COMPOSITE
 *&---------------------------------------------------------------------*
 *& Purpose: Batch PFCG Composite Role Creation & Single Role Assignment
 *& Description:
@@ -21,7 +21,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
 *&---------------------------------------------------------------------*
-REPORT z_auth_role_composite.
+REPORT z_role_04_composite.
 
 TABLES: agr_define, agr_texts, agr_flags, agr_agrs.
 

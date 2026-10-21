@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Convert Derived Roles Creation Excel file to flat row format for SAP Role upload.
-Reads tabular sheet containing Master Roles, Derived Roles, and Descriptions.
-Validates non-empty role keys and exports normalized CSV for SAP batch creation.
+Convert Derived Roles Matrix Excel file to flat row format for SAP upload.
+Output format matches the CSV requirements for the SAP ABAP Derived Role Creation program.
 
-Output columns:
+Columns:
 1. Master Role
 2. Derived Role
 3. Derived Role Description
@@ -13,11 +12,11 @@ Output:
 - <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
 
 Usage:
-    python scripts/convert_role_derived_excel.py [input_excel_file]
+    python scripts/convert_role_02_derive.py [input_excel_file]
 
 Example:
-    python scripts/convert_role_derived_excel.py excel-working/FICO_Roles_Derived.xlsx
-    -> Outputs: excel-working/FICO_Roles_Derived_converted.csv
+    python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx
+    -> Outputs: excel-templates/Template_Role_02_Derived_converted.csv
 """
 
 import os
@@ -30,10 +29,13 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_role_derived_excel(input_path):
+def convert_role_02_derive(input_path):
     """
     Reads Derived Roles Excel file and converts to flat CSV format.
-    Dynamically maps header columns for Master Role, Derived Role, and Description.
+    Expects columns:
+    - Master Role (contains 'master')
+    - Derived Role (contains 'derive')
+    - Derived Role Description (contains 'desc' or 'description')
     """
     # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
@@ -57,10 +59,10 @@ def convert_role_derived_excel(input_path):
         print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
         sys.exit(1)
 
-    # Locate 'DERIVED ROLES' sheet or fallback to active sheet
+    # Locate target sheet: prefer sheet with 'derive' in name, else active sheet
     target_sheet = None
     for name in wb_in.sheetnames:
-        if "derived roles" in name.strip().lower():
+        if 'derive' in name.strip().lower():
             target_sheet = wb_in[name]
             break
 
@@ -72,66 +74,66 @@ def convert_role_derived_excel(input_path):
 
     ws = target_sheet
 
-    # --- Dynamic Column Detection ---
+    # --- Detect Header Columns ---
+    header_row = 1
     col_master = None
     col_derived = None
     col_desc = None
 
     for col in range(1, ws.max_column + 1):
-        val = str(ws.cell(1, col).value or '').strip().lower()
-        if 'master' in val:
+        val = str(ws.cell(header_row, col).value or '').strip().lower()
+        if 'master' in val and col_master is None:
             col_master = col
-        elif 'derived' in val and ('desc' in val or 'text' in val or 'title' in val):
+        elif 'derive' in val and ('desc' in val or 'description' in val) and col_desc is None:
             col_desc = col
-        elif 'derived' in val:
+        elif 'derive' in val and col_derived is None:
             col_derived = col
 
-    # Fallback to standard positions (1: Master, 2: Derived, 3: Description)
-    col_master = col_master or 1
-    col_derived = col_derived or 2
-    col_desc = col_desc or 3
+    # Fallback default positions: Col 1 = Master, Col 2 = Derived, Col 3 = Description
+    if col_master is None:
+        col_master = 1
+    if col_derived is None:
+        col_derived = 2
+    if col_desc is None:
+        col_desc = 3
 
-    print(f"[INFO] Detected Columns -> Master Role: Col {col_master}, Derived Role: Col {col_derived}, Description: Col {col_desc}")
+    print(f"[INFO] Column mappings -> Master: Col {col_master}, Derived: Col {col_derived}, Desc: Col {col_desc}")
 
-    # --- Row Extraction & Validation ---
     records = []
     skipped_empty = 0
     unique_masters = set()
     unique_derived = set()
 
+    # --- Read Data Rows ---
     for row in range(2, ws.max_row + 1):
-        raw_master = ws.cell(row, col_master).value
-        raw_derived = ws.cell(row, col_derived).value
-        raw_desc = ws.cell(row, col_desc).value
+        val_master = str(ws.cell(row, col_master).value or '').strip()
+        val_derived = str(ws.cell(row, col_derived).value or '').strip()
+        cell_desc_val = ws.cell(row, col_desc).value
+        val_desc = str(cell_desc_val).strip() if cell_desc_val is not None else ''
 
-        master_role = str(raw_master or '').strip().upper()
-        derived_role = str(raw_derived or '').strip().upper()
-        role_desc = str(raw_desc) if raw_desc is not None else ''
-
-        # Skip completely empty rows
-        if not master_role and not derived_role and not role_desc.strip():
+        # Skip rows where both master and derived are blank
+        if not val_master and not val_derived:
             skipped_empty += 1
             continue
 
-        if not master_role or not derived_role:
-            print(f"[WARNING] Row {row} missing Master or Derived Role: Master='{master_role}', Derived='{derived_role}' -> Skipped.")
-            continue
-
         records.append({
-            'master_role': master_role,
-            'derived_role': derived_role,
-            'role_desc': role_desc
+            'master_role': val_master,
+            'derived_role': val_derived,
+            'derived_desc': val_desc
         })
-        unique_masters.add(master_role)
-        unique_derived.add(derived_role)
+
+        if val_master:
+            unique_masters.add(val_master)
+        if val_derived:
+            unique_derived.add(val_derived)
 
     # --- CSV Export (UTF-8 with BOM) ---
     try:
         with open(out_csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Master Role", "Derived Role", "Derived Role Description"])
-            for item in records:
-                writer.writerow([item['master_role'], item['derived_role'], item['role_desc']])
+            for r in records:
+                writer.writerow([r['master_role'], r['derived_role'], r['derived_desc']])
     except PermissionError:
         print(f"[ERROR] Permission denied when writing to '{out_csv_path}'. Please close the file in Excel and try again.")
         sys.exit(1)
@@ -146,11 +148,15 @@ def convert_role_derived_excel(input_path):
         print(f"[INFO] Empty Rows     : {skipped_empty} empty row(s) skipped")
 
 
+# Compatibility alias
+convert_role_derived_excel = convert_role_02_derive
+
+
 # --- CLI Entrypoint ---
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
-        print("Usage: python scripts/convert_role_derived_excel.py [path_to_excel_file]")
-        print("Example: python scripts/convert_role_derived_excel.py excel-working/FICO_Roles_Derived.xlsx")
+        print("Usage: python scripts/convert_role_02_derive.py [path_to_excel_file]")
+        print("Example: python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx")
         sys.exit(0)
 
     target_file = None
@@ -161,7 +167,9 @@ if __name__ == "__main__":
         # Default candidates lookup
         candidates = [
             os.path.join("excel-working", "FICO_Roles_Derived.xlsx"),
+            os.path.join("excel-templates", "Template_Role_02_Derived.xlsx"),
             os.path.join("excel-templates", "Template_Roles_Derived.xlsx"),
+            "Template_Role_02_Derived.xlsx",
             "FICO_Roles_Derived.xlsx",
             "Roles_Derived.xlsx"
         ]
@@ -172,8 +180,8 @@ if __name__ == "__main__":
 
     if not target_file:
         print("[ERROR] No input file provided or found in default locations.")
-        print("Usage: python scripts/convert_role_derived_excel.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_derived_excel.py excel-working/FICO_Roles_Derived.xlsx")
+        print("Usage: python scripts/convert_role_02_derive.py <path_to_excel_file>")
+        print("Example: python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx")
         sys.exit(1)
 
-    convert_role_derived_excel(target_file)
+    convert_role_02_derive(target_file)

@@ -1,12 +1,12 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_TEST
+*& Report Z_AUTH_SU53_ANALYZER
 *&---------------------------------------------------------------------*
 *& Advanced SU53 Authorization Trace & Role Diagnostics Analyzer
 *& Transaction Code: ZAT
 *& Package: $TMP (Local Object)
 *& Architecture: Dual-ALV Layout (Docking Single Roles + Fullscreen Missing Auths)
 *&---------------------------------------------------------------------*
-REPORT z_auth_test.
+REPORT z_auth_su53_analyzer.
 
 TABLES: usr02, agr_define.
 

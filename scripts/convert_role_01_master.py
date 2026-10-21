@@ -13,11 +13,11 @@ Output:
 - <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
 
 Usage:
-    python scripts/convert_role_master_excel.py [input_excel_file]
+    python scripts/convert_role_01_master.py [input_excel_file]
 
 Example:
-    python scripts/convert_role_master_excel.py excel-working/FICO_Roles_Master.xlsx
-    -> Outputs: excel-working/FICO_Roles_Master_converted.csv
+    python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx
+    -> Outputs: excel-templates/Template_Role_01_Master_converted.csv
 """
 
 import os
@@ -30,7 +30,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_role_master_excel(input_path):
+def convert_role_01_master(input_path):
     """
     Reads Master Role matrix Excel file and converts to flat CSV format.
     Row 1: Role Description (preserves exact spacing)
@@ -136,11 +136,15 @@ def convert_role_master_excel(input_path):
     print(f"[OK] Output CSV       : {out_csv_path} ({len(roles_flat)} data rows)")
 
 
+# Compatibility alias
+convert_role_master_excel = convert_role_01_master
+
+
 # --- CLI Entrypoint ---
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
-        print("Usage: python scripts/convert_role_master_excel.py [path_to_excel_file]")
-        print("Example: python scripts/convert_role_master_excel.py excel-working/FICO_Roles_Master.xlsx")
+        print("Usage: python scripts/convert_role_01_master.py [path_to_excel_file]")
+        print("Example: python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx")
         sys.exit(0)
 
     target_file = None
@@ -151,7 +155,9 @@ if __name__ == "__main__":
         # Default candidates lookup
         candidates = [
             os.path.join("excel-working", "FICO_Roles_Master.xlsx"),
+            os.path.join("excel-templates", "Template_Role_01_Master.xlsx"),
             os.path.join("excel-templates", "Template_Roles_Master.xlsx"),
+            "Template_Role_01_Master.xlsx",
             "FICO_Roles_Master.xlsx",
             "Roles_Master.xlsx"
         ]
@@ -162,8 +168,8 @@ if __name__ == "__main__":
 
     if not target_file:
         print("[ERROR] No input file provided or found in default locations.")
-        print("Usage: python scripts/convert_role_master_excel.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_master_excel.py excel-working/FICO_Roles_Master.xlsx")
+        print("Usage: python scripts/convert_role_01_master.py <path_to_excel_file>")
+        print("Example: python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx")
         sys.exit(1)
 
-    convert_role_master_excel(target_file)
+    convert_role_01_master(target_file)

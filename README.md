@@ -23,15 +23,18 @@
 5. [AI-Assisted ABAP Workflow](#5-ai-assisted-abap-workflow)
 6. [Automated Program-by-Program Deployment](#6-automated-program-by-program-deployment)
 7. [ABAP Utilities for SAP Basis](#7-abap-utilities-for-sap-basis)
-   - [7.1. Current Utility: Z_AUTH_TEST](#71-current-utility-z_auth_test)
-   - [7.2. Current Utility: Z_AUTH_ROLE_CREATE](#72-current-utility-z_auth_role_create)
-   - [7.3. Current Utility: Z_AUTH_ROLE_DERIVE](#73-current-utility-z_auth_role_derive)
-   - [7.4. Current Utility: Z_AUTH_ROLE_UPDATE_ORG](#74-current-utility-z_auth_role_update_org)
-   - [7.5. Current Utility: Z_AUTH_ROLE_COMPOSITE](#75-current-utility-z_auth_role_composite)
-   - [7.6. Current Utility: Z_AUTH_USER_CREATE](#76-current-utility-z_auth_user_create)
-   - [7.7. Current Utility: Z_AUTH_USER_ASSIGN_ROLE](#77-current-utility-z_auth_user_assign_role)
-   - [7.8. Python Preprocessing Pipeline Guide](#78-python-preprocessing-pipeline-guide)
-   - [7.9. Future Utilities Roadmap](#79-future-utilities-roadmap)
+   - [7.1. Module 1: Role Management (Z_ROLE_...)](#71-module-1-role-management-z_role_)
+     - [7.1.1. Z_ROLE_01_CREATE_MASTER](#711-z_role_01_create_master)
+     - [7.1.2. Z_ROLE_02_CREATE_DERIVE](#712-z_role_02_create_derive)
+     - [7.1.3. Z_ROLE_03_UPDATE_ORG](#713-z_role_03_update_org)
+     - [7.1.4. Z_ROLE_04_COMPOSITE](#714-z_role_04_composite)
+   - [7.2. Module 2: User Management (Z_USER_...)](#72-module-2-user-management-z_user_)
+     - [7.2.1. Z_USER_01_CREATE](#721-z_user_01_create)
+     - [7.2.2. Z_USER_02_ASSIGN_ROLE](#722-z_user_02_assign_role)
+   - [7.3. Module 3: Diagnostics & Utilities (Z_AUTH_...)](#73-module-3-diagnostics--utilities-z_auth_)
+     - [7.3.1. Z_AUTH_SU53_ANALYZER](#731-z_auth_su53_analyzer)
+   - [7.4. Python Preprocessing Pipeline Guide](#74-python-preprocessing-pipeline-guide)
+   - [7.5. Future Utilities Roadmap](#75-future-utilities-roadmap)
 8. [Security & Best Practices](#8-security--best-practices)
 9. [License](#9-license)
 
@@ -56,7 +59,7 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
          ▼
 [ SAP S/4HANA / NetWeaver System ]
    ├── ADT Endpoints (Read, Write, Syntax Check, Activate, SQL Query)
-   └── ABAP Utilities (e.g., Z_AUTH_TEST, Basis tools)
+   └── ABAP Utilities (Z_ROLE_*, Z_USER_*, Z_AUTH_*)
 ```
 
 ### Repository Structure
@@ -66,48 +69,49 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 ├── assets/
 │   └── logo.svg                # Repository brand logo
 ├── docs/
-│   ├── ROLE_CONVERSION_GUIDE.md # Guide for Python Excel-to-CSV converters
-│   ├── Z_AUTH_ROLE_COMPOSITE.md # Composite role creation & single role assignment documentation
-│   ├── Z_AUTH_ROLE_CREATE.md    # Master single role batch creation & menu documentation
-│   ├── Z_AUTH_ROLE_DERIVE.md    # Derived role creation & inheritance documentation
-│   ├── Z_AUTH_ROLE_UPDATE_ORG.md# Organizational levels batch update documentation
-│   ├── Z_AUTH_TEST.md          # Technical analysis & SU53 remediation cockpit documentation
-│   ├── Z_AUTH_USER_CREATE.md    # Batch user creation & update cockpit documentation
-│   └── Z_AUTH_USER_ASSIGN_ROLE.md # Batch user role assignment cockpit documentation
-├── excel-templates/            # Anonymized templates & sample data for role upload
+│   ├── ROLE_CONVERSION_GUIDE.md # Preprocessing guide for Excel-to-CSV converters
+│   ├── Z_ROLE_01_CREATE_MASTER.md # Master single role batch creation & menu documentation
+│   ├── Z_ROLE_02_CREATE_DERIVE.md # Derived role creation & inheritance documentation
+│   ├── Z_ROLE_03_UPDATE_ORG.md    # Organizational levels batch update documentation
+│   ├── Z_ROLE_04_COMPOSITE.md     # Composite role creation & single role assignment docs
+│   ├── Z_USER_01_CREATE.md        # Batch user creation & update cockpit documentation
+│   ├── Z_USER_02_ASSIGN_ROLE.md   # Batch user role assignment cockpit documentation
+│   └── Z_AUTH_SU53_ANALYZER.md    # SU53 failure analyzer & role provisioning cockpit docs
+├── excel-templates/            # Anonymized templates & sample data for batch upload
 │   ├── Org_Levels.csv          # Standard SAP 71 Organizational Level definitions
-│   ├── Template_Roles_Master.xlsx
-│   ├── Template_Roles_Master_converted.csv
-│   ├── Template_Roles_Derived.xlsx
-│   ├── Template_Roles_Derived_converted.csv
-│   ├── Template_Roles_Derived_Org.xlsx
-│   ├── Template_Roles_Derived_Org_converted.csv
-│   ├── Template_Roles_Composite.xlsx
-│   ├── Template_Roles_Composite_converted.csv
-│   ├── Template_Users_Create.xlsx
-│   ├── Template_Users_Create_converted.csv
-│   ├── Template_User_Assign_Role.xlsx
-│   └── Template_User_Assign_Role_converted.csv
+│   ├── Template_Role_01_Master.xlsx
+│   ├── Template_Role_01_Master_converted.csv
+│   ├── Template_Role_02_Derived.xlsx
+│   ├── Template_Role_02_Derived_converted.csv
+│   ├── Template_Role_03_Org.xlsx
+│   ├── Template_Role_03_Org_converted.csv
+│   ├── Template_Role_04_Composite.xlsx
+│   ├── Template_Role_04_Composite_converted.csv
+│   ├── Template_User_01_Create.xlsx
+│   ├── Template_User_01_Create_converted.csv
+│   ├── Template_User_02_Assign.xlsx
+│   └── Template_User_02_Assign_converted.csv
 ├── scripts/
-│   ├── convert_role_master_excel.py # Preprocessing script: converts matrix Excel to row format CSV
-│   ├── convert_role_derived_excel.py # Converts derived role creation Excel to flat CSV format
-│   ├── convert_role_org_excel.py    # Converts derived role org matrix to flat CSV referencing Org_Levels.csv
-│   ├── convert_role_composite_excel.py # Converts composite roles matrix to flat CSV format
-│   ├── convert_users_excel.py       # Converts user creation Excel to normalized CSV with secure passwords
-│   ├── convert_users_assign_roles_excel.py # Converts user role assignment matrix to flat CSV format
-│   ├── generate_org_levels_csv.py   # Generates standard Org_Levels.csv reference
-│   └── deploy.js               # CLI deployment engine via MCP ADT
+│   ├── convert_role_01_master.py   # Preprocessing script: Master role matrix to CSV
+│   ├── convert_role_02_derive.py   # Derived role creation mapping to flat CSV
+│   ├── convert_role_03_org.py      # Derived role org matrix to flat CSV referencing Org_Levels.csv
+│   ├── convert_role_04_composite.py# Composite roles matrix to flat CSV
+│   ├── convert_user_01_create.py   # User creation Excel to normalized CSV with passwords
+│   ├── convert_user_02_assign.py   # User role assignment matrix to flat CSV
+│   ├── create_templates.py         # Generates anonymized sample Excel and CSV templates
+│   ├── generate_org_levels_csv.py  # Generates standard Org_Levels.csv reference
+│   └── deploy.js                   # CLI deployment engine via MCP ADT
 ├── src/
-│   ├── z_auth_role_composite.prog.abap  # Batch Composite Role Creation & Assignment tool
-│   ├── z_auth_role_create.prog.abap     # Batch Master Role Creation & Menu Structuring tool
-│   ├── z_auth_role_derive.prog.abap     # Batch Derived Role Creation & Inheritance Synchronization
-│   ├── z_auth_role_update_org.prog.abap # Batch Organizational Levels Maintenance tool
-│   ├── z_auth_test.prog.abap            # ABAP operational cockpit source code
-│   ├── z_auth_user_create.prog.abap     # Batch SAP User Creation & Update tool
-│   └── z_auth_user_assign_role.prog.abap # Batch User-Role Assignment tool
+│   ├── z_role_01_create_master.prog.abap # Batch Master Role Creation & Menu Structuring
+│   ├── z_role_02_create_derive.prog.abap # Batch Derived Role Creation & Inheritance
+│   ├── z_role_03_update_org.prog.abap    # Batch Organizational Levels Maintenance
+│   ├── z_role_04_composite.prog.abap     # Batch Composite Role Creation & Assignment
+│   ├── z_user_01_create.prog.abap        # Batch SAP User Creation & Update Cockpit
+│   ├── z_user_02_assign_role.prog.abap   # Batch User-Role Assignment Cockpit
+│   └── z_auth_su53_analyzer.prog.abap    # SU53 Buffer Analyzer & Remediation Cockpit
 ├── .sap.env.example            # SAP ADT connection template (never commit .sap.env)
 ├── mcp-config.example.json     # MCP server configuration snippet
-├── package.json                # Project metadata & npm deploy scripts
+├── package.json                # Project metadata & npm scripts
 ├── LICENSE                     # MIT License
 └── README.md                   # Project documentation & guides
 ```
@@ -119,6 +123,7 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 ### Client Environment
 - **Node.js**: `>= 22.0.0`
 - **npm**: `>= 9.0.0`
+- **Python**: `>= 3.9` with `openpyxl`
 - **Git**: Installed and available in `PATH`
 
 ### SAP System Requirements
@@ -170,9 +175,9 @@ NODE_TLS_REJECT_UNAUTHORIZED=0
 > **Note**: `.sap.env` is excluded via `.gitignore`. Do not commit credentials to Git.
 
 ### Step 4: Deploy a Selected Program
-Deploy a chosen ABAP utility (e.g. `Z_AUTH_TEST`):
+Deploy a chosen ABAP utility (e.g. `Z_ROLE_01_CREATE_MASTER`):
 ```bash
-npm run deploy -- Z_AUTH_TEST
+npm run deploy:role:01
 ```
 *(Or run `npm run deploy` without arguments to choose interactively from the menu of available programs in `src/`).*
 
@@ -205,8 +210,7 @@ args = ["/c", "mcp-abap-adt", "--transport=stdio", "--env-path=C:\\path\\to\\SAP
 
 ### 4.2. ChatGPT (Desktop & Codex)
 
-#### ChatGPT Desktop App (macOS & Windows)
-Add the server to your ChatGPT configuration file (`%APPDATA%\OpenAI\ChatGPT\mcp.json` on Windows or `~/.config/chatgpt/mcp.json` on macOS/Linux):
+In your ChatGPT MCP settings file:
 ```json
 {
   "mcpServers": {
@@ -222,24 +226,12 @@ Add the server to your ChatGPT configuration file (`%APPDATA%\OpenAI\ChatGPT\mcp
   }
 }
 ```
-*(On macOS/Linux, set `"command": "mcp-abap-adt"` and pass `args: ["--transport=stdio", "--env-path=/path/to/.sap.env"]`).*
-
-#### OpenAI Codex CLI
-Add the server via the Codex CLI:
-- **Windows**:
-  ```bash
-  codex mcp add sap-s4hana -- cmd.exe /c mcp-abap-adt --transport=stdio --env-path=C:\path\to\SAPABAP\.sap.env
-  ```
-- **macOS / Linux**:
-  ```bash
-  codex mcp add sap-s4hana -- mcp-abap-adt --transport=stdio --env-path=/path/to/.sap.env
-  ```
 
 ---
 
 ### 4.3. Claude Desktop
 
-In `claude_desktop_config.json`:
+In `%APPDATA%\Claude\claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
@@ -260,10 +252,10 @@ In `claude_desktop_config.json`:
 
 ### 4.4. Cursor IDE
 
-In **Settings** -> **Features** -> **MCP Servers** -> **Add New MCP Server**:
+In Cursor Settings $\rightarrow$ Features $\rightarrow$ MCP Servers:
 - **Name**: `sap-s4hana`
 - **Type**: `command`
-- **Command**: `mcp-abap-adt --transport=stdio --env-path=C:\path\to\SAPABAP\.sap.env`
+- **Command**: `cmd.exe /c mcp-abap-adt --transport=stdio --env-path=C:\path\to\SAPABAP\.sap.env`
 
 ---
 
@@ -316,7 +308,7 @@ Once connected, AI agents can read, write, validate, and query SAP systems direc
 | Tool | Action | Example AI Usage |
 | :--- | :--- | :--- |
 | `SearchObject` | Object search | *"Search for function modules related to `SUSR_USER`"* |
-| `GetProgram` / `GetClass` | Source inspection | *"Read the source code of report `Z_AUTH_TEST`"* |
+| `GetProgram` / `GetClass` | Source inspection | *"Read the source code of report `Z_ROLE_01_CREATE_MASTER`"* |
 | `UpdateProgram` / `UpdateClass` | Code authoring | *"Add a new subroutine to handle date filtering and save"* |
 | `CheckProgram` / `CheckClass` | Syntax validation | *"Check syntax and report any compiler errors or warnings"* |
 | `ActivateProgram` / `ActivateClass` | Object activation | *"Activate inactive objects after refactoring"* |
@@ -327,22 +319,30 @@ Once connected, AI agents can read, write, validate, and query SAP systems direc
 
 ## 6. Automated Program-by-Program Deployment
 
-Deployment is explicitly designed to be **selective per program**—you choose exactly which ABAP program to upload and activate, rather than pushing everything in bulk:
+Deployment is explicitly designed to be **selective per program**—you choose exactly which ABAP program to upload and activate:
 
 ### Option 1: Direct CLI by Program Name
 ```bash
-# Convenient npm scripts defined in package.json:
-npm run deploy:auth       # Deploys Z_AUTH_TEST
-npm run deploy:role       # Deploys Z_AUTH_ROLE_CREATE
-npm run deploy:derive     # Deploys Z_AUTH_ROLE_DERIVE
-npm run deploy:org        # Deploys Z_AUTH_ROLE_UPDATE_ORG
-npm run deploy:composite  # Deploys Z_AUTH_ROLE_COMPOSITE
-npm run deploy:user       # Deploys Z_AUTH_USER_CREATE
-npm run deploy:assign     # Deploys Z_AUTH_USER_ASSIGN_ROLE
+# Module 1: Role Management
+npm run deploy:role:01      # Deploys Z_ROLE_01_CREATE_MASTER
+npm run deploy:role:02      # Deploys Z_ROLE_02_CREATE_DERIVE
+npm run deploy:role:03      # Deploys Z_ROLE_03_UPDATE_ORG
+npm run deploy:role:04      # Deploys Z_ROLE_04_COMPOSITE
+npm run deploy:role:all     # Deploys all Role Management programs
 
-# Or pass custom arguments:
-npm run deploy -- Z_AUTH_TEST
-node scripts/deploy.js src/z_auth_test.prog.abap Z_AUTH_TEST
+# Module 2: User Management
+npm run deploy:user:01      # Deploys Z_USER_01_CREATE
+npm run deploy:user:02      # Deploys Z_USER_02_ASSIGN_ROLE
+npm run deploy:user:all     # Deploys all User Management programs
+
+# Module 3: Diagnostics & Utilities
+npm run deploy:su53         # Deploys Z_AUTH_SU53_ANALYZER
+
+# Deploy Everything
+npm run deploy:all
+
+# Custom explicit command:
+node scripts/deploy.js src/z_role_01_create_master.prog.abap Z_ROLE_01_CREATE_MASTER
 ```
 
 ### Option 2: Interactive Terminal Selection Menu
@@ -353,153 +353,147 @@ npm run deploy
 The deploy script scans `src/`, lists all available ABAP programs, and asks you to select which one to deploy:
 ```text
 📋 Select an ABAP program to deploy to SAP:
-  [1] Z_AUTH_TEST (z_auth_test.prog.abap)
-  ...
-Enter number (1-1) or 'q' to cancel: 1
+  [1] Z_AUTH_SU53_ANALYZER (z_auth_su53_analyzer.prog.abap)
+  [2] Z_ROLE_01_CREATE_MASTER (z_role_01_create_master.prog.abap)
+  [3] Z_ROLE_02_CREATE_DERIVE (z_role_02_create_derive.prog.abap)
+  [4] Z_ROLE_03_UPDATE_ORG (z_role_03_update_org.prog.abap)
+  [5] Z_ROLE_04_COMPOSITE (z_role_04_composite.prog.abap)
+  [6] Z_USER_01_CREATE (z_user_01_create.prog.abap)
+  [7] Z_USER_02_ASSIGN_ROLE (z_user_02_assign_role.prog.abap)
+
+Enter number (1-7) or 'q' to cancel: 2
 ```
 
 ### Option 3: Deploy via Connected AI Assistant
 In any MCP-connected AI assistant (Grok, ChatGPT/Codex, Claude, Cursor, Antigravity):
-> *"Deploy `src/z_auth_test.prog.abap` as program `Z_AUTH_TEST` to the connected SAP system and activate it."*
-
-### Execution Lifecycle:
-1. Enqueue program lock via ADT
-2. Run remote syntax check
-3. Upload source code (Update or Create in `$TMP`)
-4. Release lock
-5. Verify inactive state and trigger remote activation
+> *"Deploy `src/z_role_01_create_master.prog.abap` as program `Z_ROLE_01_CREATE_MASTER` to the connected SAP system and activate it."*
 
 ---
 
 ## 7. ABAP Utilities for SAP Basis
 
-A primary objective of this repository is to build and maintain open-source ABAP utilities created with AI assistance to support SAP Basis administration and security operations.
+### 7.1. Module 1: Role Management (`Z_ROLE_...`)
 
-### 7.1. Current Utility: Z_AUTH_TEST
+#### 7.1.1. Z_ROLE_01_CREATE_MASTER
+- **Source Code**: [`src/z_role_01_create_master.prog.abap`](src/z_role_01_create_master.prog.abap)
+- **Documentation**: [`docs/Z_ROLE_01_CREATE_MASTER.md`](docs/Z_ROLE_01_CREATE_MASTER.md)
+- **Companion Script**: [`scripts/convert_role_01_master.py`](scripts/convert_role_01_master.py)
+- **Template**: [`excel-templates/Template_Role_01_Master.xlsx`](excel-templates/Template_Role_01_Master.xlsx) & `_converted.csv`
+- **Purpose**: Batch PFCG Master Single Role Creation, Menu Folder Generation, and Authorization Profile Build from CSV.
+- **Key Features**:
+  - Converts role matrix spreadsheets into normalized CSV format (`Role Name`, `Role Description`, `TCode`).
+  - Preserves exact formatting and whitespaces in role and folder descriptions.
+  - Cleans up standard SAP boilerplate comments from `AGR_TEXTS`.
+  - Defaults all Organizational Levels to `'-1'` to prevent wildcard security leakage.
+  - Constructs structured menu hierarchies under dedicated role folders.
+  - Features simulation mode, non-blocking TCode verification against `TSTC`, and one-click hotspot jump to `PFCG`.
 
-- **Source Code**: [`src/z_auth_test.prog.abap`](src/z_auth_test.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_TEST.md`](docs/Z_AUTH_TEST.md) (Comprehensive technical reference & code analysis)
+#### 7.1.2. Z_ROLE_02_CREATE_DERIVE
+- **Source Code**: [`src/z_role_02_create_derive.prog.abap`](src/z_role_02_create_derive.prog.abap)
+- **Documentation**: [`docs/Z_ROLE_02_CREATE_DERIVE.md`](docs/Z_ROLE_02_CREATE_DERIVE.md)
+- **Companion Script**: [`scripts/convert_role_02_derive.py`](scripts/convert_role_02_derive.py)
+- **Template**: [`excel-templates/Template_Role_02_Derived.xlsx`](excel-templates/Template_Role_02_Derived.xlsx) & `_converted.csv`
+- **Purpose**: Batch PFCG Derived Role Creation & Inheritance Synchronization from CSV.
+- **Key Features**:
+  - Validates that the imparting Master Role exists in SAP (`AGR_DEFINE`) and is a single role.
+  - Automatically creates derived roles with `PARENT_AGR` link.
+  - Inherits menu and authorizations via `PRGN_RFC_CREATE_DERIVATION`.
+  - Initializes inherited Org Levels to `'-1'` to allow clean background profile generation.
+  - Supports re-synchronizing authorizations when master roles are updated.
+  - Interactive ALV cockpit with two-way hotspot navigation to `PFCG` for both derived and master roles.
+
+#### 7.1.3. Z_ROLE_03_UPDATE_ORG
+- **Source Code**: [`src/z_role_03_update_org.prog.abap`](src/z_role_03_update_org.prog.abap)
+- **Documentation**: [`docs/Z_ROLE_03_UPDATE_ORG.md`](docs/Z_ROLE_03_UPDATE_ORG.md)
+- **Companion Script**: [`scripts/convert_role_03_org.py`](scripts/convert_role_03_org.py)
+- **Org Levels Reference**: [`excel-templates/Org_Levels.csv`](excel-templates/Org_Levels.csv)
+- **Template**: [`excel-templates/Template_Role_03_Org.xlsx`](excel-templates/Template_Role_03_Org.xlsx) & `_converted.csv`
+- **Purpose**: Batch Organizational Levels Maintenance & Profile Regeneration from CSV.
+- **Key Features**:
+  - Updates only the Organizational Levels (`AGR_1252`) relevant to each role's authorizations.
+  - Restores corrupted variable bindings (`p_fix51 = 'X'`) in `AGR_1251` using table `USORG`.
+  - Guaranteed Green Status (`p_astnon = 'X'`): defaults unlisted secondary Org Levels to `'*'` so profiles compile without warnings.
+  - Compiles runtime authorization profiles in dark mode and verifies LED status (`PRGN_CHECK_PROFILE_STATUS`).
+
+#### 7.1.4. Z_ROLE_04_COMPOSITE
+- **Source Code**: [`src/z_role_04_composite.prog.abap`](src/z_role_04_composite.prog.abap)
+- **Documentation**: [`docs/Z_ROLE_04_COMPOSITE.md`](docs/Z_ROLE_04_COMPOSITE.md)
+- **Companion Script**: [`scripts/convert_role_04_composite.py`](scripts/convert_role_04_composite.py)
+- **Template**: [`excel-templates/Template_Role_04_Composite.xlsx`](excel-templates/Template_Role_04_Composite.xlsx) & `_converted.csv`
+- **Purpose**: Batch Composite Role Creation & Single Role Assignment from CSV.
+- **Key Features**:
+  - Creates collective role definitions (`AGR_DEFINE-ATTRIBUTES = 'COLLECTIVE'`, `AGR_FLAGS-COLL_AGR = 'X'`).
+  - Validates member single roles in `AGR_DEFINE` and prevents nested composite roles.
+  - Missing roles are isolated into a dedicated column with Warning status (`@09@`).
+  - Supports placeholder composite roles (`N/A`) and synchronizes memberships (`p_sync = 'X'`).
+
+---
+
+### 7.2. Module 2: User Management (`Z_USER_...`)
+
+#### 7.2.1. Z_USER_01_CREATE
+- **Source Code**: [`src/z_user_01_create.prog.abap`](src/z_user_01_create.prog.abap)
+- **Documentation**: [`docs/Z_USER_01_CREATE.md`](docs/Z_USER_01_CREATE.md)
+- **Companion Script**: [`scripts/convert_user_01_create.py`](scripts/convert_user_01_create.py)
+- **Template**: [`excel-templates/Template_User_01_Create.xlsx`](excel-templates/Template_User_01_Create.xlsx) & `_converted.csv`
+- **Purpose**: Batch SAP User Creation & Master Data Update Cockpit from CSV.
+- **Key Features**:
+  - Maps **Full Name** entirely into SAP **Last Name** (`BAPIADDR3-LASTNAME`) to satisfy mandatory constraints without arbitrary splitting.
+  - Binary UTF-8 upload with BOM stripping, preserving Vietnamese accents and international characters.
+  - Automatically verifies email syntax (`SX_INTERNET_ADDRESS_TO_NORMAL`) and ignores invalid formats.
+  - Displays initial logon passwords directly on the ALV grid for audit and distribution.
+  - Supports simulation mode, in-place user updates (`p_upd = 'X'`), password resets (`p_pwd = 'X'`), and one-click jump to `SU01`.
+
+#### 7.2.2. Z_USER_02_ASSIGN_ROLE
+- **Source Code**: [`src/z_user_02_assign_role.prog.abap`](src/z_user_02_assign_role.prog.abap)
+- **Documentation**: [`docs/Z_USER_02_ASSIGN_ROLE.md`](docs/Z_USER_02_ASSIGN_ROLE.md)
+- **Companion Script**: [`scripts/convert_user_02_assign.py`](scripts/convert_user_02_assign.py)
+- **Template**: [`excel-templates/Template_User_02_Assign.xlsx`](excel-templates/Template_User_02_Assign.xlsx) & `_converted.csv`
+- **Purpose**: Batch User-to-Role Assignment Cockpit from CSV.
+- **Key Features**:
+  - Aggregates multi-role assignments per user into a single atomic call via `BAPI_USER_ACTGROUPS_ASSIGN`.
+  - Validates user existence (`USR02`) and role definitions (`AGR_DEFINE`).
+  - Default **Append Mode (`p_append = 'X'`)** preserves existing user roles; optional replace mode.
+  - Seamlessly assigns Composite Roles (expanding to member single roles automatically) and Single Roles.
+  - Interactive ALV grid with clickable hotspot on Username directly into transaction `SU01`.
+
+---
+
+### 7.3. Module 3: Diagnostics & Utilities (`Z_AUTH_...`)
+
+#### 7.3.1. Z_AUTH_SU53_ANALYZER
+- **Source Code**: [`src/z_auth_su53_analyzer.prog.abap`](src/z_auth_su53_analyzer.prog.abap)
+- **Documentation**: [`docs/Z_AUTH_SU53_ANALYZER.md`](docs/Z_AUTH_SU53_ANALYZER.md)
 - **Purpose**: Automated SU53 buffer analyzer & PFCG single-role remediation cockpit.
 - **Key Features**:
   - Aggregates all authorization check failures from the SU53 buffer over the last 3 hours via `SUSR_USER_SU53_READ`.
   - Evaluates authorization coverage against user single roles in real time.
-  - Automatically incorporates all default fields from table `TOBJ` to maintain object integrity.
+  - Incorporates all mandatory default fields from table `TOBJ` to maintain object integrity (no yellow triangles).
   - Resolves open Organizational Levels (`AGR_1252`) with wildcards.
   - Forces profile regeneration in background mode (`SUPRN_DARK_MANIPULATE_PROFILE`) without manual PFCG intervention.
 
-### 7.2. Current Utility: Z_AUTH_ROLE_CREATE
+---
 
-- **Source Code**: [`src/z_auth_role_create.prog.abap`](src/z_auth_role_create.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_ROLE_CREATE.md`](docs/Z_AUTH_ROLE_CREATE.md) (Complete technical reference & workflow)
-- **Companion Script**: [`scripts/convert_role_master_excel.py`](scripts/convert_role_master_excel.py)
-- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
-- **Purpose**: Batch PFCG Master Single Role Creation, Menu Folder Generation, and Authorization Profile Build from CSV (`.csv`).
-- **Workflow & Key Features**:
-  - **Excel Preprocessing**: `convert_role_master_excel.py` converts role matrix spreadsheets (columns containing TCodes with 'Y' checkmarks) into normalized CSV format (`Role Name`, `Role Description`, `TCode`). If a master role column has no TCodes marked with 'Y', it creates a single row with `TCode = 'N/A'`.
-  - **Preserves Exact Spacing**: Role Description and Menu Folders preserve original whitespaces without stripping or condensing.
-  - **Clean PFCG Descriptions**: Automatically cleans up default SAP generated comment lines (`"The role was created automatically and can be processed manually."`) from `AGR_TEXTS`.
-  - **Master Role Architecture (Org Levels Defaulted to `-1`)**:
-    - Avoids assigning wildcard `'*'` to Organizational Levels (`AGR_1252` and related authorization fields in `AGR_1251`).
-    - Defaults all Organizational Levels to `'-1'` (standard template architecture for Master Roles), ensuring zero unintended authorization leakage while readying template roles for subsequent derivation into specialized operational roles.
-  - **PFCG Menu Hierarchy**:
-    - Automatically creates a dedicated **Menu Folder** named after the **Role Description** (e.g. `Folder = "GL Period Control"`).
-    - Links all assigned TCodes as children under that folder.
-  - **Automated Profile Generation**: Calls `PRGN_RFC_CREATE_ACTIVITY_GROUP` and `SUPRN_DARK_MANIPULATE_PROFILE` in background mode.
-  - **Interactive ALV Grid**: Interactive execution cockpit with simulation mode (Test Run), non-blocking TCode verification against `TSTC` (isolating invalid TCodes to a separate column), Warning status (`@09@`) for roles without TCodes (`N/A`), and hotspot links to open `PFCG` directly.
-
-### 7.3. Current Utility: Z_AUTH_ROLE_DERIVE
-
-- **Source Code**: [`src/z_auth_role_derive.prog.abap`](src/z_auth_role_derive.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_ROLE_DERIVE.md`](docs/Z_AUTH_ROLE_DERIVE.md) (Complete technical reference & workflow)
-- **Companion Script**: [`scripts/convert_role_derived_excel.py`](scripts/convert_role_derived_excel.py)
-- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
-- **Purpose**: Batch PFCG Derived Role Creation & Inheritance Synchronization from CSV (`.csv`).
-- **Workflow & Key Features**:
-  - **Upload Format**: Reads mapping CSV file (`Master Role`, `Derived Role`, `Derived Role Description`), generated via `convert_role_derived_excel.py`.
-  - **Master Role Validation**: Validates that the imparting Master Role exists in SAP (`AGR_DEFINE`) and is a single role (rejects collective roles).
-  - **Derived Role Creation**: Calls `PRGN_RFC_CREATE_AGR_MULTIPLE` to generate the derived role shell with `PARENT_AGR = master_role` and custom description without automatic comments.
-  - **Authorization Inheritance & Profile Generation**: Calls `PRGN_RFC_CREATE_DERIVATION` to synchronize all authorization data from the Master Role and compile the authorization profile.
-  - **Organizational Level Defaults**: Automatically defaults all inherited organizational levels to `"-1"` in `AGR_1252` and `AGR_1251`, readying roles for subsequent organization value specialization without triggering missing org errors.
-  - **Interactive ALV Cockpit**: Features Simulation Mode (Test Run), Update Existing Roles option, and clickable hotspot links to jump directly into transaction `PFCG` for both Derived Roles and Master Roles.
-
-### 7.4. Current Utility: Z_AUTH_ROLE_UPDATE_ORG
-
-- **Source Code**: [`src/z_auth_role_update_org.prog.abap`](src/z_auth_role_update_org.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_ROLE_UPDATE_ORG.md`](docs/Z_AUTH_ROLE_UPDATE_ORG.md) (Complete technical reference & workflow)
-- **Companion Script**: [`scripts/convert_role_org_excel.py`](scripts/convert_role_org_excel.py)
-- **Org Levels Reference**: [`excel-templates/Org_Levels.csv`](excel-templates/Org_Levels.csv)
-- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
-- **Purpose**: Batch Update Organizational Levels in PFCG Roles from CSV (`.csv`).
-- **Workflow & Key Features**:
-  - **Upload Format**: Reads 3-column flat CSV format (`Role Name`, `Org Level Variable`, `Org Value`), generated from matrix sheets via `convert_role_org_excel.py`.
-  - **Selective Role Org Maintenance**: Matches Org Level variables (`$BUKRS`, `$KOKRS`, `$ERKRS`, `$PRCTR`, etc.) against existing entries in `AGR_1252`, updating only the fields relevant to each role's authorization scope.
-  - **Field Synchronization & Variable Restoration (`AGR_1251`)**: Restores corrupted variable bindings (`p_fix51 = 'X'`) mapped via table `USORG` to ensure consistency between Org Level headers and concrete field authorization values.
-  - **Guaranteed Green Status (`p_astnon = 'X'`)**: Defaults unlisted secondary Org Levels to `'*'` so that the role achieves a 100% Green status in PFCG.
-  - **Profile Regeneration & Verification**: Calls `SUPRN_DARK_MANIPULATE_PROFILE` without dialog and verifies the resulting status via `PRGN_CHECK_PROFILE_STATUS`.
-  - **Interactive ALV Cockpit**: Displays simulation mode (Test Run), counts of file vs. updated Org levels, detail summary of updated values, and clickable hotspot links to inspect roles in `PFCG`.
-
-### 7.5. Current Utility: Z_AUTH_ROLE_COMPOSITE
-
-- **Source Code**: [`src/z_auth_role_composite.prog.abap`](src/z_auth_role_composite.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_ROLE_COMPOSITE.md`](docs/Z_AUTH_ROLE_COMPOSITE.md) (Complete technical reference & workflow)
-- **Companion Script**: [`scripts/convert_role_composite_excel.py`](scripts/convert_role_composite_excel.py)
-- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
-- **Purpose**: Batch PFCG Composite Role Creation & Single Role Assignment from CSV (`.csv`).
-- **Workflow & Key Features**:
-  - **Upload Format**: Reads 3-column flat CSV format (`Composite Role Name`, `Composite Role Description`, `Derived / Single Role`), generated via `convert_role_composite_excel.py`.
-  - **Native Composite Architecture**: Creates collective role definitions (`AGR_DEFINE-ATTRIBUTES = 'COLLECTIVE'`, `AGR_FLAGS-COLL_AGR = 'X'`) and strips intrusive automatic comments from `AGR_TEXTS`.
-  - **Validation & Non-Blocking Isolation**: Validates member single roles in `AGR_DEFINE` and prevents nested composite roles. Missing roles are reported in the `MISSING_ROLES` column with a Warning status (`@09@`).
-  - **Empty Composite Roles (`N/A`)**: Supports creating placeholder composite job roles with status `@09@` when marked as `N/A`.
-  - **Atomic Assignment & Synchronization**: Assigns single roles via `PRGN_RFC_ADD_AGRS_TO_COLL_AGR` and synchronizes obsolete assignments via `PRGN_RFC_DEL_AGRS_IN_COLL_AGR` when `p_sync = 'X'`.
-  - **Interactive ALV Cockpit**: Displays simulation mode (Test Run), counts of total vs. valid vs. assigned single roles, list of missing roles, and clickable hotspot links to inspect composite roles in `PFCG`.
-
-### 7.6. Current Utility: Z_AUTH_USER_CREATE
-
-- **Source Code**: [`src/z_auth_user_create.prog.abap`](src/z_auth_user_create.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_USER_CREATE.md`](docs/Z_AUTH_USER_CREATE.md) (Complete technical reference & workflow)
-- **Companion Script**: [`scripts/convert_users_excel.py`](scripts/convert_users_excel.py)
-- **CSV Template**: [`excel-templates/Template_Users_Create_converted.csv`](excel-templates/Template_Users_Create_converted.csv)
-- **Purpose**: Batch SAP User Creation & Update Cockpit from CSV (`.csv`).
-- **Workflow & Key Features**:
-  - **Upload Format**: Reads 7-column flat CSV format (`Username`, `Initial Password`, `Full Name`, `Email`, `Phone No.`, `Department`, `Function`), preprocessed and validated via `convert_users_excel.py`.
-  - **Full Name Mapping Rule**: Maps **Full Name** entirely into SAP **Last Name** (`BAPIADDR3-LASTNAME`), fulfilling SAP mandatory field constraints while keeping full employee names intact.
-  - **UTF-8 Character Integrity**: Uploads in binary mode (`'BIN'`) and decodes via `SCMS_BINARY_TO_STRING` with encoding `'4110'`, flawlessly supporting Vietnamese accents (`Đào Việt Hùng`, `Lê Văn Nam`, etc.) and stripping UTF-8 BOM (`U+FEFF`).
-  - **Dual Operation Modes**: Supports Simulation Mode (Test Run) to preview actions without database commit, and Live Mode calling `BAPI_USER_CREATE1` or `BAPI_USER_CHANGE` with `BAPI_TRANSACTION_COMMIT`.
-  - **Safe Update Handling**: Skips existing users with a Yellow LED (`@09@`) by default; in-place update and password reset can be explicitly enabled via `p_upd = 'X'` and `p_pwd = 'X'`.
-  - **Interactive ALV Cockpit**: Features formatted LED status indicators (`@08@` Green, `@09@` Yellow, `@0A@` Red), comprehensive execution messages, and one-click hotspot navigation on the **Username** column directly into transaction `SU01`.
-
-### 7.7. Current Utility: Z_AUTH_USER_ASSIGN_ROLE
-
-- **Source Code**: [`src/z_auth_user_assign_role.prog.abap`](src/z_auth_user_assign_role.prog.abap)
-- **Documentation**: [`docs/Z_AUTH_USER_ASSIGN_ROLE.md`](docs/Z_AUTH_USER_ASSIGN_ROLE.md) (Complete technical reference & workflow)
-- **Companion Script**: [`scripts/convert_users_assign_roles_excel.py`](scripts/convert_users_assign_roles_excel.py)
-- **CSV Template**: [`excel-templates/Template_User_Assign_Role_converted.csv`](excel-templates/Template_User_Assign_Role_converted.csv)
-- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
-- **Purpose**: Batch User-to-Role Assignment Cockpit from CSV (`.csv`).
-- **Workflow & Key Features**:
-  - **Upload Format**: Reads 2-column flat CSV format (`Username`, `Role`), preprocessed and extracted from role assignment matrices via `convert_users_assign_roles_excel.py`.
-  - **Multi-Role Aggregation**: Automatically groups and consolidates multiple role entries per user into a single structured assignment list.
-  - **Repository & User Validation**: Validates user existence against table `USR02` and role definitions against `AGR_DEFINE` (supporting single roles, derived roles, and composite roles). Missing roles are isolated into a dedicated `MISSING_ROLES` column with Yellow LED (`@09@`).
-  - **Safe Append Mode**: Default **Append Mode (`p_append = 'X'`)** queries `AGR_USERS` for currently assigned direct roles (`COL_FLAG = space`) and merges them with the new roles, safely preserving existing user authorizations. Full replace mode can be activated by unchecking the option.
-  - **Graceful Empty Handling (`N/A`)**: Gracefully handles users without assigned roles (`N/A`) with a Warning status (`@09@`), avoiding unintended error blocks.
-  - **Direct Assignment & Composite Expansion**: Automatically handles composite roles: assigning a composite role prompts SAP to provision and manage all underlying single roles.
-  - **Interactive ALV Cockpit**: Features formatted LED status indicators (`@08@` Green, `@09@` Yellow, `@0A@` Red), counts of CSV vs. valid vs. assigned roles, and one-click hotspot navigation on the **Username** column directly into transaction `SU01`.
-
-### 7.8. Python Preprocessing Pipeline Guide
+### 7.4. Python Preprocessing Pipeline Guide
 
 - **Documentation**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
-- **Purpose**: Complete guide on preparing Excel matrix sheets, converting them to normalized 3-column CSVs, and validating them before uploading to the SAP ABAP programs.
+- **Purpose**: Complete guide on preparing Excel matrix sheets, converting them to normalized CSVs, and validating them before uploading to SAP.
 - **Convenient npm Run Commands**:
-  - `npm run convert:role:master`: Converts Master Role Matrix (`.xlsx`) to `_converted.csv`.
-  - `npm run convert:role:derived`: Converts Derived Role Creation Matrix (`.xlsx`) to `_converted.csv`.
-  - `npm run convert:role:org`: Converts Derived Org Matrix (`.xlsx`) referencing `excel-templates/Org_Levels.csv` to `_converted.csv`.
-  - `npm run convert:role:composite`: Converts Composite Roles Matrix (`.xlsx`) to `_converted.csv`.
+  - `npm run convert:role:01`: Converts Master Role Matrix (`.xlsx`) to `_converted.csv`.
+  - `npm run convert:role:02`: Converts Derived Role Creation Matrix (`.xlsx`) to `_converted.csv`.
+  - `npm run convert:role:03`: Converts Derived Org Matrix (`.xlsx`) referencing `excel-templates/Org_Levels.csv`.
+  - `npm run convert:role:04`: Converts Composite Roles Matrix (`.xlsx`) to `_converted.csv`.
   - `npm run convert:role:all`: Runs all role matrix converters sequentially.
-  - `npm run convert:user:create`: Converts User Creation Excel (`.xlsx`) to normalized CSV with auto-generated initial passwords and (<country>)<number> phone numbers.
-  - `npm run convert:user:assign`: Converts User Role Assignment Matrix (`.xlsx`) to flat `Username,Role` CSV format.
+  - `npm run convert:user:01`: Converts User Creation Excel to normalized CSV with secure passwords.
+  - `npm run convert:user:02`: Converts User Role Assignment Matrix to flat `Username,Role` CSV format.
+  - `npm run convert:user:all`: Runs both user converters sequentially.
+  - `npm run convert:all`: Runs all role and user converters.
+  - `npm run templates:generate`: Regenerates all masked templates in `excel-templates/`.
 - **Smart Directory Resolution**: Scripts prioritize real files in `excel-working/` (git-ignored) first, then fallback to `excel-templates/`, preserving confidential corporate data.
 
-### 7.9. Future Utilities Roadmap
+---
+
+### 7.5. Future Utilities Roadmap
 
 Additional ABAP utilities for SAP Basis will be developed and added to this repository:
 - **Authorization & User Governance**: Role assignment analyzer, dormant user cleanup, and unassigned profile auditing.
@@ -514,6 +508,7 @@ Additional ABAP utilities for SAP Basis will be developed and added to this repo
 2. **Dedicated User Account**: Use a designated developer user rather than `SAP*` or `DDIC`.
 3. **Target Package**: Default deployment targets local package `$TMP`. For transportable developments, specify appropriate development packages and transport requests.
 4. **Production Safeguards**: Restrict production ADT endpoints to read-only access.
+5. **Data Confidentiality**: Maintain actual company data inside `excel-working/` (which is excluded from Git), and only commit anonymized data inside `excel-templates/`.
 
 ---
 
@@ -526,4 +521,3 @@ This project is licensed under the [MIT License](LICENSE).
 ## 10. Disclaimer & Trademark Notice
 
 SAP, SAP S/4HANA, SAP NetWeaver, ABAP, and other SAP products and services mentioned herein are trademarks or registered trademarks of SAP SE in Germany and other countries. This repository is an independent open-source technical project and is not affiliated with, endorsed by, or sponsored by SAP SE.
-

@@ -1,13 +1,13 @@
-# 👥 Z_AUTH_USER_ASSIGN_ROLE: Batch User Role Assignment Cockpit
+# 👥 Z_USER_02_ASSIGN_ROLE: Batch User Role Assignment Cockpit
 
 > **SAP Basis Utilities & AI-Assisted ABAP Development via Model Context Protocol (MCP)**  
-> **Source Code**: [`src/z_auth_user_assign_role.prog.abap`](../src/z_auth_user_assign_role.prog.abap)  
-> **Companion Script**: [`scripts/convert_users_assign_roles_excel.py`](../scripts/convert_users_assign_roles_excel.py)  
-> **CSV Template**: [`excel-templates/Template_User_Assign_Role_converted.csv`](../excel-templates/Template_User_Assign_Role_converted.csv)  
+> **Source Code**: [`src/z_user_02_assign_role.prog.abap`](../src/z_user_02_assign_role.prog.abap)  
+> **Companion Script**: [`scripts/convert_user_02_assign.py`](../scripts/convert_user_02_assign.py)  
+> **CSV Template**: [`excel-templates/Template_User_02_Assign_converted.csv`](../excel-templates/Template_User_02_Assign_converted.csv)  
 > **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](ROLE_CONVERSION_GUIDE.md)  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
-The ABAP utility **`Z_AUTH_USER_ASSIGN_ROLE`** automates the mass assignment of SAP authorization roles (Single Roles, Derived Roles, and Composite Roles) to user master records directly from flat CSV data.
+The ABAP utility **`Z_USER_02_ASSIGN_ROLE`** automates the mass assignment of SAP authorization roles (Single Roles, Derived Roles, and Composite Roles) to user master records directly from flat CSV data.
 
 The program aggregates multiple role assignments per user, validates user existence in table `USR02`, verifies role existence in `AGR_DEFINE`, assigns roles atomically using standard SAP BAPI `BAPI_USER_ACTGROUPS_ASSIGN`, provides an **Append Mode (`p_append = 'X'`)** to safely preserve pre-existing user authorizations, supports date intervals, and reports results in an interactive ALV cockpit with **one-click navigation to transaction `SU01`**.
 
@@ -40,7 +40,7 @@ During SAP rollouts, new go-lives, annual access reviews, or organizational rest
 3. **Invalid Role Reference**: If a role was mistyped or has not yet been imported into the system, mass uploads may fail entirely or leave partial assignments.
 4. **No Unified Execution Audit**: Standard tools lack a clear simulation and comparison cockpit displaying how many roles exist, which are missing, and which were assigned.
 
-`Z_AUTH_USER_ASSIGN_ROLE` eliminates these operational bottlenecks with an automated, safe, and verifiable assignment pipeline.
+`Z_USER_02_ASSIGN_ROLE` eliminates these operational bottlenecks with an automated, safe, and verifiable assignment pipeline.
 
 ---
 
@@ -48,7 +48,7 @@ During SAP rollouts, new go-lives, annual access reviews, or organizational rest
 
 ```mermaid
 flowchart TD
-    A["Input File: User_Assign_Role_converted.csv\n(Username, Role)"] --> B["Upload via GUI_UPLOAD (filetype = 'BIN')"]
+    A["Input File: Template_User_02_Assign_converted.csv\n(Username, Role)"] --> B["Upload via GUI_UPLOAD (filetype = 'BIN')"]
     B --> C["SCMS_BINARY_TO_STRING (Code page 4110 / UTF-8)\nStrip BOM (U+FEFF) & Parse Lines"]
     C --> D["Group Assignments by Username"]
     D --> E["Validate Username (<= 12 chars & exists in USR02)"]
@@ -109,7 +109,7 @@ Standard SAP BAPI `BAPI_USER_ACTGROUPS_ASSIGN` replaces all roles for a user wit
 - **Replace Mode (`p_append = ' '`)**: Replaces user roles entirely with the list from the CSV file.
 
 ### 3.4. Graceful Handling of Empty Roles (`N/A`)
-If a user in the CSV has no assigned roles (marked as `N/A`), `Z_AUTH_USER_ASSIGN_ROLE` handles the record gracefully without raising an error:
+If a user in the CSV has no assigned roles (marked as `N/A`), `Z_USER_02_ASSIGN_ROLE` handles the record gracefully without raising an error:
 - Marked with a Yellow LED `@09@` (`WARNING`).
 - Reported clearly as: *"No roles to assign for this user (marked as N/A in CSV)"*.
 
@@ -117,25 +117,15 @@ If a user in the CSV has no assigned roles (marked as `N/A`), `Z_AUTH_USER_ASSIG
 When querying existing roles in Append Mode, the program filters on `COL_FLAG = space`. This ensures only **directly assigned roles** are passed to the BAPI. When a composite role is directly assigned, SAP automatically provisions and manages all underlying single roles.
 
 ### 3.6. Interactive ALV Cockpit with Direct SU01 Navigation
-Output results are rendered with `CL_SALV_TABLE`. The **Username** column is configured as a clickable hotspot. Clicking on any username opens transaction `SU01` directly for immediate verification:
-
-```abap
-METHOD on_link_click.
-  READ TABLE gt_results INTO DATA(ls_row) INDEX row.
-  IF sy-subrc = 0 AND column = 'USERNAME' AND ls_row-username IS NOT INITIAL.
-    SET PARAMETER ID 'USR' FIELD ls_row-username.
-    CALL TRANSACTION 'SU01' AND SKIP FIRST SCREEN.
-  ENDIF.
-ENDMETHOD.
-```
+Output results are rendered with `CL_SALV_TABLE`. The **Username** column is configured as a clickable hotspot. Clicking on any username opens transaction `SU01` directly for immediate verification.
 
 ---
 
 ## 4. Selection Screen & Operational Parameters
 
-```
+```text
 ╔════════════════════════════════════════════════════════════════════════════╗
-║                     User Role Assignment Cockpit                           ║
+║ Selection Screen: Z_USER_02_ASSIGN_ROLE                                    ║
 ╠════════════════════════════════════════════════════════════════════════════╣
 ║ Input CSV File (.csv)                                                      ║
 ║   File Path:                  [                                    ] [F4]  ║
@@ -179,25 +169,22 @@ ENDMETHOD.
 ## 6. Operational Step-by-Step Guide
 
 ### Step 1: Prepare Excel Matrix & Convert to CSV
-1. Maintain your user-role assignment matrix in Excel or use template [`Template_User_Assign_Role.xlsx`](../excel-templates/Template_User_Assign_Role.xlsx).
+1. Maintain your user-role assignment matrix in Excel or use template [`Template_User_02_Assign.xlsx`](../excel-templates/Template_User_02_Assign.xlsx).
 2. Run the conversion script:
    ```bash
-   npm run convert:user:assign
-   # Or with explicit path
-   python scripts/convert_users_assign_roles_excel.py excel-working/User_Assign_Role.xlsx
+   npm run convert:user:02
+   # Outputs Template_User_02_Assign_converted.csv
    ```
-3. The script extracts marked assignments (`Y`, `y`, `X`, `x`), formats `Username,Role`, and produces `User_Assign_Role_converted.csv`.
+3. The script extracts marked assignments (`Y`, `y`, `X`, `x`), formats `Username,Role`, and produces `Template_User_02_Assign_converted.csv`.
 
 ### Step 2: Deploy the ABAP Program (One-Time)
 ```bash
-npm run deploy:assign
-# or
-node scripts/deploy.js src/z_auth_user_assign_role.prog.abap Z_AUTH_USER_ASSIGN_ROLE
+npm run deploy:user:02
 ```
 
 ### Step 3: Run Simulation in SAP GUI
-1. Open transaction `SE38` or `SA38` and execute `Z_AUTH_USER_ASSIGN_ROLE`.
-2. Browse to select your `User_Assign_Role_converted.csv` file.
+1. Open transaction `SE38` or `SA38` and execute `Z_USER_02_ASSIGN_ROLE`.
+2. Browse to select your `Template_User_02_Assign_converted.csv` file.
 3. Keep **Simulation (Test Run)** checked (`p_test = 'X'`).
 4. Click **Execute (`F8`)**.
 5. Check the ALV report:
@@ -224,6 +211,3 @@ When **Validate Roles in SAP (`p_chkrol = 'X'`)** is active, the program isolate
 
 ### Q3: Can composite roles be assigned using this program?
 Yes. Both composite roles and single roles can be assigned. When a composite role is assigned, SAP's standard profile generator and user comparison automatically provision all member single roles to the user.
-
----
-*Maintained by the SAP Basis & Security Engineering Team.*

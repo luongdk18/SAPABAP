@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_AUTH_USER_ASSIGN_ROLE
+*& Report Z_USER_02_ASSIGN_ROLE
 *&---------------------------------------------------------------------*
 *& Purpose: Batch User-Role Assignment Cockpit from CSV file
 *& Description:
@@ -19,7 +19,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP
 *&---------------------------------------------------------------------*
-REPORT z_auth_user_assign_role.
+REPORT z_user_02_assign_role.
 
 TABLES: usr02, agr_define, agr_users.
 
