@@ -157,11 +157,18 @@ def convert_role_org_excel(input_path, org_levels_path=None):
 
     # Resolve Org_Levels.csv path
     if not org_levels_path:
-        cand_org = os.path.join(dir_name, "Org_Levels.csv") if dir_name else "Org_Levels.csv"
-        if os.path.exists(cand_org):
-            org_levels_path = cand_org
-        else:
-            org_levels_path = "Org_Levels.csv"
+        cand_list = [
+            os.path.join(dir_name, "Org_Levels.csv") if dir_name else None,
+            os.path.join("excel-templates", "Org_Levels.csv"),
+            os.path.join(os.path.dirname(__file__), "..", "excel-templates", "Org_Levels.csv"),
+            "Org_Levels.csv"
+        ]
+        for cand in cand_list:
+            if cand and os.path.exists(cand):
+                org_levels_path = cand
+                break
+        if not org_levels_path:
+            org_levels_path = os.path.join("excel-templates", "Org_Levels.csv")
 
     out_csv_name = f"{stem}_converted.csv"
     out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name

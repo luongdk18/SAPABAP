@@ -78,7 +78,7 @@ sap_org_levels = [
     ("Sales Organization", "$XSORG"),
 ]
 
-output_csv = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Org_Levels.csv')
+output_csv = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'excel-templates', 'Org_Levels.csv')
 
 with open(output_csv, 'w', newline='', encoding='utf-8') as f:
     writer = csv.writer(f)
