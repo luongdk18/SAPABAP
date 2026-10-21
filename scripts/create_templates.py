@@ -6,6 +6,7 @@ Creates:
 2. Template_Roles_Derived.xlsx & Template_Roles_Derived_converted.csv
 3. Template_Roles_Derived_Org.xlsx & Template_Roles_Derived_Org_converted.csv
 4. Template_Roles_Composite.xlsx & Template_Roles_Composite_converted.csv
+5. Template_Users_Create.xlsx & Template_Users_Create_converted.csv
 
 Usage:
     python scripts/create_templates.py
@@ -379,11 +380,60 @@ def create_composite_template():
     print(f"[OK] Generated: {csv_path} ({len(flat_rows)} rows)")
 
 
+# --- 5. Users Creation Template (Template_Users_Create.xlsx & CSV) ---
+def create_users_template():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "User Asignment"
+
+    headers = ["FULL NAME", "Email", "Phone No.", "Department", "Function"]
+    for col_idx, h in enumerate(headers, start=1):
+        c = ws.cell(1, col_idx, value=h)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = left_align
+
+    sample_users = [
+        ["John Doe", "johnd@company.com", "+84 981 234 567", "Finance & Accounting", "Finance Controller"],
+        ["Jane Smith", "janes@company.com", "+84 971 888 999", "Finance & Accounting", "Senior Accountant"],
+        ["Alex Johnson", "alexj@company.com", "+996 555 123 456", "PMU", "Project Director"],
+        ["Michael Brown", "michaelb@company.com", "+996 500 654 321", "PMU", "Civil Engineer"],
+        ["Emily Davis", "emilyd", None, "Administration", "HR Specialist"],
+        ["David Wilson", "davidw@company.com", "0987654321", "operation", "OM"],
+    ]
+
+    for row_idx, r in enumerate(sample_users, start=2):
+        for col_idx, val in enumerate(r, start=1):
+            c = ws.cell(row_idx, col_idx, value=val)
+            c.font = data_font
+            c.border = thin_border
+
+    ws.column_dimensions['A'].width = 28
+    ws.column_dimensions['B'].width = 30
+    ws.column_dimensions['C'].width = 22
+    ws.column_dimensions['D'].width = 25
+    ws.column_dimensions['E'].width = 30
+
+    xlsx_path = os.path.join(OUT_DIR, "Template_Users_Create.xlsx")
+    wb.save(xlsx_path)
+    print(f"[OK] Generated: {xlsx_path}")
+
+    # Convert using convert_users_excel
+    try:
+        from convert_users_excel import convert_users_excel
+        convert_users_excel(xlsx_path)
+    except ImportError:
+        import subprocess
+        script_path = os.path.join(os.path.dirname(__file__), "convert_users_excel.py")
+        subprocess.run([sys.executable, script_path, xlsx_path], check=True)
+
+
 # --- CLI Entrypoint ---
 if __name__ == "__main__":
-    print("\n--- Generating SAP Role Templates ---")
+    print("\n--- Generating SAP Role & User Templates ---")
     create_master_template()
     create_derived_template()
     create_org_template()
     create_composite_template()
-    print("\n[OK] All role templates and sample converted CSVs generated successfully.")
+    create_users_template()
+    print("\n[OK] All role & user templates and sample converted CSVs generated successfully.")

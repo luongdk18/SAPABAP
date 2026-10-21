@@ -8,6 +8,7 @@ This guide explains how to prepare business authorization matrices in Excel and 
 2. **Derived Roles Mapping**: `convert_role_derived_excel.py` ➔ Import into **`Z_AUTH_ROLE_DERIVE`**
 3. **Organizational Levels**: `convert_role_org_excel.py` ➔ Import into **`Z_AUTH_ROLE_UPDATE_ORG`**
 4. **Composite Roles**: `convert_role_composite_excel.py` ➔ Import into **`Z_AUTH_ROLE_COMPOSITE`**
+5. **User Creation**: `convert_users_excel.py` ➔ Import into **`Z_AUTH_USER_CREATE`**
 
 ---
 
@@ -38,6 +39,12 @@ flowchart TD
         B4 --> C4["Template_Roles_Composite_converted.csv\n(Composite Role, Description, Derived Role)"]
         C4 --> D4["ABAP Program: Z_AUTH_ROLE_COMPOSITE\nCreates Composite Roles & Assigns Single Roles"]
     end
+
+    subgraph S5["5. User Creation List"]
+        A5["Template_Users_Create.xlsx\n(Name, Email, Phone, Dept, Func)"] --> B5["convert_users_excel.py\n(or npm run convert:user:create)"]
+        B5 --> C5["Template_Users_Create_converted.csv\n(Username, Password, Name, Email, Phone, Dept, Func)"]
+        C5 --> D5["ABAP Program: Z_AUTH_USER_CREATE\nCreates & Updates SAP Users via BAPI"]
+    end
 ```
 
 ---
@@ -58,6 +65,9 @@ npm run convert:role:org
 
 # 4. Convert Composite Roles Matrix
 npm run convert:role:composite
+
+# 5. Convert User Creation List
+npm run convert:user:create
 ```
 
 > [!TIP]
@@ -234,6 +244,65 @@ Z_FI_COMP_CFO_1000,Chief Financial Officer - Entity 1000,Z_FI_GL_MASTER_MAINT_10
 Z_FI_COMP_CFO_1000,Chief Financial Officer - Entity 1000,Z_FI_JOURNAL_DISPLAY_1000
 ...
 Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A
+```
+
+---
+
+## 5. User Creation Preprocessing (`convert_users_excel.py`)
+
+### 5.1. Excel Input Format (`Template_Users_Create.xlsx` / `Users_Create.xlsx`)
+Corporate user list collected during system implementation:
+
+* **Sheet Name**: `User Asignment` (or `Users`, or active sheet).
+* **Column 1**: `FULL NAME` (Employee full name).
+* **Column 2**: `Email` (Corporate email, or employee username/account code).
+* **Column 3**: `Phone No.` (Contact phone number in varying formats).
+* **Column 4**: `Department` (Department/Division name).
+* **Column 5**: `Function` (Job title/functional role).
+
+| FULL NAME | Email | Phone No. | Department | Function |
+| :--- | :--- | :--- | :--- | :--- |
+| John Doe | `johnd@company.com` | `+84 981 234 567` | Finance & Accounting | Finance Controller |
+| Jane Smith | `janes@company.com` | `+84 971 888 999` | Finance & Accounting | Senior Accountant |
+| Alex Johnson | `alexj@company.com` | `+996 555 123 456` | PMU | Project Director |
+| Emily Davis | `emilyd` | *(blank)* | Administration | HR Specialist |
+| David Wilson | `davidw@company.com` | `0987654321` | operation | OM |
+
+### 5.2. Transformation Rules
+1. **Username Extraction**:
+   * Reads from the `Email` column: takes all characters before `@`, strips whitespace, and converts to uppercase (`BNAME` format in SAP).
+   * **Fallback**: If the value contains no `@` (e.g. `emilyd`, `anhpp5`), uses the raw value directly as the Username.
+2. **Initial Password Generation**:
+   * Generates a 12-character cryptographically secure password compliant with SAP S/4HANA 2023 password policies.
+   * Starts with an uppercase letter (`A-Z`), includes lowercase letters, digits, and safe special characters (`!@#$%*-_=+`), avoiding characters that interfere with CSV delimiters.
+   * Guarantees no 3 identical consecutive characters and does not contain the username.
+3. **Phone Number Normalization**:
+   * Standardizes all phone numbers to unified format `(+<CountryCode>)<Number>` (e.g. `(+84)985176887`, `(+996)500040737`).
+   * Automatically recognizes Vietnam (`+84`) and Kyrgyzstan (`+996`) local dialing formats, strips leading zeros from the subscriber number, and eliminates spaces, dashes, parentheses, and dots.
+   * Format avoids formula errors when CSV files are opened in Microsoft Excel.
+4. **Department & Function Cleanup**:
+   * Corrects capitalization (e.g., `operation` ➔ `Operation`).
+   * Corrects typos and title-casing (e.g., `Planing Director` ➔ `Planning Director`, `Civil engineer` ➔ `Civil Engineer`, `Qs` ➔ `Quantity Surveyor`).
+
+### 5.3. Running the Conversion
+```bash
+# Automatic candidate lookup (checks excel-working/ then excel-templates/):
+python scripts/convert_users_excel.py
+
+# Or specify a custom file:
+python scripts/convert_users_excel.py excel-working/Users_Create.xlsx
+```
+
+### 5.4. Output CSV Format (`*_converted.csv`)
+Produces UTF-8 (with BOM) encoded CSV ready for batch user creation in SAP ABAP via `BAPI_USER_CREATE1`:
+```csv
+Username,Initial Password,Full Name,Email,Phone No.,Department,Function
+JOHND,N8l0%GO_UVkK,John Doe,johnd@company.com,(+84)981234567,Finance & Accounting,Finance Controller
+JANES,D6tN7$WYDCd#,Jane Smith,janes@company.com,(+84)971888999,Finance & Accounting,Senior Accountant
+ALEXJ,Xh5R%#y0z#TO,Alex Johnson,alexj@company.com,(+996)555123456,PMU,Project Director
+MICHAELB,Z=+36kLg5SBp,Michael Brown,michaelb@company.com,(+996)500654321,PMU,Civil Engineer
+EMILYD,Z=0Yga@eS3z6,Emily Davis,emilyd,,Administration,HR Specialist
+DAVIDW,Mr0E=#65Hy_c,David Wilson,davidw@company.com,(+84)987654321,Operation,OM
 ```
 
 ---
