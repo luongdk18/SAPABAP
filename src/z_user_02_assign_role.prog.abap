@@ -17,7 +17,8 @@
 *&   Col 2: Role     (e.g., CR_COMMON, Z_FI_COMP_CFO_1000, or N/A)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
-*& Package: $TMP
+*& Package: ZBC_UT
+*& Transport: SKDK900253 / SKDK900254$TMP
 *&---------------------------------------------------------------------*
 REPORT z_user_02_assign_role.
 

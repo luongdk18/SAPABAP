@@ -15,7 +15,8 @@
 *&   Col 3: TCode            (e.g., FB01, FS00, or N/A)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
-*& Package: $TMP
+*& Package: ZBC_UT
+*& Transport: SKDK900253 / SKDK900254$TMP
 *&---------------------------------------------------------------------*
 REPORT z_role_01_create_master.
 

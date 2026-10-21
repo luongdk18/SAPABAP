@@ -30,6 +30,31 @@ if (!fs.existsSync(envPath)) {
   process.exit(1);
 }
 
+// Simple parser for .sap.env file
+function parseEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+  const content = fs.readFileSync(filePath, 'utf8');
+  const env = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eqIdx = line.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = line.slice(0, eqIdx).trim();
+      let val = line.slice(eqIdx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      env[key] = val;
+    }
+  }
+  return env;
+}
+
+const fileEnv = parseEnvFile(envPath);
+const targetPackage = process.env.SAP_PACKAGE || fileEnv.SAP_PACKAGE || 'ZBC_UT';
+const transportRequest = process.env.SAP_TRANSPORT_REQUEST || fileEnv.SAP_TRANSPORT_REQUEST || '';
+
 // Discover available programs in src/
 const availableFiles = fs.existsSync(srcDir)
   ? fs.readdirSync(srcDir).filter(f => f.endsWith('.abap'))
@@ -77,6 +102,7 @@ function executeDeployment(targetFile, customProgName) {
 
   const sourceCode = fs.readFileSync(targetFile, 'utf8');
   console.log(`\n📦 Deploying ${programName} (${sourceCode.length} characters) from ${targetFile}...`);
+  console.log(`📦 Target Package: ${targetPackage}${transportRequest ? ` | Transport: ${transportRequest}` : ''}`);
 
   const isWin = process.platform === 'win32';
   const cmd = isWin ? 'cmd.exe' : 'mcp-abap-adt';
@@ -91,6 +117,32 @@ function executeDeployment(targetFile, customProgName) {
 
   function send(msgObj) {
     child.stdin.write(JSON.stringify(msgObj) + '\n');
+  }
+
+  function getUpdateArgs() {
+    const args = {
+      program_name: programName,
+      source_code: sourceCode,
+      activate: true
+    };
+    if (transportRequest && targetPackage.toUpperCase() !== '$TMP') {
+      args.transport_request = transportRequest;
+    }
+    return args;
+  }
+
+  function getCreateArgs() {
+    const args = {
+      program_name: programName,
+      title: `${programName} - ABAP Utility`,
+      package_name: targetPackage,
+      source_code: sourceCode,
+      activate: true
+    };
+    if (transportRequest && targetPackage.toUpperCase() !== '$TMP') {
+      args.transport_request = transportRequest;
+    }
+    return args;
   }
 
   child.stdout.on('data', data => {
@@ -115,11 +167,7 @@ function executeDeployment(targetFile, customProgName) {
             method: 'tools/call',
             params: {
               name: 'UpdateProgram',
-              arguments: {
-                program_name: programName,
-                source_code: sourceCode,
-                activate: true
-              }
+              arguments: getUpdateArgs()
             }
           });
         }
@@ -135,13 +183,7 @@ function executeDeployment(targetFile, customProgName) {
               method: 'tools/call',
               params: {
                 name: 'CreateProgram',
-                arguments: {
-                  program_name: programName,
-                  title: `${programName} - ABAP Utility`,
-                  package_name: '$TMP',
-                  source_code: sourceCode,
-                  activate: true
-                }
+                arguments: getCreateArgs()
               }
             });
           } else {
@@ -168,11 +210,7 @@ function executeDeployment(targetFile, customProgName) {
               method: 'tools/call',
               params: {
                 name: 'UpdateProgram',
-                arguments: {
-                  program_name: programName,
-                  source_code: sourceCode,
-                  activate: true
-                }
+                arguments: getUpdateArgs()
               }
             });
           }

@@ -16,7 +16,8 @@
 *&   Col 3: Derived Role Description(e.g., GL Period Control - Entity 1000)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
-*& Package: $TMP
+*& Package: ZBC_UT
+*& Transport: SKDK900253 / SKDK900254$TMP
 *&---------------------------------------------------------------------*
 REPORT z_role_02_create_derive.
 
