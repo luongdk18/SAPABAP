@@ -17,12 +17,13 @@ Usage:
 
 Example:
     python scripts/convert_user_02_assign.py excel-templates/Template_User_02_Assign.xlsx
-    -> Outputs: excel-templates/Template_User_02_Assign_converted.csv
+    -> Outputs: excel-templates/converted/Template_User_02_Assign_converted.csv
 """
 
 import os
 import sys
 import csv
+import glob
 import openpyxl
 
 # --- Safe Console Output on Windows ---
@@ -30,12 +31,13 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_user_02_assign(input_path):
+def convert_user_02_assign(input_path, output_dir=None):
     """
     Reads User Role Assignment matrix Excel file and converts to flat CSV format.
     Row 1: Role Names (Columns 2..N)
     Column 1: Username (Rows 2..N)
     Matrix Cells: 'Y', 'y', 'X', 'x' indicator flags
+    Output is saved to <parent_dir>/converted/ by default.
     """
     # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
@@ -45,12 +47,21 @@ def convert_user_02_assign(input_path):
         print(f"[ERROR] Input file not found: {input_path}")
         sys.exit(1)
 
-    dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
     out_csv_name = f"{stem}_converted.csv"
-    out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+
+    if output_dir.endswith('.csv'):
+        out_csv_path = output_dir
+        if os.path.dirname(out_csv_path):
+            os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        out_csv_path = os.path.join(output_dir, out_csv_name)
 
     # --- Load Workbook ---
     try:

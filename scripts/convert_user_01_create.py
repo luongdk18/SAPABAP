@@ -29,7 +29,7 @@ Usage:
 
 Example:
     python scripts/convert_user_01_create.py excel-templates/Template_User_01_Create.xlsx
-    -> Outputs: excel-templates/Template_User_01_Create_converted.csv
+    -> Outputs: excel-templates/converted/Template_User_01_Create_converted.csv
 """
 
 import os
@@ -200,9 +200,10 @@ def clean_function(func_text):
     return FUNCTION_CORRECTIONS.get(key, norm.title())
 
 
-def convert_user_01_create(input_path):
+def convert_user_01_create(input_path, output_dir=None):
     """
     Reads SAP Users Creation Excel sheet and generates normalized flat CSV.
+    Output is saved to <parent_dir>/converted/ by default.
     """
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -211,12 +212,21 @@ def convert_user_01_create(input_path):
         print(f"[ERROR] Input file not found: {input_path}")
         sys.exit(1)
 
-    dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
     out_csv_name = f"{stem}_converted.csv"
-    out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+
+    if output_dir.endswith('.csv'):
+        out_csv_path = output_dir
+        if os.path.dirname(out_csv_path):
+            os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        out_csv_path = os.path.join(output_dir, out_csv_name)
 
     # Load Workbook
     try:

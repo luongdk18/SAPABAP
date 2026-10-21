@@ -25,7 +25,9 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 # --- Directory & Style Definitions ---
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "excel-templates")
+CONVERTED_DIR = os.path.join(OUT_DIR, "converted")
 os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(CONVERTED_DIR, exist_ok=True)
 
 header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
 header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
@@ -113,7 +115,7 @@ def create_master_template():
     xlsx_path = os.path.join(OUT_DIR, "Template_Role_01_Master.xlsx")
     wb.save(xlsx_path)
 
-    csv_path = os.path.join(OUT_DIR, "Template_Role_01_Master_converted.csv")
+    csv_path = os.path.join(CONVERTED_DIR, "Template_Role_01_Master_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(["Role Name", "Role Description", "TCode"])
@@ -164,7 +166,7 @@ def create_derived_template():
     xlsx_path = os.path.join(OUT_DIR, "Template_Role_02_Derived.xlsx")
     wb.save(xlsx_path)
 
-    csv_path = os.path.join(OUT_DIR, "Template_Role_02_Derived_converted.csv")
+    csv_path = os.path.join(CONVERTED_DIR, "Template_Role_02_Derived_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
@@ -237,7 +239,7 @@ def create_org_template():
             val = r[col_idx]
             flat_csv_rows.append([role_name, var, val])
 
-    csv_path = os.path.join(OUT_DIR, "Template_Role_03_Org_converted.csv")
+    csv_path = os.path.join(CONVERTED_DIR, "Template_Role_03_Org_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(["Role Name", "Org Level Variable", "Org Value"])
@@ -371,7 +373,7 @@ def create_composite_template():
     xlsx_path = os.path.join(OUT_DIR, "Template_Role_04_Composite.xlsx")
     wb.save(xlsx_path)
 
-    csv_path = os.path.join(OUT_DIR, "Template_Role_04_Composite_converted.csv")
+    csv_path = os.path.join(CONVERTED_DIR, "Template_Role_04_Composite_converted.csv")
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         writer.writerow(["Composite Role Name", "Composite Role Description", "Derived Role"])

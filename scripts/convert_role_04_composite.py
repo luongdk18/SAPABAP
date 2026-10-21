@@ -17,12 +17,13 @@ Usage:
 
 Example:
     python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx
-    -> Outputs: excel-templates/Template_Role_04_Composite_converted.csv
+    -> Outputs: excel-templates/converted/Template_Role_04_Composite_converted.csv
 """
 
 import os
 import sys
 import csv
+import glob
 import openpyxl
 
 # --- Safe Console Output on Windows ---
@@ -30,12 +31,13 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_role_04_composite(input_path):
+def convert_role_04_composite(input_path, output_dir=None):
     """
     Reads Composite Role matrix Excel file and converts to flat CSV format.
     Row 1: Composite Role Description (preserves exact spacing)
     Row 2: Composite Role Name
     Row 3+: Derived Roles (Column 1) and indicator flags ('Y', 'y', 'X', 'x') (Columns 2..N)
+    Output is saved to <parent_dir>/converted/ by default.
     """
     # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
@@ -43,14 +45,23 @@ def convert_role_04_composite(input_path):
 
     if not os.path.exists(input_path):
         print(f"[ERROR] Input file not found: {input_path}")
-        sys.exit(1)
+        return False
 
-    dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
     out_csv_name = f"{stem}_converted.csv"
-    out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+
+    if output_dir.endswith('.csv'):
+        out_csv_path = output_dir
+        if os.path.dirname(out_csv_path):
+            os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        out_csv_path = os.path.join(output_dir, out_csv_name)
 
     # --- Load Workbook ---
     try:
@@ -147,31 +158,39 @@ if __name__ == "__main__":
         print("Example: python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx")
         sys.exit(0)
 
-    target_file = None
+    target_files = []
 
     if len(sys.argv) > 1:
-        target_file = sys.argv[1]
+        for arg in sys.argv[1:]:
+            matches = [m for m in glob.glob(arg) if not os.path.basename(m).startswith('~$')]
+            if matches:
+                target_files.extend(matches)
+            elif not os.path.basename(arg).startswith('~$'):
+                target_files.append(arg)
     else:
-        # Default candidates lookup
-        candidates = [
-            os.path.join("excel-working", "FICO_Role_04_Composite.xlsx"),
-            os.path.join("excel-working", "FICO_Roles_Composite.xlsx"),
-            os.path.join("excel-templates", "Template_Role_04_Composite.xlsx"),
-            os.path.join("excel-templates", "Template_Roles_Composite.xlsx"),
-            "Template_Role_04_Composite.xlsx",
-            "FICO_Role_04_Composite.xlsx",
-            "FICO_Roles_Composite.xlsx",
-            "Roles_Composite.xlsx"
-        ]
-        for cand in candidates:
-            if os.path.exists(cand):
-                target_file = cand
-                break
+        # Default candidates lookup in working and template directories
+        raw_candidates = (glob.glob(os.path.join("excel-working", "*_04_Composite.xlsx")) +
+                          glob.glob(os.path.join("excel-working", "*_Composite.xlsx")))
+        unique_working = sorted(list({c for c in raw_candidates if not os.path.basename(c).startswith('~$')}))
+        if unique_working:
+            target_files = unique_working
+        else:
+            raw_templates = (glob.glob(os.path.join("excel-templates", "*_04_Composite.xlsx")) +
+                             glob.glob(os.path.join("excel-templates", "*_Composite.xlsx")))
+            unique_templates = sorted(list({c for c in raw_templates if not os.path.basename(c).startswith('~$')}))
+            if unique_templates:
+                target_files = unique_templates
+            else:
+                target_files = ["Template_Role_04_Composite.xlsx"]
 
-    if not target_file:
+    if not target_files:
         print("[ERROR] No input file provided or found in default locations.")
         print("Usage: python scripts/convert_role_04_composite.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_04_composite.py excel-templates/Template_Role_04_Composite.xlsx")
+        print("Example: python scripts/convert_role_04_composite.py excel-working/MM_Role_04_Composite.xlsx")
         sys.exit(1)
 
-    convert_role_04_composite(target_file)
+    for tf in target_files:
+        print(f"\n==================================================")
+        print(f"[RUNNING] Converting Composite Role: {tf}")
+        print(f"==================================================")
+        convert_role_04_composite(tf)

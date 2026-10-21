@@ -15,13 +15,14 @@ Usage:
     python scripts/convert_role_02_derive.py [input_excel_file]
 
 Example:
-    python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx
-    -> Outputs: excel-templates/Template_Role_02_Derived_converted.csv
+    python scripts/convert_role_02_derive.py excel-working/MM_Role_02_Derived.xlsx
+    -> Outputs: excel-working/converted/MM_Role_02_Derived_converted.csv
 """
 
 import os
 import sys
 import csv
+import glob
 import openpyxl
 
 # --- Safe Console Output on Windows ---
@@ -29,13 +30,14 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_role_02_derive(input_path):
+def convert_role_02_derive(input_path, output_dir=None):
     """
     Reads Derived Roles Excel file and converts to flat CSV format.
     Expects columns:
-    - Master Role (contains 'master')
+    - Master / Leading Role (contains 'master', 'leading', or 'parent')
     - Derived Role (contains 'derive')
     - Derived Role Description (contains 'desc' or 'description')
+    Output is saved to <parent_dir>/converted/ by default.
     """
     # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
@@ -43,21 +45,30 @@ def convert_role_02_derive(input_path):
 
     if not os.path.exists(input_path):
         print(f"[ERROR] Input file not found: {input_path}")
-        sys.exit(1)
+        return False
 
-    dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
     out_csv_name = f"{stem}_converted.csv"
-    out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+
+    if output_dir.endswith('.csv'):
+        out_csv_path = output_dir
+        if os.path.dirname(out_csv_path):
+            os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        out_csv_path = os.path.join(output_dir, out_csv_name)
 
     # --- Load Workbook ---
     try:
         wb_in = openpyxl.load_workbook(input_path, data_only=True)
     except Exception as e:
         print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
-        sys.exit(1)
+        return False
 
     # Locate target sheet: prefer sheet with 'derive' in name, else active sheet
     target_sheet = None
@@ -82,7 +93,7 @@ def convert_role_02_derive(input_path):
 
     for col in range(1, ws.max_column + 1):
         val = str(ws.cell(header_row, col).value or '').strip().lower()
-        if 'master' in val and col_master is None:
+        if ('master' in val or 'leading' in val or 'parent' in val) and col_master is None:
             col_master = col
         elif 'derive' in val and ('desc' in val or 'description' in val) and col_desc is None:
             col_desc = col
@@ -100,43 +111,46 @@ def convert_role_02_derive(input_path):
     print(f"[INFO] Column mappings -> Master: Col {col_master}, Derived: Col {col_derived}, Desc: Col {col_desc}")
 
     records = []
-    skipped_empty = 0
     unique_masters = set()
     unique_derived = set()
+    skipped_empty = 0
 
-    # --- Read Data Rows ---
-    for row in range(2, ws.max_row + 1):
-        val_master = str(ws.cell(row, col_master).value or '').strip()
-        val_derived = str(ws.cell(row, col_derived).value or '').strip()
-        cell_desc_val = ws.cell(row, col_desc).value
-        val_desc = str(cell_desc_val).strip() if cell_desc_val is not None else ''
+    # --- Scan Rows ---
+    for row in range(header_row + 1, ws.max_row + 1):
+        master_val = ws.cell(row, col_master).value
+        derived_val = ws.cell(row, col_derived).value
+        desc_val = ws.cell(row, col_desc).value
 
-        # Skip rows where both master and derived are blank
-        if not val_master and not val_derived:
+        master_str = str(master_val).strip() if master_val is not None else ''
+        derived_str = str(derived_val).strip() if derived_val is not None else ''
+        desc_str = str(desc_val).strip() if desc_val is not None else ''
+
+        # Skip rows where both master and derived are empty
+        if not master_str and not derived_str:
             skipped_empty += 1
             continue
 
-        records.append({
-            'master_role': val_master,
-            'derived_role': val_derived,
-            'derived_desc': val_desc
-        })
-
-        if val_master:
-            unique_masters.add(val_master)
-        if val_derived:
-            unique_derived.add(val_derived)
+        # If derived role exists, record it
+        if derived_str:
+            records.append({
+                'master_role': master_str,
+                'derived_role': derived_str,
+                'derived_desc': desc_str
+            })
+            if master_str:
+                unique_masters.add(master_str)
+            unique_derived.add(derived_str)
 
     # --- CSV Export (UTF-8 with BOM) ---
     try:
         with open(out_csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Master Role", "Derived Role", "Derived Role Description"])
-            for r in records:
-                writer.writerow([r['master_role'], r['derived_role'], r['derived_desc']])
+            for item in records:
+                writer.writerow([item['master_role'], item['derived_role'], item['derived_desc']])
     except PermissionError:
         print(f"[ERROR] Permission denied when writing to '{out_csv_path}'. Please close the file in Excel and try again.")
-        sys.exit(1)
+        return False
 
     # --- Execution Summary ---
     print(f"\n--- Execution Summary ---")
@@ -146,6 +160,7 @@ def convert_role_02_derive(input_path):
     print(f"[OK] Derived Roles    : {len(unique_derived)} unique")
     if skipped_empty > 0:
         print(f"[INFO] Empty Rows     : {skipped_empty} empty row(s) skipped")
+    return True
 
 
 # Compatibility alias
@@ -156,34 +171,47 @@ convert_role_derived_excel = convert_role_02_derive
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
         print("Usage: python scripts/convert_role_02_derive.py [path_to_excel_file]")
-        print("Example: python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx")
+        print("Example: python scripts/convert_role_02_derive.py excel-working/MM_Role_02_Derived.xlsx")
         sys.exit(0)
 
-    target_file = None
+    target_files = []
 
     if len(sys.argv) > 1:
-        target_file = sys.argv[1]
+        for arg in sys.argv[1:]:
+            matches = [m for m in glob.glob(arg) if not os.path.basename(m).startswith('~$')]
+            if matches:
+                target_files.extend(matches)
+            elif not os.path.basename(arg).startswith('~$'):
+                target_files.append(arg)
     else:
-        # Default candidates lookup
-        candidates = [
-            os.path.join("excel-working", "FICO_Role_02_Derived.xlsx"),
-            os.path.join("excel-working", "FICO_Roles_Derived.xlsx"),
-            os.path.join("excel-templates", "Template_Role_02_Derived.xlsx"),
-            os.path.join("excel-templates", "Template_Roles_Derived.xlsx"),
-            "Template_Role_02_Derived.xlsx",
-            "FICO_Role_02_Derived.xlsx",
-            "FICO_Roles_Derived.xlsx",
-            "Roles_Derived.xlsx"
-        ]
-        for cand in candidates:
-            if os.path.exists(cand):
-                target_file = cand
-                break
+        # Default candidates lookup in working and template directories
+        raw_candidates = (glob.glob(os.path.join("excel-working", "*_02_Derived.xlsx")) +
+                          glob.glob(os.path.join("excel-working", "*_Derived.xlsx")))
+        unique_working = sorted(list({c for c in raw_candidates if not os.path.basename(c).startswith('~$')}))
+        if unique_working:
+            target_files = unique_working
+        else:
+            raw_templates = (glob.glob(os.path.join("excel-templates", "*_02_Derived.xlsx")) +
+                             glob.glob(os.path.join("excel-templates", "*_Derived.xlsx")))
+            unique_templates = sorted(list({c for c in raw_templates if not os.path.basename(c).startswith('~$')}))
+            if unique_templates:
+                target_files = unique_templates
+            else:
+                target_files = ["Template_Role_02_Derived.xlsx"]
 
-    if not target_file:
+    if not target_files:
         print("[ERROR] No input file provided or found in default locations.")
         print("Usage: python scripts/convert_role_02_derive.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_02_derive.py excel-templates/Template_Role_02_Derived.xlsx")
+        print("Example: python scripts/convert_role_02_derive.py excel-working/MM_Role_02_Derived.xlsx")
         sys.exit(1)
 
-    convert_role_02_derive(target_file)
+    success = True
+    for tf in target_files:
+        print(f"\n==================================================")
+        print(f"[RUNNING] Converting Derived Role: {tf}")
+        print(f"==================================================")
+        if not convert_role_02_derive(tf):
+            success = False
+
+    if not success:
+        sys.exit(1)

@@ -17,13 +17,14 @@ Usage:
 
 Example:
     python scripts/convert_role_03_org.py excel-templates/Template_Role_03_Org.xlsx excel-templates/Org_Levels.csv
-    -> Outputs: excel-templates/Template_Role_03_Org_converted.csv
+    -> Outputs: excel-templates/converted/Template_Role_03_Org_converted.csv
 """
 
 import os
 import sys
 import re
 import csv
+import glob
 import openpyxl
 
 # --- Safe Console Output on Windows ---
@@ -148,10 +149,11 @@ def match_org_variable(header_text, org_ref_map):
     return None
 
 
-def convert_role_03_org(input_path, org_levels_path=None):
+def convert_role_03_org(input_path, org_levels_path=None, output_dir=None):
     """
     Reads Derived Roles Org Level Excel matrix and converts to normalized flat CSV format.
     Iterates column-by-column across Org Levels, then row-by-row across Derived Roles.
+    Output is saved to <parent_dir>/converted/ by default.
     """
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -177,12 +179,21 @@ def convert_role_03_org(input_path, org_levels_path=None):
     if org_levels_path:
         print(f"[INFO] Using Org Levels reference: '{org_levels_path}' ({len(org_ref_map)} mappings)")
 
-    dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
     out_csv_name = f"{stem}_converted.csv"
-    out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+
+    if output_dir.endswith('.csv'):
+        out_csv_path = output_dir
+        if os.path.dirname(out_csv_path):
+            os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        out_csv_path = os.path.join(output_dir, out_csv_name)
 
     # Load Workbook
     try:
@@ -299,34 +310,45 @@ if __name__ == "__main__":
         print("Example: python scripts/convert_role_03_org.py excel-templates/Template_Role_03_Org.xlsx excel-templates/Org_Levels.csv")
         sys.exit(0)
 
-    target_excel = None
+    target_files = []
     target_org_csv = None
 
-    if len(sys.argv) > 1:
-        target_excel = sys.argv[1]
-    if len(sys.argv) > 2:
-        target_org_csv = sys.argv[2]
+    if len(sys.argv) > 1 and not sys.argv[1].endswith('.csv'):
+        for arg in sys.argv[1:]:
+            if arg.endswith('.csv'):
+                target_org_csv = arg
+            else:
+                matches = [m for m in glob.glob(arg) if not os.path.basename(m).startswith('~$')]
+                if matches:
+                    target_files.extend(matches)
+                elif not os.path.basename(arg).startswith('~$'):
+                    target_files.append(arg)
+    else:
+        # Default candidates lookup in working and template directories
+        raw_candidates = (glob.glob(os.path.join("excel-working", "*_03_Org.xlsx")) +
+                          glob.glob(os.path.join("excel-working", "*_Org.xlsx")) +
+                          glob.glob(os.path.join("excel-working", "*_Derived_Org.xlsx")))
+        unique_working = sorted(list({c for c in raw_candidates if not os.path.basename(c).startswith('~$')}))
+        if unique_working:
+            target_files = unique_working
+        else:
+            raw_templates = (glob.glob(os.path.join("excel-templates", "*_03_Org.xlsx")) +
+                             glob.glob(os.path.join("excel-templates", "*_Org.xlsx")) +
+                             glob.glob(os.path.join("excel-templates", "*_Derived_Org.xlsx")))
+            unique_templates = sorted(list({c for c in raw_templates if not os.path.basename(c).startswith('~$')}))
+            if unique_templates:
+                target_files = unique_templates
+            else:
+                target_files = ["Template_Role_03_Org.xlsx"]
 
-    if not target_excel:
-        candidates = [
-            os.path.join("excel-working", "FICO_Role_03_Org.xlsx"),
-            os.path.join("excel-working", "FICO_Roles_Derived_Org.xlsx"),
-            os.path.join("excel-templates", "Template_Role_03_Org.xlsx"),
-            os.path.join("excel-templates", "Template_Roles_Derived_Org.xlsx"),
-            "Template_Role_03_Org.xlsx",
-            "FICO_Role_03_Org.xlsx",
-            "FICO_Roles_Derived_Org.xlsx",
-            "Roles_Derived_Org.xlsx"
-        ]
-        for cand in candidates:
-            if os.path.exists(cand):
-                target_excel = cand
-                break
-
-    if not target_excel:
+    if not target_files:
         print("[ERROR] No input file provided or found in default locations.")
         print("Usage: python scripts/convert_role_03_org.py <path_to_excel_file> [org_levels_csv_file]")
-        print("Example: python scripts/convert_role_03_org.py excel-templates/Template_Role_03_Org.xlsx excel-templates/Org_Levels.csv")
+        print("Example: python scripts/convert_role_03_org.py excel-working/MM_Role_03_Org.xlsx excel-templates/Org_Levels.csv")
         sys.exit(1)
 
-    convert_role_03_org(target_excel, target_org_csv)
+    for tf in target_files:
+        print(f"\n==================================================")
+        print(f"[RUNNING] Converting Org Levels: {tf}")
+        print(f"==================================================")
+        convert_role_03_org(tf, target_org_csv)

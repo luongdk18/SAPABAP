@@ -16,13 +16,14 @@ Usage:
     python scripts/convert_role_01_master.py [input_excel_file]
 
 Example:
-    python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx
-    -> Outputs: excel-templates/Template_Role_01_Master_converted.csv
+    python scripts/convert_role_01_master.py excel-working/MM_Role_01_Master.xlsx
+    -> Outputs: excel-working/converted/MM_Role_01_Master_converted.csv
 """
 
 import os
 import sys
 import csv
+import glob
 import openpyxl
 
 # --- Safe Console Output on Windows ---
@@ -30,12 +31,23 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def convert_role_01_master(input_path):
+def is_indicator(val):
+    """Checks if a cell value is an indicator flag or empty rather than a TCode."""
+    if val is None:
+        return True
+    s = str(val).strip().upper()
+    return s in ('Y', 'X', '0', '1', 'YES', 'NO', '', 'N/A', '-')
+
+
+def convert_role_01_master(input_path, output_dir=None):
     """
     Reads Master Role matrix Excel file and converts to flat CSV format.
+    Dynamically detects the TCode column and Master Role columns to support
+    varied module layouts (e.g., FICO, PS, MM).
     Row 1: Role Description (preserves exact spacing)
     Row 2: Role Name
-    Row 3+: TCodes (Column 1) and indicator flags ('Y', 'y', 'X', 'x') (Columns 2..N)
+    Row 3+: TCodes (Detected column) and indicator flags ('Y', 'y', 'X', 'x')
+    Output is saved to <parent_dir>/converted/ by default.
     """
     # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
@@ -43,26 +55,36 @@ def convert_role_01_master(input_path):
 
     if not os.path.exists(input_path):
         print(f"[ERROR] Input file not found: {input_path}")
-        sys.exit(1)
+        return False
 
-    dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
     out_csv_name = f"{stem}_converted.csv"
-    out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+
+    if output_dir.endswith('.csv'):
+        out_csv_path = output_dir
+        if os.path.dirname(out_csv_path):
+            os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        out_csv_path = os.path.join(output_dir, out_csv_name)
 
     # --- Load Workbook ---
     try:
         wb_in = openpyxl.load_workbook(input_path, data_only=True)
     except Exception as e:
         print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
-        sys.exit(1)
+        return False
 
-    # Locate target sheet: prefer sheet with 'MASTER' in title, else active sheet
+    # Locate target sheet: prefer sheet with 'MASTER' or 'LEADING' in title, else active sheet
     target_sheet = None
     for name in wb_in.sheetnames:
-        if 'master' in name.strip().lower():
+        low = name.strip().lower()
+        if 'master' in low or 'leading' in low:
             target_sheet = wb_in[name]
             break
 
@@ -74,24 +96,49 @@ def convert_role_01_master(input_path):
 
     ws = target_sheet
 
+    # --- 1. Dynamically Detect TCode Column ---
+    best_tcode_col = 1
+    max_tcode_count = 0
+
+    for c in range(1, ws.max_column + 1):
+        # Count non-indicator values in row 3+
+        tcode_candidates = 0
+        for r in range(3, ws.max_row + 1):
+            v = ws.cell(r, c).value
+            if v is not None and not is_indicator(v):
+                tcode_candidates += 1
+
+        if tcode_candidates > max_tcode_count:
+            max_tcode_count = tcode_candidates
+            best_tcode_col = c
+
+    # --- 2. Dynamically Detect Master Role Columns ---
+    role_cols = []
+    for c in range(1, ws.max_column + 1):
+        if c == best_tcode_col:
+            continue
+        rname = ws.cell(2, c).value
+        if rname is not None and str(rname).strip():
+            name_str = str(rname).strip()
+            # Ignore label headers in template files
+            if name_str.lower() in ('role name', 'role', 'tcode', 'transaction', 't-code'):
+                continue
+            rdesc = ws.cell(1, c).value
+            role_desc = str(rdesc) if rdesc is not None else ''
+            role_cols.append((c, name_str, role_desc))
+
+    print(f"[INFO] TCode column detected: Col {best_tcode_col} ({max_tcode_count} TCodes). Master roles: {len(role_cols)} columns.")
+
     roles_flat = []
     roles_with_tcodes = 0
     roles_without_tcodes = 0
     no_flag_role_names = []
 
-    # --- Matrix Scanning & Flag Filtering ('Y', 'y', 'X', 'x') ---
-    # Iterate over columns (each column starting from col 2 is a Master Role)
-    for col in range(2, ws.max_column + 1):
-        cell_desc_val = ws.cell(1, col).value
-        role_desc = str(cell_desc_val) if cell_desc_val is not None else ''
-        role_name = str(ws.cell(2, col).value or '').strip()
-
-        if not role_name:
-            continue
-
+    # --- 3. Matrix Scanning & Flag Filtering ('Y', 'y', 'X', 'x') ---
+    for col, role_name, role_desc in role_cols:
         found_flag = False
         for row in range(3, ws.max_row + 1):
-            tcode = str(ws.cell(row, 1).value or '').strip()
+            tcode = str(ws.cell(row, best_tcode_col).value or '').strip()
             val = str(ws.cell(row, col).value or '').strip().upper()
 
             # Filter criteria: accepts Y, y, X, x
@@ -124,7 +171,7 @@ def convert_role_01_master(input_path):
                 writer.writerow([item['role_name'], item['role_desc'], item['tcode']])
     except PermissionError:
         print(f"[ERROR] Permission denied when writing to '{out_csv_path}'. Please close the file in Excel and try again.")
-        sys.exit(1)
+        return False
 
     # --- Execution Summary ---
     total_roles = roles_with_tcodes + roles_without_tcodes
@@ -134,6 +181,7 @@ def convert_role_01_master(input_path):
     if no_flag_role_names:
         print(f"[INFO] Empty Roles    : {', '.join(no_flag_role_names)} -> assigned 'N/A'")
     print(f"[OK] Output CSV       : {out_csv_path} ({len(roles_flat)} data rows)")
+    return True
 
 
 # Compatibility alias
@@ -144,34 +192,48 @@ convert_role_master_excel = convert_role_01_master
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
         print("Usage: python scripts/convert_role_01_master.py [path_to_excel_file]")
-        print("Example: python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx")
+        print("Example: python scripts/convert_role_01_master.py excel-working/MM_Role_01_Master.xlsx")
         sys.exit(0)
 
-    target_file = None
+    target_files = []
 
     if len(sys.argv) > 1:
-        target_file = sys.argv[1]
+        for arg in sys.argv[1:]:
+            matches = [m for m in glob.glob(arg) if not os.path.basename(m).startswith('~$')]
+            if matches:
+                target_files.extend(matches)
+            elif not os.path.basename(arg).startswith('~$'):
+                target_files.append(arg)
     else:
-        # Default candidates lookup
-        candidates = [
-            os.path.join("excel-working", "FICO_Role_01_Master.xlsx"),
-            os.path.join("excel-working", "FICO_Roles_Master.xlsx"),
-            os.path.join("excel-templates", "Template_Role_01_Master.xlsx"),
-            os.path.join("excel-templates", "Template_Roles_Master.xlsx"),
-            "Template_Role_01_Master.xlsx",
-            "FICO_Role_01_Master.xlsx",
-            "FICO_Roles_Master.xlsx",
-            "Roles_Master.xlsx"
-        ]
-        for cand in candidates:
-            if os.path.exists(cand):
-                target_file = cand
-                break
+        # Default candidates lookup in working and template directories
+        raw_candidates = (glob.glob(os.path.join("excel-working", "*_01_Master.xlsx")) +
+                          glob.glob(os.path.join("excel-working", "*_Master.xlsx")))
+        unique_working = sorted(list({c for c in raw_candidates if not os.path.basename(c).startswith('~$')}))
+        
+        if unique_working:
+            target_files = unique_working
+        else:
+            raw_templates = (glob.glob(os.path.join("excel-templates", "*_01_Master.xlsx")) +
+                             glob.glob(os.path.join("excel-templates", "*_Master.xlsx")))
+            unique_templates = sorted(list({c for c in raw_templates if not os.path.basename(c).startswith('~$')}))
+            if unique_templates:
+                target_files = unique_templates
+            else:
+                target_files = ["Template_Role_01_Master.xlsx"]
 
-    if not target_file:
+    if not target_files:
         print("[ERROR] No input file provided or found in default locations.")
         print("Usage: python scripts/convert_role_01_master.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_01_master.py excel-templates/Template_Role_01_Master.xlsx")
+        print("Example: python scripts/convert_role_01_master.py excel-working/MM_Role_01_Master.xlsx")
         sys.exit(1)
 
-    convert_role_01_master(target_file)
+    success = True
+    for tf in target_files:
+        print(f"\n==================================================")
+        print(f"[RUNNING] Converting Master Role: {tf}")
+        print(f"==================================================")
+        if not convert_role_01_master(tf):
+            success = False
+
+    if not success:
+        sys.exit(1)
