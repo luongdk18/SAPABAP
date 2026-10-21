@@ -27,8 +27,9 @@
    - [7.2. Current Utility: Z_AUTH_ROLE_CREATE](#72-current-utility-z_auth_role_create)
    - [7.3. Current Utility: Z_AUTH_ROLE_DERIVE](#73-current-utility-z_auth_role_derive)
    - [7.4. Current Utility: Z_AUTH_ROLE_UPDATE_ORG](#74-current-utility-z_auth_role_update_org)
-   - [7.5. Python Preprocessing Pipeline Guide](#75-python-preprocessing-pipeline-guide)
-   - [7.6. Future Utilities Roadmap](#76-future-utilities-roadmap)
+   - [7.5. Current Utility: Z_AUTH_ROLE_COMPOSITE](#75-current-utility-z_auth_role_composite)
+   - [7.6. Python Preprocessing Pipeline Guide](#76-python-preprocessing-pipeline-guide)
+   - [7.7. Future Utilities Roadmap](#77-future-utilities-roadmap)
 8. [Security & Best Practices](#8-security--best-practices)
 9. [License](#9-license)
 
@@ -64,6 +65,7 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   └── logo.svg                # Repository brand logo
 ├── docs/
 │   ├── ROLE_CONVERSION_GUIDE.md # Guide for Python Excel-to-CSV converters
+│   ├── Z_AUTH_ROLE_COMPOSITE.md # Composite role creation & single role assignment documentation
 │   ├── Z_AUTH_ROLE_CREATE.md    # Master single role batch creation & menu documentation
 │   ├── Z_AUTH_ROLE_DERIVE.md    # Derived role creation & inheritance documentation
 │   ├── Z_AUTH_ROLE_UPDATE_ORG.md# Organizational levels batch update documentation
@@ -75,14 +77,18 @@ It also serves as a codebase for practical ABAP utility tools developed with AI 
 │   ├── Template_Roles_Derived.xlsx
 │   ├── Template_Roles_Derived_converted.csv
 │   ├── Template_Roles_Derived_Org.xlsx
-│   └── Template_Roles_Derived_Org_converted.csv
+│   ├── Template_Roles_Derived_Org_converted.csv
+│   ├── Template_Roles_Composite.xlsx
+│   └── Template_Roles_Composite_converted.csv
 ├── scripts/
 │   ├── convert_role_master_excel.py # Preprocessing script: converts matrix Excel to row format CSV
 │   ├── convert_role_derived_excel.py # Converts derived role creation Excel to flat CSV format
 │   ├── convert_role_org_excel.py    # Converts derived role org matrix to flat CSV referencing Org_Levels.csv
+│   ├── convert_role_composite_excel.py # Converts composite roles matrix to flat CSV format
 │   ├── generate_org_levels_csv.py   # Generates standard Org_Levels.csv reference
 │   └── deploy.js               # CLI deployment engine via MCP ADT
 ├── src/
+│   ├── z_auth_role_composite.prog.abap  # Batch Composite Role Creation & Assignment tool
 │   ├── z_auth_role_create.prog.abap     # Batch Master Role Creation & Menu Structuring tool
 │   ├── z_auth_role_derive.prog.abap     # Batch Derived Role Creation & Inheritance Synchronization
 │   ├── z_auth_role_update_org.prog.abap # Batch Organizational Levels Maintenance tool
@@ -314,10 +320,11 @@ Deployment is explicitly designed to be **selective per program**—you choose e
 ### Option 1: Direct CLI by Program Name
 ```bash
 # Convenient npm scripts defined in package.json:
-npm run deploy:auth     # Deploys Z_AUTH_TEST
-npm run deploy:role     # Deploys Z_AUTH_ROLE_CREATE
-npm run deploy:derive   # Deploys Z_AUTH_ROLE_DERIVE
-npm run deploy:org      # Deploys Z_AUTH_ROLE_UPDATE_ORG
+npm run deploy:auth       # Deploys Z_AUTH_TEST
+npm run deploy:role       # Deploys Z_AUTH_ROLE_CREATE
+npm run deploy:derive     # Deploys Z_AUTH_ROLE_DERIVE
+npm run deploy:org        # Deploys Z_AUTH_ROLE_UPDATE_ORG
+npm run deploy:composite  # Deploys Z_AUTH_ROLE_COMPOSITE
 
 # Or pass custom arguments:
 npm run deploy -- Z_AUTH_TEST
@@ -417,7 +424,22 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - **Profile Regeneration & Verification**: Calls `SUPRN_DARK_MANIPULATE_PROFILE` without dialog and verifies the resulting status via `PRGN_CHECK_PROFILE_STATUS`.
   - **Interactive ALV Cockpit**: Displays simulation mode (Test Run), counts of file vs. updated Org levels, detail summary of updated values, and clickable hotspot links to inspect roles in `PFCG`.
 
-### 7.5. Python Preprocessing Pipeline Guide
+### 7.5. Current Utility: Z_AUTH_ROLE_COMPOSITE
+
+- **Source Code**: [`src/z_auth_role_composite.prog.abap`](src/z_auth_role_composite.prog.abap)
+- **Documentation**: [`docs/Z_AUTH_ROLE_COMPOSITE.md`](docs/Z_AUTH_ROLE_COMPOSITE.md) (Complete technical reference & workflow)
+- **Companion Script**: [`scripts/convert_role_composite_excel.py`](scripts/convert_role_composite_excel.py)
+- **Conversion Guide**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
+- **Purpose**: Batch PFCG Composite Role Creation & Single Role Assignment from CSV (`.csv`).
+- **Workflow & Key Features**:
+  - **Upload Format**: Reads 3-column flat CSV format (`Composite Role Name`, `Composite Role Description`, `Derived / Single Role`), generated via `convert_role_composite_excel.py`.
+  - **Native Composite Architecture**: Creates collective role definitions (`AGR_DEFINE-ATTRIBUTES = 'COLLECTIVE'`, `AGR_FLAGS-COLL_AGR = 'X'`) and strips intrusive automatic comments from `AGR_TEXTS`.
+  - **Validation & Non-Blocking Isolation**: Validates member single roles in `AGR_DEFINE` and prevents nested composite roles. Missing roles are reported in the `MISSING_ROLES` column with a Warning status (`@09@`).
+  - **Empty Composite Roles (`N/A`)**: Supports creating placeholder composite job roles with status `@09@` when marked as `N/A`.
+  - **Atomic Assignment & Synchronization**: Assigns single roles via `PRGN_RFC_ADD_AGRS_TO_COLL_AGR` and synchronizes obsolete assignments via `PRGN_RFC_DEL_AGRS_IN_COLL_AGR` when `p_sync = 'X'`.
+  - **Interactive ALV Cockpit**: Displays simulation mode (Test Run), counts of total vs. valid vs. assigned single roles, list of missing roles, and clickable hotspot links to inspect composite roles in `PFCG`.
+
+### 7.6. Python Preprocessing Pipeline Guide
 
 - **Documentation**: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md)
 - **Purpose**: Complete guide on preparing Excel matrix sheets, converting them to normalized 3-column CSVs, and validating them before uploading to the SAP ABAP programs.
@@ -425,10 +447,11 @@ A primary objective of this repository is to build and maintain open-source ABAP
   - `npm run convert:role:master`: Converts Master Role Matrix (`.xlsx`) to `_converted.csv`.
   - `npm run convert:role:derived`: Converts Derived Role Creation Matrix (`.xlsx`) to `_converted.csv`.
   - `npm run convert:role:org`: Converts Derived Org Matrix (`.xlsx`) referencing `excel-templates/Org_Levels.csv` to `_converted.csv`.
-  - `npm run convert:role:all`: Runs all three converters sequentially.
+  - `npm run convert:role:composite`: Converts Composite Roles Matrix (`.xlsx`) to `_converted.csv`.
+  - `npm run convert:role:all`: Runs all role matrix converters sequentially.
 - **Smart Directory Resolution**: Scripts prioritize real files in `excel-working/` (git-ignored) first, then fallback to `excel-templates/`, preserving confidential corporate data.
 
-### 7.6. Future Utilities Roadmap
+### 7.7. Future Utilities Roadmap
 
 Additional ABAP utilities for SAP Basis will be developed and added to this repository:
 - **Authorization & User Governance**: Role assignment analyzer, dormant user cleanup, and unassigned profile auditing.

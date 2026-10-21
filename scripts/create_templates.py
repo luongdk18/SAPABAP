@@ -5,6 +5,10 @@ Creates:
 1. Template_Roles_Master.xlsx & Template_Roles_Master_converted.csv
 2. Template_Roles_Derived.xlsx & Template_Roles_Derived_converted.csv
 3. Template_Roles_Derived_Org.xlsx & Template_Roles_Derived_Org_converted.csv
+4. Template_Roles_Composite.xlsx & Template_Roles_Composite_converted.csv
+
+Usage:
+    python scripts/create_templates.py
 """
 
 import os
@@ -13,10 +17,11 @@ import csv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-# Ensure safe console output on Windows
+# --- Safe Console Output on Windows ---
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
+# --- Directory & Style Definitions ---
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "excel-templates")
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -34,9 +39,8 @@ thin_border = Border(
     bottom=Side(style='thin', color='D9D9D9')
 )
 
-# -----------------------------------------------------------------------------
-# 1. Master Roles Template (Template_Roles_Master.xlsx & CSV)
-# -----------------------------------------------------------------------------
+
+# --- 1. Master Roles Template (Template_Roles_Master.xlsx & CSV) ---
 def create_master_template():
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -116,9 +120,8 @@ def create_master_template():
     print(f"[OK] Generated: {xlsx_path}")
     print(f"[OK] Generated: {csv_path} ({len(flat_rows)} rows)")
 
-# -----------------------------------------------------------------------------
-# 2. Derived Roles Template (Template_Roles_Derived.xlsx & CSV)
-# -----------------------------------------------------------------------------
+
+# --- 2. Derived Roles Template (Template_Roles_Derived.xlsx & CSV) ---
 def create_derived_template():
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -168,9 +171,8 @@ def create_derived_template():
     print(f"[OK] Generated: {xlsx_path}")
     print(f"[OK] Generated: {csv_path} ({len(derived_rows)} rows)")
 
-# -----------------------------------------------------------------------------
-# 3. Derived Roles Org Levels Template (Template_Roles_Derived_Org.xlsx & CSV)
-# -----------------------------------------------------------------------------
+
+# --- 3. Derived Roles Org Levels Template (Template_Roles_Derived_Org.xlsx & CSV) ---
 def create_org_template():
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -242,7 +244,146 @@ def create_org_template():
     print(f"[OK] Generated: {xlsx_path}")
     print(f"[OK] Generated: {csv_path} ({len(flat_csv_rows)} rows)")
 
+
+# --- 4. Composite Roles Template (Template_Roles_Composite.xlsx & CSV) ---
+def create_composite_template():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "COMPOSITE ROLES"
+
+    roles = [
+        {
+            "name": "Z_FI_COMP_CFO_1000",
+            "desc": "Chief Financial Officer - Entity 1000",
+            "derived_roles": [
+                "Z_FI_PERIOD_CONTROL_1000",
+                "Z_FI_GL_MASTER_MAINT_1000",
+                "Z_FI_JOURNAL_DISPLAY_1000"
+            ]
+        },
+        {
+            "name": "Z_FI_COMP_CFO_2000",
+            "desc": "Chief Financial Officer - Entity 2000",
+            "derived_roles": [
+                "Z_FI_PERIOD_CONTROL_2000",
+                "Z_FI_GL_MASTER_MAINT_2000",
+                "Z_FI_JOURNAL_DISPLAY_2000"
+            ]
+        },
+        {
+            "name": "Z_FI_COMP_ACCOUNTANT_1000",
+            "desc": "General Accountant - Entity 1000",
+            "derived_roles": [
+                "Z_FI_JOURNAL_POST_1000",
+                "Z_FI_JOURNAL_DISPLAY_1000",
+                "Z_FI_AP_INVOICE_PROCESS_1000"
+            ]
+        },
+        {
+            "name": "Z_FI_COMP_ACCOUNTANT_2000",
+            "desc": "General Accountant - Entity 2000",
+            "derived_roles": [
+                "Z_FI_JOURNAL_POST_2000",
+                "Z_FI_JOURNAL_DISPLAY_2000",
+                "Z_FI_AP_INVOICE_PROCESS_2000"
+            ]
+        },
+        {
+            "name": "Z_FI_COMP_CONTROLLER_1000",
+            "desc": "Financial Controller - Entity 1000",
+            "derived_roles": [
+                "Z_FI_PERIOD_CONTROL_1000",
+                "Z_FI_JOURNAL_DISPLAY_1000"
+            ]
+        },
+        {
+            "name": "Z_FI_COMP_EMPTY_1000",
+            "desc": "Empty Composite Role - Entity 1000",
+            "derived_roles": []  # Demonstrates N/A fallback row
+        }
+    ]
+
+    all_derived_roles = [
+        "Z_FI_PERIOD_CONTROL_1000",
+        "Z_FI_PERIOD_CONTROL_2000",
+        "Z_FI_GL_MASTER_MAINT_1000",
+        "Z_FI_GL_MASTER_MAINT_2000",
+        "Z_FI_JOURNAL_POST_1000",
+        "Z_FI_JOURNAL_POST_2000",
+        "Z_FI_JOURNAL_DISPLAY_1000",
+        "Z_FI_JOURNAL_DISPLAY_2000",
+        "Z_FI_AP_INVOICE_PROCESS_1000",
+        "Z_FI_AP_INVOICE_PROCESS_2000",
+        "Z_FI_GL_REPORTS_EMPTY_1000",
+        "Z_FI_GL_REPORTS_EMPTY_2000"
+    ]
+
+    # Row 1: Role Description
+    ws.cell(1, 1, value="Derived Role / Composite Role Description").font = header_font
+    ws.cell(1, 1).fill = header_fill
+    ws.cell(1, 1).alignment = left_align
+
+    # Row 2: Role Name
+    ws.cell(2, 1, value="Role Name").font = role_name_font
+    ws.cell(2, 1).fill = role_name_fill
+    ws.cell(2, 1).alignment = left_align
+
+    for col_idx, r in enumerate(roles, start=2):
+        c1 = ws.cell(1, col_idx, value=r["desc"])
+        c1.font = header_font
+        c1.fill = header_fill
+        c1.alignment = left_align
+
+        c2 = ws.cell(2, col_idx, value=r["name"])
+        c2.font = role_name_font
+        c2.fill = role_name_fill
+        c2.alignment = left_align
+
+    # Derived Role rows (Row 3 onwards)
+    flat_rows = []
+    for row_idx, dr in enumerate(all_derived_roles, start=3):
+        c = ws.cell(row_idx, 1, value=dr)
+        c.font = data_font
+        c.border = thin_border
+        for col_idx, r in enumerate(roles, start=2):
+            val = "Y" if dr in r["derived_roles"] else ""
+            cell = ws.cell(row_idx, col_idx, value=val)
+            cell.font = data_font
+            cell.alignment = center_align
+            cell.border = thin_border
+
+    # Build flat rows for CSV in specified column order:
+    # Composite role name, composite role description, derived role
+    for r in roles:
+        if r["derived_roles"]:
+            for dr in r["derived_roles"]:
+                flat_rows.append([r["name"], r["desc"], dr])
+        else:
+            flat_rows.append([r["name"], r["desc"], "N/A"])
+
+    # Auto-adjust column widths
+    ws.column_dimensions['A'].width = 32
+    for col_letter in ['B', 'C', 'D', 'E', 'F', 'G']:
+        ws.column_dimensions[col_letter].width = 36
+
+    xlsx_path = os.path.join(OUT_DIR, "Template_Roles_Composite.xlsx")
+    wb.save(xlsx_path)
+
+    csv_path = os.path.join(OUT_DIR, "Template_Roles_Composite_converted.csv")
+    with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Composite Role Name", "Composite Role Description", "Derived Role"])
+        writer.writerows(flat_rows)
+
+    print(f"[OK] Generated: {xlsx_path}")
+    print(f"[OK] Generated: {csv_path} ({len(flat_rows)} rows)")
+
+
+# --- CLI Entrypoint ---
 if __name__ == "__main__":
+    print("\n--- Generating SAP Role Templates ---")
     create_master_template()
     create_derived_template()
     create_org_template()
+    create_composite_template()
+    print("\n[OK] All role templates and sample converted CSVs generated successfully.")

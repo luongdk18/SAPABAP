@@ -9,9 +9,12 @@
     "deploy:role": "node scripts/deploy.js src/z_auth_role_create.prog.abap Z_AUTH_ROLE_CREATE",
     "deploy:derive": "node scripts/deploy.js src/z_auth_role_derive.prog.abap Z_AUTH_ROLE_DERIVE",
     "deploy:org": "node scripts/deploy.js src/z_auth_role_update_org.prog.abap Z_AUTH_ROLE_UPDATE_ORG",
+    "deploy:composite": "node scripts/deploy.js src/z_auth_role_composite.prog.abap Z_AUTH_ROLE_COMPOSITE",
     "convert:role:master": "python scripts/convert_role_master_excel.py",
     "convert:role:derived": "python scripts/convert_role_derived_excel.py",
-    "convert:role:org": "python scripts/convert_role_org_excel.py"
+    "convert:role:org": "python scripts/convert_role_org_excel.py",
+    "convert:role:composite": "python scripts/convert_role_composite_excel.py",
+    "convert:role:all": "npm run convert:role:master && npm run convert:role:derived && npm run convert:role:org && npm run convert:role:composite"
   },
   "keywords": [
     "sap",

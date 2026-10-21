@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
-Convert Derived Roles Creation Excel file to plain unformatted CSV format for SAP Role upload.
-Reads sheet 'DERIVED ROLES' (or active sheet) and extracts:
-- Master Role
-- Derived Role
-- Derived Role Description
+Convert Derived Roles Creation Excel file to flat row format for SAP Role upload.
+Reads tabular sheet containing Master Roles, Derived Roles, and Descriptions.
+Validates non-empty role keys and exports normalized CSV for SAP batch creation.
 
-Outputs CSV file (_converted.csv) for SAP import.
+Output columns:
+1. Master Role
+2. Derived Role
+3. Derived Role Description
+
+Output:
+- <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
 
 Usage:
     python scripts/convert_role_derived_excel.py [input_excel_file]
 
 Example:
-    python scripts/convert_role_derived_excel.py Roles_Derived.xlsx
-    -> Outputs: Roles_Derived_converted.csv
+    python scripts/convert_role_derived_excel.py excel-working/FICO_Roles_Derived.xlsx
+    -> Outputs: excel-working/FICO_Roles_Derived_converted.csv
 """
 
 import os
@@ -21,12 +25,17 @@ import sys
 import csv
 import openpyxl
 
-# Ensure safe console output on Windows
+# --- Safe Console Output on Windows ---
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
+
 def convert_role_derived_excel(input_path):
-    # Resolve input path and extension
+    """
+    Reads Derived Roles Excel file and converts to flat CSV format.
+    Dynamically maps header columns for Master Role, Derived Role, and Description.
+    """
+    # --- Path & File Resolution ---
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
 
@@ -34,7 +43,6 @@ def convert_role_derived_excel(input_path):
         print(f"[ERROR] Input file not found: {input_path}")
         sys.exit(1)
 
-    # Derive output filename: <original_name>_converted.csv
     dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
@@ -42,24 +50,29 @@ def convert_role_derived_excel(input_path):
     out_csv_name = f"{stem}_converted.csv"
     out_csv_path = os.path.join(dir_name, out_csv_name) if dir_name else out_csv_name
 
-    wb_in = openpyxl.load_workbook(input_path, data_only=True)
+    # --- Load Workbook ---
+    try:
+        wb_in = openpyxl.load_workbook(input_path, data_only=True)
+    except Exception as e:
+        print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
+        sys.exit(1)
 
     # Locate 'DERIVED ROLES' sheet or fallback to active sheet
     target_sheet = None
     for name in wb_in.sheetnames:
-        if name.strip().lower() == "derived roles":
+        if "derived roles" in name.strip().lower():
             target_sheet = wb_in[name]
             break
 
     if target_sheet is None:
         target_sheet = wb_in.active
-        print(f"[INFO] Sheet 'DERIVED ROLES' not found explicitly; using active sheet '{target_sheet.title}'.")
+        print(f"[INFO] Using active sheet '{target_sheet.title}'.")
     else:
         print(f"[INFO] Processing sheet: '{target_sheet.title}'")
 
     ws = target_sheet
 
-    # Dynamic column mapping from header (row 1)
+    # --- Dynamic Column Detection ---
     col_master = None
     col_derived = None
     col_desc = None
@@ -73,13 +86,14 @@ def convert_role_derived_excel(input_path):
         elif 'derived' in val:
             col_derived = col
 
-    # Fallback to standard positions (1, 2, 3)
+    # Fallback to standard positions (1: Master, 2: Derived, 3: Description)
     col_master = col_master or 1
     col_derived = col_derived or 2
     col_desc = col_desc or 3
 
     print(f"[INFO] Detected Columns -> Master Role: Col {col_master}, Derived Role: Col {col_derived}, Description: Col {col_desc}")
 
+    # --- Row Extraction & Validation ---
     records = []
     skipped_empty = 0
     unique_masters = set()
@@ -100,7 +114,7 @@ def convert_role_derived_excel(input_path):
             continue
 
         if not master_role or not derived_role:
-            print(f"[WARNING] Row {row} missing Master Role or Derived Role: Master='{master_role}', Derived='{derived_role}' -> Skipped.")
+            print(f"[WARNING] Row {row} missing Master or Derived Role: Master='{master_role}', Derived='{derived_role}' -> Skipped.")
             continue
 
         records.append({
@@ -111,7 +125,7 @@ def convert_role_derived_excel(input_path):
         unique_masters.add(master_role)
         unique_derived.add(derived_role)
 
-    # Export CSV for direct ABAP/text upload (UTF-8 with BOM)
+    # --- CSV Export (UTF-8 with BOM) ---
     try:
         with open(out_csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
@@ -122,17 +136,21 @@ def convert_role_derived_excel(input_path):
         print(f"[ERROR] Permission denied when writing to '{out_csv_path}'. Please close the file in Excel and try again.")
         sys.exit(1)
 
+    # --- Execution Summary ---
+    print(f"\n--- Execution Summary ---")
     print(f"[OK] Input File       : {input_path}")
     print(f"[OK] Output CSV       : {out_csv_path} ({len(records)} data rows)")
     print(f"[OK] Master Roles     : {len(unique_masters)} unique")
     print(f"[OK] Derived Roles    : {len(unique_derived)} unique")
     if skipped_empty > 0:
-        print(f"[INFO] Skipped Empty  : {skipped_empty} empty rows")
+        print(f"[INFO] Empty Rows     : {skipped_empty} empty row(s) skipped")
 
+
+# --- CLI Entrypoint ---
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
         print("Usage: python scripts/convert_role_derived_excel.py [path_to_excel_file]")
-        print("Example: python scripts/convert_role_derived_excel.py Roles_Derived.xlsx")
+        print("Example: python scripts/convert_role_derived_excel.py excel-working/FICO_Roles_Derived.xlsx")
         sys.exit(0)
 
     target_file = None
@@ -140,7 +158,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         target_file = sys.argv[1]
     else:
-        # Default candidates in current workspace / working folders / templates
+        # Default candidates lookup
         candidates = [
             os.path.join("excel-working", "FICO_Roles_Derived.xlsx"),
             os.path.join("excel-templates", "Template_Roles_Derived.xlsx"),
@@ -153,8 +171,9 @@ if __name__ == "__main__":
                 break
 
     if not target_file:
+        print("[ERROR] No input file provided or found in default locations.")
         print("Usage: python scripts/convert_role_derived_excel.py <path_to_excel_file>")
-        print("Example: python scripts/convert_role_derived_excel.py Roles_Derived.xlsx")
+        print("Example: python scripts/convert_role_derived_excel.py excel-working/FICO_Roles_Derived.xlsx")
         sys.exit(1)
 
     convert_role_derived_excel(target_file)

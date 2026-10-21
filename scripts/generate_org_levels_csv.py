@@ -1,10 +1,26 @@
-import json
-import csv
-import os
+#!/usr/bin/env python3
+"""
+Generate standardized SAP Organizational Levels reference (Org_Levels.csv).
+Extracted from SAP S/4HANA table USVART (Language: 'E').
+Sorted strictly by standard SAP primary key order: VARBL ascending (matching SORT T_STORG BY VARBL and table USVAR).
 
-# SAP S/4HANA Standard Organizational Levels extracted from USVART (Language: 'E')
-# Sorted strictly by SAP standard primary key order: VARBL ascending (matching SORT T_STORG BY VARBL and table USVAR)
-sap_org_levels = [
+Output:
+- excel-templates/Org_Levels.csv (UTF-8 with BOM for SAP GUI and script consumption)
+
+Usage:
+    python scripts/generate_org_levels_csv.py
+"""
+
+import os
+import sys
+import csv
+
+# --- Safe Console Output on Windows ---
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+# --- Standard SAP S/4HANA Organizational Levels Reference Data (71 levels) ---
+SAP_ORG_LEVELS = [
     ("Business Partner for Provider of Information", "$/ECRS/POIB"),
     ("Activity Area", "$/SCWM/AREA"),
     ("Authorized Drawer", "$/SCWM/ENTL"),
@@ -78,12 +94,22 @@ sap_org_levels = [
     ("Sales Organization", "$XSORG"),
 ]
 
-output_csv = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'excel-templates', 'Org_Levels.csv')
 
-with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-    writer = csv.writer(f)
-    writer.writerow(['Org Level Description', 'Org Level Variable'])
-    for desc, var in sap_org_levels:
-        writer.writerow([desc, var])
+def generate_org_levels_csv():
+    output_csv = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'excel-templates', 'Org_Levels.csv')
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
 
-print(f"Successfully generated {len(sap_org_levels)} SAP Organizational Levels sorted by VARBL into: {output_csv}")
+    with open(output_csv, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Org Level Description', 'Org Level Variable'])
+        for desc, var in SAP_ORG_LEVELS:
+            writer.writerow([desc, var])
+
+    print(f"\n--- Execution Summary ---")
+    print(f"[OK] Reference File   : {output_csv}")
+    print(f"[OK] Total Levels     : {len(SAP_ORG_LEVELS)} SAP Org Levels (sorted by VARBL ascending)")
+
+
+# --- CLI Entrypoint ---
+if __name__ == "__main__":
+    generate_org_levels_csv()

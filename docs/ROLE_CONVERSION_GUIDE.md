@@ -7,6 +7,7 @@ This guide explains how to prepare business authorization matrices in Excel and 
 1. **Master Roles**: `convert_role_master_excel.py` ➔ Import into **`Z_AUTH_ROLE_CREATE`**
 2. **Derived Roles Mapping**: `convert_role_derived_excel.py` ➔ Import into **`Z_AUTH_ROLE_DERIVE`**
 3. **Organizational Levels**: `convert_role_org_excel.py` ➔ Import into **`Z_AUTH_ROLE_UPDATE_ORG`**
+4. **Composite Roles**: `convert_role_composite_excel.py` ➔ Import into **`Z_AUTH_ROLE_COMPOSITE`**
 
 ---
 
@@ -31,6 +32,12 @@ flowchart TD
         B3 --> C3["Template_Roles_Derived_Org_converted.csv\n(Role Name, Org Variable, Org Value)"]
         C3 --> D3["ABAP Program: Z_AUTH_ROLE_UPDATE_ORG\nPopulates AGR_1252 & Generates Profiles"]
     end
+
+    subgraph S4["4. Composite Roles Matrix"]
+        A4["Template_Roles_Composite.xlsx\n(Row 1: Desc, Row 2: Role, Col 1: Derived Roles)"] --> B4["convert_role_composite_excel.py\n(or npm run convert:role:composite)"]
+        B4 --> C4["Template_Roles_Composite_converted.csv\n(Composite Role, Description, Derived Role)"]
+        C4 --> D4["ABAP Program: Z_AUTH_ROLE_COMPOSITE\nCreates Composite Roles & Assigns Single Roles"]
+    end
 ```
 
 ---
@@ -48,6 +55,9 @@ npm run convert:role:derived
 
 # 3. Convert Derived Role Organizational Levels
 npm run convert:role:org
+
+# 4. Convert Composite Roles Matrix
+npm run convert:role:composite
 ```
 
 > [!TIP]
@@ -181,6 +191,49 @@ Z_FI_PERIOD_CONTROL_1000,$WERKS,1000
 Z_FI_PERIOD_CONTROL_2000,$WERKS,2000
 Z_FI_PERIOD_CONTROL_1000,$PRCTR,PC1000*
 Z_FI_PERIOD_CONTROL_2000,$PRCTR,PC2000*
+```
+
+---
+
+## 4. Composite Roles Preprocessing (`convert_role_composite_excel.py`)
+
+### 4.1. Excel Input Format (`Template_Roles_Composite.xlsx` / `FICO_Roles_Composite.xlsx`)
+Composite roles bundle multiple single/derived roles into operational job roles (e.g. Chief Financial Officer, General Accountant):
+
+* **Sheet Name**: `COMPOSITE ROLES` (or the active sheet).
+* **Row 1**: Composite Role Description (e.g. `Chief Financial Officer - Entity 1000`). Preserves exact whitespaces.
+* **Row 2**: Composite Role Name (e.g. `Z_FI_COMP_CFO_1000`).
+* **Column 1 (Row 3+)**: Single/Derived Role Name (e.g. `Z_FI_PERIOD_CONTROL_1000`).
+* **Matrix Cells**: Mark with `'Y'` (case-insensitive) to include the derived role in the composite role.
+* **Empty Roles Fallback**: If a composite role column has no `'Y'` values, the script outputs 1 row with `Derived Role = 'N/A'` (e.g., `Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A`).
+
+| Derived Role / Composite Role Description | Chief Financial Officer - Entity 1000 | General Accountant - Entity 1000 | Empty Composite Role - Entity 1000 |
+| :--- | :--- | :--- | :--- |
+| **Role Name** | `Z_FI_COMP_CFO_1000` | `Z_FI_COMP_ACCOUNTANT_1000` | `Z_FI_COMP_EMPTY_1000` |
+| `Z_FI_PERIOD_CONTROL_1000` | **Y** | | |
+| `Z_FI_GL_MASTER_MAINT_1000` | **Y** | | |
+| `Z_FI_JOURNAL_POST_1000` | | **Y** | |
+| `Z_FI_JOURNAL_DISPLAY_1000` | **Y** | **Y** | |
+| `Z_FI_AP_INVOICE_PROCESS_1000` | | **Y** | |
+
+### 4.2. Running the Conversion
+```bash
+# Automatic candidate lookup (checks excel-working/ then excel-templates/):
+python scripts/convert_role_composite_excel.py
+
+# Or specify a custom file:
+python scripts/convert_role_composite_excel.py excel-templates/Template_Roles_Composite.xlsx
+```
+
+### 4.3. Output CSV Format (`*_converted.csv`)
+Produces UTF-8 (with BOM) encoded CSV in the required column order (`Composite Role Name, Composite Role Description, Derived Role`):
+```csv
+Composite Role Name,Composite Role Description,Derived Role
+Z_FI_COMP_CFO_1000,Chief Financial Officer - Entity 1000,Z_FI_PERIOD_CONTROL_1000
+Z_FI_COMP_CFO_1000,Chief Financial Officer - Entity 1000,Z_FI_GL_MASTER_MAINT_1000
+Z_FI_COMP_CFO_1000,Chief Financial Officer - Entity 1000,Z_FI_JOURNAL_DISPLAY_1000
+...
+Z_FI_COMP_EMPTY_1000,Empty Composite Role - Entity 1000,N/A
 ```
 
 ---
