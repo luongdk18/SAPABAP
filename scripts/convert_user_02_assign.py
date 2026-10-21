@@ -155,10 +155,12 @@ if __name__ == "__main__":
     else:
         # Default candidates lookup
         candidates = [
+            os.path.join("excel-working", "User_02_Assign.xlsx"),
             os.path.join("excel-working", "User_Assign_Role.xlsx"),
             os.path.join("excel-templates", "Template_User_02_Assign.xlsx"),
             os.path.join("excel-templates", "Template_User_Assign_Role.xlsx"),
             "Template_User_02_Assign.xlsx",
+            "User_02_Assign.xlsx",
             "User_Assign_Role.xlsx"
         ]
         for cand in candidates:

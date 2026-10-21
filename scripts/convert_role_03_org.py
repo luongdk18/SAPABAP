@@ -309,10 +309,12 @@ if __name__ == "__main__":
 
     if not target_excel:
         candidates = [
+            os.path.join("excel-working", "FICO_Role_03_Org.xlsx"),
             os.path.join("excel-working", "FICO_Roles_Derived_Org.xlsx"),
             os.path.join("excel-templates", "Template_Role_03_Org.xlsx"),
             os.path.join("excel-templates", "Template_Roles_Derived_Org.xlsx"),
             "Template_Role_03_Org.xlsx",
+            "FICO_Role_03_Org.xlsx",
             "FICO_Roles_Derived_Org.xlsx",
             "Roles_Derived_Org.xlsx"
         ]

@@ -403,10 +403,12 @@ if __name__ == "__main__":
     else:
         # Default candidates lookup
         candidates = [
+            os.path.join("excel-working", "User_01_Create.xlsx"),
             os.path.join("excel-working", "Users_Create.xlsx"),
             os.path.join("excel-templates", "Template_User_01_Create.xlsx"),
             os.path.join("excel-templates", "Template_Users_Create.xlsx"),
             "Template_User_01_Create.xlsx",
+            "User_01_Create.xlsx",
             "Users_Create.xlsx",
             "FICO_Users_Create.xlsx"
         ]
