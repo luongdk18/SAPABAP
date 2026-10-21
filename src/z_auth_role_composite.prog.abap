@@ -155,29 +155,34 @@ FORM upload_and_parse_file.
   ENDIF.
 
   PERFORM read_csv_file USING p_file.
+
+  IF gt_raw_rows IS INITIAL.
+    MESSAGE 'No valid data rows found in input file.' TYPE 'E'.
+  ENDIF.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Form read_csv_file
 *&---------------------------------------------------------------------*
 FORM read_csv_file USING iv_file TYPE localfile.
-  DATA: lt_records TYPE solix_tab,
-        lv_length  TYPE i,
-        lv_content TYPE string,
-        lt_lines   TYPE STANDARD TABLE OF string,
-        ls_raw     TYPE ty_raw_row,
-        lv_c1      TYPE string,
-        lv_c2      TYPE string,
-        lv_c3      TYPE string.
+  DATA: lt_file_records TYPE truxs_t_text_data,
+        lv_filepath     TYPE string,
+        lv_line         TYPE string,
+        lv_line_idx     TYPE i,
+        ls_raw          TYPE ty_raw_row,
+        lv_c1           TYPE string,
+        lv_c2           TYPE string,
+        lv_c3           TYPE string.
+
+  lv_filepath = iv_file.
 
   cl_gui_frontend_services=>gui_upload(
     EXPORTING
-      filename                = CONV string( iv_file )
-      filetype                = 'BIN'
-    IMPORTING
-      filelength              = lv_length
+      filename                = lv_filepath
+      filetype                = 'ASC'
+      has_field_separator     = space
     CHANGING
-      data_tab                = lt_records
+      data_tab                = lt_file_records
     EXCEPTIONS
       file_open_error         = 1
       file_read_error         = 2
@@ -187,55 +192,15 @@ FORM read_csv_file USING iv_file TYPE localfile.
       no_authority            = 6
       unknown_error           = 7
       bad_data_format         = 8
-      header_not_allowed      = 9
-      separator_not_allowed   = 10
-      header_too_long         = 11
-      unknown_dp_error        = 12
-      access_denied           = 13
-      dp_out_of_memory        = 14
-      disk_full               = 15
-      dp_timeout              = 16
-      not_supported_by_gui    = 17
-      error_no_gui            = 18
-      OTHERS                  = 19 ).
+      OTHERS                  = 9 ).
 
   IF sy-subrc <> 0.
-    MESSAGE 'Error uploading file from presentation server.' TYPE 'E'.
+    MESSAGE 'Failed to read CSV file from client workstation.' TYPE 'E'.
   ENDIF.
 
-  " Convert binary buffer to UTF-8 string
-  CALL FUNCTION 'SCMS_BINARY_TO_STRING'
-    EXPORTING
-      input_length = lv_length
-      encoding     = '4110' " UTF-8
-    IMPORTING
-      text_buffer  = lv_content
-    EXCEPTIONS
-      failed       = 1
-      OTHERS       = 2.
-  IF sy-subrc <> 0.
-    CALL FUNCTION 'SCMS_BINARY_TO_STRING'
-      EXPORTING
-        input_length = lv_length
-      IMPORTING
-        text_buffer  = lv_content
-      EXCEPTIONS
-        OTHERS       = 1.
-  ENDIF.
-
-  " Strip Byte Order Mark (BOM) if present
-  IF strlen( lv_content ) >= 1 AND lv_content(1) = cl_abap_char_utilities=>byte_order_mark_utf8.
-    lv_content = lv_content+1.
-  ENDIF.
-
-  " Split content into lines (CR+LF or LF)
-  SPLIT lv_content AT cl_abap_char_utilities=>cr_lf INTO TABLE lt_lines.
-  IF lines( lt_lines ) <= 1.
-    SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
-  ENDIF.
-
-  LOOP AT lt_lines INTO DATA(lv_line).
-    DATA(lv_line_idx) = sy-tabix.
+  CLEAR lv_line_idx.
+  LOOP AT lt_file_records INTO lv_line.
+    lv_line_idx = lv_line_idx + 1.
     IF lv_line IS INITIAL.
       CONTINUE.
     ENDIF.
