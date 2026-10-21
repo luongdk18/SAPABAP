@@ -38,7 +38,7 @@ TYPES: BEGIN OF ty_derive_entry,
        END OF ty_derive_entry.
 
 TYPES: BEGIN OF ty_alv_result,
-         status       TYPE char4,      " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         status       TYPE char12,     " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action       TYPE char12,     " Action: CREATED / UPDATED / SIMULATED / SKIPPED / ERROR
          derived_role TYPE agr_name,   " Derived Role ID (Hotspot to PFCG)
          derived_desc TYPE agr_title,  " Derived Role Description
@@ -47,6 +47,10 @@ TYPES: BEGIN OF ty_alv_result,
          profile      TYPE xuprofile,  " Generated Profile Name
          message      TYPE string,     " Status Message / BAPI Return Details
        END OF ty_alv_result.
+
+CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
+           gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
+           gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
 DATA: gt_raw_rows     TYPE STANDARD TABLE OF ty_raw_row,
       gt_derive_roles TYPE STANDARD TABLE OF ty_derive_entry,
@@ -326,7 +330,7 @@ FORM process_role_derivation.
     SELECT SINGLE agr_name FROM agr_define INTO lv_master_chk
       WHERE agr_name = ls_drv-master_role.
     IF sy-subrc <> 0 OR lv_master_chk IS INITIAL.
-      ls_res-status  = '@0A@'. " Red LED
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = |Master role '{ ls_drv-master_role }' does not exist in SAP.|.
       APPEND ls_res TO gt_results.
@@ -346,7 +350,7 @@ FORM process_role_derivation.
     SELECT SINGLE flag_value FROM agr_flags INTO lv_master_coll
       WHERE agr_name = ls_drv-master_role AND flag_type = 'COLL_AGR'.
     IF sy-subrc = 0 AND lv_master_coll = 'X'.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = |Master role '{ ls_drv-master_role }' is a collective role; cannot derive from collective role.|.
       APPEND ls_res TO gt_results.
@@ -357,7 +361,7 @@ FORM process_role_derivation.
     " 2. Validate Derived Role Name
     " -----------------------------------------------------------------
     IF strlen( ls_drv-derived_role ) > 30.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = |Derived role name exceeds maximum allowed length of 30 characters.|.
       APPEND ls_res TO gt_results.
@@ -365,7 +369,7 @@ FORM process_role_derivation.
     ENDIF.
 
     IF ls_drv-derived_role = ls_drv-master_role.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Derived role name cannot be identical to master role.'.
       APPEND ls_res TO gt_results.
@@ -390,16 +394,16 @@ FORM process_role_derivation.
     IF p_test = abap_true.
       IF lv_exists = abap_true.
         IF p_upd = abap_true.
-          ls_res-status  = '@08@'. " Green LED
+          ls_res-status  = gc_status_ok.
           ls_res-action  = 'SIMULATE'.
           ls_res-message = |[Simulated] Role exists (Parent: '{ lv_curr_par }'); would be updated & synchronized from master '{ ls_drv-master_role }'.|.
         ELSE.
-          ls_res-status  = '@09@'. " Yellow LED
+          ls_res-status  = gc_status_warn.
           ls_res-action  = 'SIMULATE'.
           ls_res-message = |[Simulated] Role already exists; would be skipped (Update option unselected).|.
         ENDIF.
       ELSE.
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIMULATE'.
         ls_res-message = |[Simulated] Role does not exist; would be created & derived from master '{ ls_drv-master_role }'.|.
       ENDIF.
@@ -416,7 +420,7 @@ FORM process_role_derivation.
     IF lv_exists = abap_true.
       " Role already exists
       IF p_upd = abap_false.
-        ls_res-status  = '@09@'. " Yellow LED
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'SKIPPED'.
         ls_res-message = |Derived role already exists in SAP; skipped (Update option unselected).|.
         SELECT SINGLE profile FROM agr_1016 INTO ls_res-profile
@@ -478,7 +482,7 @@ FORM process_role_derivation.
       ENDLOOP.
 
       IF lv_has_err = abap_true.
-        ls_res-status = '@0A@'. " Red LED
+        ls_res-status = gc_status_err.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
@@ -513,7 +517,7 @@ FORM process_role_derivation.
           COMMIT WORK AND WAIT.
         ENDIF.
 
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'UPDATED'.
         ls_res-message = |Derived role updated & synchronized from master '{ ls_drv-master_role }'.|.
         IF p_orgdef = abap_true.
@@ -543,7 +547,7 @@ FORM process_role_derivation.
           OTHERS                        = 8.
 
       IF sy-subrc <> 0.
-        ls_res-status = '@0A@'. " Red LED
+        ls_res-status = gc_status_err.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
@@ -582,7 +586,7 @@ FORM process_role_derivation.
       ENDLOOP.
 
       IF lv_has_err = abap_true.
-        ls_res-status = '@0A@'.
+        ls_res-status = gc_status_err.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
@@ -617,7 +621,7 @@ FORM process_role_derivation.
           COMMIT WORK AND WAIT.
         ENDIF.
 
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'CREATED'.
         ls_res-message = |Derived role successfully created from master '{ ls_drv-master_role }'.|.
         IF p_genprf = abap_true.

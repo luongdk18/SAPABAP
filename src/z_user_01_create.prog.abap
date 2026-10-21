@@ -44,7 +44,7 @@ TYPES: BEGIN OF ty_user_csv,
        END OF ty_user_csv.
 
 TYPES: BEGIN OF ty_alv_result,
-         status     TYPE char4,               " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         status     TYPE char12,              " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action     TYPE char12,              " CREATED / UPDATED / SIM_NEW / SIM_UPD / SKIPPED / ERROR
          username   TYPE bapibname-bapibname, " SAP User ID (Hotspot to SU01)
          password   TYPE bapipwd-bapipwd,     " Initial Password
@@ -55,6 +55,10 @@ TYPES: BEGIN OF ty_alv_result,
          function   TYPE bapiaddr3-function,
          message    TYPE string,              " Status Message / Execution Log
        END OF ty_alv_result.
+
+CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
+           gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
+           gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
 DATA: gt_users   TYPE STANDARD TABLE OF ty_user_csv,
       gt_results TYPE STANDARD TABLE OF ty_alv_result.
@@ -405,7 +409,7 @@ FORM process_users.
 
     " Validation 1: Username must not be initial
     IF ls_user-username IS INITIAL.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Username is empty or missing.'.
       APPEND ls_res TO gt_results.
@@ -414,7 +418,7 @@ FORM process_users.
 
     " Validation 2: Username max 12 characters (SAP User ID limit)
     IF strlen( ls_user-username ) > 12.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Username exceeds SAP 12-character limit: ' && ls_user-username.
       APPEND ls_res TO gt_results.
@@ -423,7 +427,7 @@ FORM process_users.
 
     " Validation 3: Full Name must not be initial (BAPIADDR3-LASTNAME is mandatory)
     IF ls_user-fullname IS INITIAL.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Full Name is empty (SAP Last Name is mandatory).'.
       APPEND ls_res TO gt_results.
@@ -443,7 +447,7 @@ FORM process_users.
     IF lv_exists = abap_false.
       " Initial password check for new user creation
       IF ls_user-password IS INITIAL.
-        ls_res-status  = '@0A@'.
+        ls_res-status  = gc_status_err.
         ls_res-action  = 'ERROR'.
         ls_res-message = 'Initial Password is required for new user creation.'.
         APPEND ls_res TO gt_results.
@@ -452,7 +456,7 @@ FORM process_users.
 
       IF p_test = abap_true.
         " Simulation Mode: New user creation
-        ls_res-status  = '@08@'.
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIM_NEW'.
         ls_res-message = 'Simulated: User will be created (' &&
                          'Type: ' && p_ustyp && ', Valid: ' && p_gltgv && ' to ' && p_gltgb && ').'.
@@ -466,7 +470,7 @@ FORM process_users.
                                        CHANGING lv_errmsg lv_has_err.
 
         IF lv_has_err = abap_true.
-          ls_res-status  = '@0A@'.
+          ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           ls_res-message = lv_errmsg.
         ELSE.
@@ -474,7 +478,7 @@ FORM process_users.
             EXPORTING
               wait = 'X'.
 
-          ls_res-status  = '@08@'.
+          ls_res-status  = gc_status_ok.
           ls_res-action  = 'CREATED'.
           IF lv_errmsg IS NOT INITIAL.
             ls_res-message = 'User created successfully: ' && lv_errmsg.
@@ -489,14 +493,14 @@ FORM process_users.
     ELSE.
       IF p_upd = abap_false.
         " User exists, but update flag is not selected -> Skip with Yellow warning
-        ls_res-status  = '@09@'.
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'SKIPPED'.
         ls_res-message = 'User already exists in SAP. Check "Update Existing Users" to modify.'.
         APPEND ls_res TO gt_results.
       ELSE.
         IF p_test = abap_true.
           " Simulation Mode: Existing user update
-          ls_res-status  = '@08@'.
+          ls_res-status  = gc_status_ok.
           ls_res-action  = 'SIM_UPD'.
           IF p_pwd = abap_true AND ls_user-password IS NOT INITIAL.
             ls_res-message = 'Simulated: User details and password will be updated.'.
@@ -513,7 +517,7 @@ FORM process_users.
                                          CHANGING lv_errmsg lv_has_err.
 
           IF lv_has_err = abap_true.
-            ls_res-status  = '@0A@'.
+            ls_res-status  = gc_status_err.
             ls_res-action  = 'ERROR'.
             ls_res-message = lv_errmsg.
           ELSE.
@@ -521,7 +525,7 @@ FORM process_users.
               EXPORTING
                 wait = 'X'.
 
-            ls_res-status  = '@08@'.
+            ls_res-status  = gc_status_ok.
             ls_res-action  = 'UPDATED'.
             IF lv_errmsg IS NOT INITIAL.
               ls_res-message = 'User updated successfully: ' && lv_errmsg.

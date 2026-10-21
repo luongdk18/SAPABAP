@@ -43,7 +43,7 @@ TYPES: BEGIN OF ty_role_org,
        END OF ty_role_org.
 
 TYPES: BEGIN OF ty_alv_result,
-         status        TYPE char4,     " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         status        TYPE char12,    " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action        TYPE char12,    " Action: UPDATED / UP-TO-DATE / SIMULATE / ERROR / WARNING
          agr_name      TYPE agr_name,  " Role ID (Hotspot to PFCG)
          role_desc     TYPE agr_title, " Role Description
@@ -54,6 +54,10 @@ TYPES: BEGIN OF ty_alv_result,
          profile       TYPE xuprofile, " Generated Profile Name
          message       TYPE string,    " Status Message / Execution Log
        END OF ty_alv_result.
+
+CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
+           gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
+           gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
 DATA: gt_raw_rows  TYPE STANDARD TABLE OF ty_raw_row,
       gt_roles     TYPE STANDARD TABLE OF ty_role_entry,
@@ -371,7 +375,7 @@ FORM process_org_update.
       INTO ( @lv_agr_chk, @lv_parent_chk )
       WHERE agr_name = @ls_role-agr_name.
     IF sy-subrc <> 0 OR lv_agr_chk IS INITIAL.
-      ls_res-status  = '@0A@'. " Red LED
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = |Role '{ ls_role-agr_name }' does not exist in SAP.|.
       APPEND ls_res TO gt_results.
@@ -454,7 +458,7 @@ FORM process_org_update.
 
     " If role has NO Org Levels at all (e.g. only S_TCODE / non-org objects)
     IF lt_all_vars IS INITIAL.
-      ls_res-status       = '@08@'. " Green LED
+      ls_res-status       = gc_status_ok.
       ls_res-action       = 'UP-TO-DATE'.
       ls_res-orgs_upd_cnt = 0.
       ls_res-message      = 'Role contains no Org Levels in authorizations.'.
@@ -533,11 +537,11 @@ FORM process_org_update.
     " -----------------------------------------------------------------
     IF p_test = abap_true.
       IF lv_chg_cnt > 0 OR lines( lt_curr_1252 ) <> lines( lt_pt1252 ).
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIMULATE'.
         ls_res-message = |[Simulated] { lv_chg_cnt } Org Level(s) will be updated/maintained (Total: { lines( lt_pt1252 ) }).|.
       ELSE.
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIMULATE'.
         ls_res-message = |[Simulated] All { lines( lt_pt1252 ) } Org Levels in role are already up-to-date.|.
       ENDIF.
@@ -602,15 +606,15 @@ FORM process_org_update.
           led_color      = lv_chk_color.
 
       IF lv_chk_color = 'GREEN'.
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'UPDATED'.
         ls_res-message = |Maintained { lines( lt_pt1252 ) } Org Level(s) ({ lv_chg_cnt } updated). Profile '{ ls_res-profile }' is GREEN (Current).|.
       ELSEIF lv_chk_color = 'YELLOW'.
-        ls_res-status  = '@09@'. " Yellow LED
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'UPDATED'.
         ls_res-message = |Maintained { lines( lt_pt1252 ) } Org Level(s). Profile Yellow: { lv_chk_msg }|.
       ELSE.
-        ls_res-status  = '@0A@'. " Red LED
+        ls_res-status  = gc_status_err.
         ls_res-action  = 'WARNING'.
         ls_res-message = |Profile Red: { lv_chk_msg }|.
       ENDIF.
@@ -619,7 +623,7 @@ FORM process_org_update.
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
         WHERE agr_name = @ls_role-agr_name.
 
-      ls_res-status  = '@08@'. " Green LED
+      ls_res-status  = gc_status_ok.
       ls_res-action  = 'UP-TO-DATE'.
       ls_res-message = |All { lines( lt_pt1252 ) } Org Levels in role are already up-to-date.|.
     ENDIF.

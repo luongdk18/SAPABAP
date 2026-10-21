@@ -42,7 +42,7 @@ TYPES: BEGIN OF ty_composite_role,
        END OF ty_composite_role.
 
 TYPES: BEGIN OF ty_alv_result,
-         status         TYPE char4,      " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         status         TYPE char12,     " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action         TYPE char12,     " Action: CREATED / UPDATED / SIMULATE / SKIPPED / WARNING / ERROR
          composite_role TYPE agr_name,   " Composite Role ID (Hotspot to PFCG)
          role_desc      TYPE agr_title,  " Composite Role Description
@@ -52,6 +52,10 @@ TYPES: BEGIN OF ty_alv_result,
          missing_roles  TYPE string,     " Single Roles missing from SAP
          message        TYPE string,     " Status Message / Execution Log
        END OF ty_alv_result.
+
+CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
+           gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
+           gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
 DATA: gt_raw_rows        TYPE STANDARD TABLE OF ty_raw_row,
       gt_composite_roles TYPE STANDARD TABLE OF ty_composite_role,
@@ -361,7 +365,7 @@ FORM process_composite_roles.
     " 1. Validate Composite Role Name Length (SAP Max 30 chars)
     " -----------------------------------------------------------------
     IF strlen( ls_comp-role_name ) > 30.
-      ls_res-status  = '@0A@'. " Red LED
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Composite role name exceeds maximum allowed length of 30 characters.'.
       APPEND ls_res TO gt_results.
@@ -381,7 +385,7 @@ FORM process_composite_roles.
       SELECT SINGLE flag_value FROM agr_flags INTO lv_coll_flag
         WHERE agr_name = ls_comp-role_name AND flag_type = 'COLL_AGR'.
       IF sy-subrc <> 0 OR lv_coll_flag <> 'X'.
-        ls_res-status  = '@0A@'. " Red LED
+        ls_res-status  = gc_status_err.
         ls_res-action  = 'ERROR'.
         ls_res-message = |Role '{ ls_comp-role_name }' exists in SAP as a SINGLE role; cannot overwrite single role as composite role.|.
         APPEND ls_res TO gt_results.
@@ -444,30 +448,30 @@ FORM process_composite_roles.
       IF lv_exists = abap_true.
         IF p_upd = abap_true.
           IF lt_missing_sgl IS NOT INITIAL.
-            ls_res-status  = '@09@'. " Yellow LED
+            ls_res-status  = gc_status_warn.
             ls_res-action  = 'SIMULATE'.
             ls_res-message = |[Simulated] Role exists; would update assignments ({ lines( lt_valid_sgl ) } valid, { lines( lt_missing_sgl ) } missing).|.
           ELSE.
-            ls_res-status  = '@08@'. " Green LED
+            ls_res-status  = gc_status_ok.
             ls_res-action  = 'SIMULATE'.
             ls_res-message = |[Simulated] Role exists; would update assignments ({ lines( lt_valid_sgl ) } single roles).|.
           ENDIF.
         ELSE.
-          ls_res-status  = '@09@'. " Yellow LED
+          ls_res-status  = gc_status_warn.
           ls_res-action  = 'SIMULATE'.
           ls_res-message = '[Simulated] Composite role already exists; would be skipped (Update option unselected).'.
         ENDIF.
       ELSE.
         IF ls_comp-single_roles IS INITIAL AND ls_comp-has_na = abap_true.
-          ls_res-status  = '@09@'. " Yellow LED
+          ls_res-status  = gc_status_warn.
           ls_res-action  = 'SIMULATE'.
           ls_res-message = '[Simulated] Role does not exist; would be created without single roles (N/A).'.
         ELSEIF lt_missing_sgl IS NOT INITIAL.
-          ls_res-status  = '@09@'. " Yellow LED
+          ls_res-status  = gc_status_warn.
           ls_res-action  = 'SIMULATE'.
           ls_res-message = |[Simulated] Role does not exist; would be created ({ lines( lt_valid_sgl ) } valid, { lines( lt_missing_sgl ) } missing).|.
         ELSE.
-          ls_res-status  = '@08@'. " Green LED
+          ls_res-status  = gc_status_ok.
           ls_res-action  = 'SIMULATE'.
           ls_res-message = |[Simulated] Role does not exist; would be created as Composite Role with { lines( lt_valid_sgl ) } single roles.|.
         ENDIF.
@@ -487,7 +491,7 @@ FORM process_composite_roles.
     IF lv_exists = abap_true.
       " Composite Role Already Exists
       IF p_upd = abap_false.
-        ls_res-status  = '@09@'. " Yellow LED
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'SKIPPED'.
         ls_res-message = 'Composite role already exists in SAP; skipped (Update option unselected).'.
         SELECT COUNT(*) FROM agr_agrs INTO @ls_res-assigned_cnt
@@ -537,7 +541,7 @@ FORM process_composite_roles.
           OTHERS                        = 8.
 
       IF sy-subrc <> 0.
-        ls_res-status = '@0A@'. " Red LED
+        ls_res-status = gc_status_err.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
@@ -561,12 +565,12 @@ FORM process_composite_roles.
     " 6. Assign / Synchronize Single Roles
     " -----------------------------------------------------------------
     IF ls_comp-single_roles IS INITIAL AND ls_comp-has_na = abap_true.
-      ls_res-status       = '@09@'. " Yellow LED
+      ls_res-status       = gc_status_warn.
       ls_res-assigned_cnt = 0.
       ls_res-message      = 'Composite role created without single roles (N/A).'.
 
     ELSEIF lt_valid_sgl IS INITIAL.
-      ls_res-status       = '@09@'. " Yellow LED
+      ls_res-status       = gc_status_warn.
       ls_res-assigned_cnt = 0.
       ls_res-message      = 'No valid single roles found in SAP to assign.'.
 
@@ -643,10 +647,10 @@ FORM process_composite_roles.
 
       " Set execution status
       IF lt_missing_sgl IS NOT INITIAL.
-        ls_res-status  = '@09@'. " Yellow LED
+        ls_res-status  = gc_status_warn.
         ls_res-message = |{ ls_res-action }: { ls_res-assigned_cnt } single roles assigned ({ lines( lt_missing_sgl ) } missing in SAP).|.
       ELSE.
-        ls_res-status  = '@08@'. " Green LED
+        ls_res-status  = gc_status_ok.
         ls_res-message = |{ ls_res-action }: { ls_res-assigned_cnt } single roles successfully assigned.|.
       ENDIF.
     ENDIF.

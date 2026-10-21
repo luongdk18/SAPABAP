@@ -40,7 +40,7 @@ TYPES: BEGIN OF ty_user_assignment,
        END OF ty_user_assignment.
 
 TYPES: BEGIN OF ty_alv_result,
-         status         TYPE char4,               " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         status         TYPE char12,              " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action         TYPE char12,              " ASSIGNED / SIMULATED / SKIPPED / WARNING / ERROR
          username       TYPE bapibname-bapibname, " SAP User ID (Hotspot to SU01)
          roles_cnt      TYPE i,                   " Total Roles in CSV
@@ -50,6 +50,10 @@ TYPES: BEGIN OF ty_alv_result,
          missing_roles  TYPE string,              " Roles Missing in SAP
          message        TYPE string,              " Execution Log / BAPI Message
        END OF ty_alv_result.
+
+CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
+           gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
+           gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
 DATA: gt_raw_rows    TYPE STANDARD TABLE OF ty_raw_row,
       gt_assignments TYPE STANDARD TABLE OF ty_user_assignment,
@@ -409,7 +413,7 @@ FORM process_assignments.
 
     " Validation 1: Username must not be initial
     IF ls_assign-username IS INITIAL.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Username is empty or missing.'.
       APPEND ls_res TO gt_results.
@@ -418,7 +422,7 @@ FORM process_assignments.
 
     " Validation 2: Username length <= 12 characters (SAP limit)
     IF strlen( ls_assign-username ) > 12.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'Username exceeds SAP 12-character limit: ' && ls_assign-username.
       APPEND ls_res TO gt_results.
@@ -429,7 +433,7 @@ FORM process_assignments.
     SELECT SINGLE bname FROM usr02 INTO @DATA(lv_exist_uname)
       WHERE bname = @ls_assign-username.
     IF sy-subrc <> 0.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'User does not exist in SAP (table USR02).'.
       APPEND ls_res TO gt_results.
@@ -439,11 +443,11 @@ FORM process_assignments.
     " Handle user with empty roles (N/A)
     IF ls_assign-roles IS INITIAL.
       IF ls_assign-has_na = abap_true.
-        ls_res-status  = '@09@'.
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'WARNING'.
         ls_res-message = 'No roles to assign for this user (marked as N/A in CSV).'.
       ELSE.
-        ls_res-status  = '@09@'.
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'WARNING'.
         ls_res-message = 'No role entries found for this user in the CSV file.'.
       ENDIF.
@@ -480,7 +484,7 @@ FORM process_assignments.
 
     " If all roles in CSV are missing from SAP
     IF lt_valid_roles IS INITIAL.
-      ls_res-status  = '@0A@'.
+      ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = 'All specified roles are missing from SAP repository (AGR_DEFINE).'.
       APPEND ls_res TO gt_results.
@@ -536,12 +540,12 @@ FORM process_assignments.
     " Simulation Mode (Test Run)
     IF p_test = abap_true.
       IF lt_miss_roles IS NOT INITIAL.
-        ls_res-status  = '@09@'.
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'WARNING'.
         ls_res-message = 'Simulated: ' && |{ lines( lt_valid_roles ) }| && ' new roles will be assigned. ' &&
                          |{ lines( lt_miss_roles ) }| && ' roles are missing in SAP.'.
       ELSE.
-        ls_res-status  = '@08@'.
+        ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIMULATED'.
         ls_res-message = 'Simulated: Total ' && |{ lines( lt_actgroups ) }| && ' roles will be assigned (Valid ' &&
                          p_from && ' to ' && p_to && ').'.
@@ -561,7 +565,7 @@ FORM process_assignments.
                                      CHANGING lv_errmsg lv_has_err.
 
       IF lv_has_err = abap_true.
-        ls_res-status  = '@0A@'.
+        ls_res-status  = gc_status_err.
         ls_res-action  = 'ERROR'.
         ls_res-message = lv_errmsg.
       ELSE.
@@ -570,12 +574,12 @@ FORM process_assignments.
             wait = 'X'.
 
         IF lt_miss_roles IS NOT INITIAL.
-          ls_res-status  = '@09@'.
+          ls_res-status  = gc_status_warn.
           ls_res-action  = 'WARNING'.
           ls_res-message = 'Roles assigned successfully, but ' && |{ lines( lt_miss_roles ) }| &&
                            ' roles are missing from SAP.'.
         ELSE.
-          ls_res-status  = '@08@'.
+          ls_res-status  = gc_status_ok.
           ls_res-action  = 'ASSIGNED'.
           IF lv_errmsg IS NOT INITIAL.
             ls_res-message = 'Roles assigned successfully: ' && lv_errmsg.

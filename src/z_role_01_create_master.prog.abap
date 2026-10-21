@@ -44,7 +44,7 @@ TYPES: BEGIN OF ty_tcode_entry,
        END OF ty_tcode_entry.
 
 TYPES: BEGIN OF ty_alv_result,
-         status         TYPE char4,          " Icon (@08@ Green, @09@ Yellow, @0A@ Red)
+         status         TYPE char12,         " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action         TYPE char12,         " Action: Created / Updated / Up-To-Date / Simulated / Skipped / Error
          agr_name       TYPE agr_name,       " Role ID (Hotspot to PFCG)
          role_desc      TYPE agr_title,      " Role Description
@@ -55,6 +55,10 @@ TYPES: BEGIN OF ty_alv_result,
          profile        TYPE xuprofile,      " Generated Profile Name
          message        TYPE string,         " Execution Status / BAPI Message
        END OF ty_alv_result.
+
+CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
+           gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
+           gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
 DATA: gt_raw_rows TYPE STANDARD TABLE OF ty_raw_row,
       gt_roles    TYPE STANDARD TABLE OF ty_role_entry,
@@ -492,18 +496,18 @@ FORM process_role_generation.
     " Branch 1: SIMULATION MODE (TEST RUN)
     " -----------------------------------------------------------------
     IF p_test = abap_true.
-      ls_res-status = '@08@'. " Green LED
+      ls_res-status = gc_status_ok.
       ls_res-action = 'SIMULATED'.
 
       IF lv_exists = abap_true.
         IF p_upd = abap_true.
           IF lv_valid_cnt = 0.
             IF lv_invalid_cnt > 0.
-              ls_res-status  = '@09@'.
+              ls_res-status  = gc_status_warn.
               ls_res-action  = 'SIMULATED'.
               ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Role exists with no valid TCodes.|.
             ELSE.
-              ls_res-status  = '@09@'.
+              ls_res-status  = gc_status_warn.
               ls_res-action  = 'UP-TO-DATE'.
               ls_res-message = |Warning: Role exists without TCodes (N/A). Up-to-date.|.
             ENDIF.
@@ -531,12 +535,12 @@ FORM process_role_generation.
             ENDIF.
 
             IF lv_invalid_cnt > 0.
-              ls_res-status  = '@09@'.
+              ls_res-status  = gc_status_warn.
               ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
             ENDIF.
           ENDIF.
         ELSE.
-          ls_res-status  = '@09@'. " Yellow LED
+          ls_res-status  = gc_status_warn.
           ls_res-action  = 'SKIPPED'.
           ls_res-message = |Role already exists. Skipping because Update Existing Roles is unchecked.|.
           IF lv_invalid_cnt > 0.
@@ -548,11 +552,11 @@ FORM process_role_generation.
         " New role simulation
         IF lv_valid_cnt = 0.
           IF lv_invalid_cnt > 0.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-action  = 'SIMULATED'.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Would create role without menu; Org levels defaulted to '-1'.|.
           ELSE.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-action  = 'SIMULATED'.
             ls_res-message = |Warning: Role has no TCodes (N/A). Would create Master role without menu; Org levels defaulted to '-1'.|.
           ENDIF.
@@ -560,7 +564,7 @@ FORM process_role_generation.
           ls_res-action  = 'SIMULATED'.
           ls_res-message = |Simulation OK: Would create Master role with folder '{ ls_role-role_desc }' and { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
           IF lv_invalid_cnt > 0.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
           ENDIF.
         ENDIF.
@@ -598,15 +602,15 @@ FORM process_role_generation.
 
           ls_res-action = 'CREATED'.
           IF lv_invalid_cnt > 0.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Role created without menu transactions; Org levels defaulted to '-1'.|.
           ELSE.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: Role created without TCodes (N/A); Org levels defaulted to '-1'.|.
           ENDIF.
         ELSE.
           ROLLBACK WORK.
-          ls_res-status  = '@0A@'.
+          ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
           IF ls_res-message IS INITIAL.
@@ -673,16 +677,16 @@ FORM process_role_generation.
             WHERE agr_name = @ls_role-agr_name AND line > '00000'.
           COMMIT WORK AND WAIT.
 
-          ls_res-status  = '@08@'. " Green
+          ls_res-status  = gc_status_ok.
           ls_res-action  = 'CREATED'.
           ls_res-message = |Master role created. Folder '{ ls_role-role_desc }' populated with { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
           IF lv_invalid_cnt > 0.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
           ENDIF.
         ELSE.
           ROLLBACK WORK.
-          ls_res-status  = '@0A@'. " Red
+          ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
           IF ls_res-message IS INITIAL.
@@ -694,7 +698,7 @@ FORM process_role_generation.
     ELSE.
       " 2B. ROLE ALREADY EXISTS
       IF p_upd = abap_false.
-        ls_res-status  = '@09@'.
+        ls_res-status  = gc_status_warn.
         ls_res-action  = 'SKIPPED'.
         ls_res-message = 'Role already exists. Skipping (Update option not enabled).'.
         IF lv_invalid_cnt > 0.
@@ -720,10 +724,10 @@ FORM process_role_generation.
 
           ls_res-action = 'UP-TO-DATE'.
           IF lv_invalid_cnt > 0.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). Role exists; no valid TCodes to add.|.
           ELSE.
-            ls_res-status  = '@09@'.
+            ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: Role exists without TCodes (N/A). Description synchronized; Org levels defaulted to '-1'.|.
           ENDIF.
 
@@ -796,16 +800,16 @@ FORM process_role_generation.
                 WHERE agr_name = @ls_role-agr_name AND line > '00000'.
               COMMIT WORK AND WAIT.
 
-              ls_res-status  = '@08@'.
+              ls_res-status  = gc_status_ok.
               ls_res-action  = 'UPDATED'.
               ls_res-message = |Role had no menu. Created menu folder '{ ls_role-role_desc }' with { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
               IF lv_invalid_cnt > 0.
-                ls_res-status  = '@09@'.
+                ls_res-status  = gc_status_warn.
                 ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
               ENDIF.
             ELSE.
               ROLLBACK WORK.
-              ls_res-status  = '@0A@'.
+              ls_res-status  = gc_status_err.
               ls_res-action  = 'ERROR'.
               PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
               IF ls_res-message IS INITIAL.
@@ -839,11 +843,11 @@ FORM process_role_generation.
                 WHERE agr_name = @ls_role-agr_name AND line > '00000'.
               COMMIT WORK AND WAIT.
 
-              ls_res-status  = '@08@'.
+              ls_res-status  = gc_status_ok.
               ls_res-action  = 'UP-TO-DATE'.
               ls_res-message = |Role menu up-to-date. All { lv_valid_cnt } valid TCodes already exist. No duplicates added; Org levels defaulted to '-1'.|.
               IF lv_invalid_cnt > 0.
-                ls_res-status  = '@09@'.
+                ls_res-status  = gc_status_warn.
                 ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
               ENDIF.
 
@@ -948,16 +952,16 @@ FORM process_role_generation.
                 COMMIT WORK AND WAIT.
 
                 lv_added_cnt = lines( lt_tcodes_to_add ).
-                ls_res-status  = '@08@'.
+                ls_res-status  = gc_status_ok.
                 ls_res-action  = 'UPDATED'.
                 ls_res-message = |Added { lv_added_cnt } new valid TCode(s) under existing folder '{ ls_role-role_desc }'; Skipped { lv_skipped_cnt } existing; Org levels defaulted to '-1'.|.
                 IF lv_invalid_cnt > 0.
-                  ls_res-status  = '@09@'.
+                  ls_res-status  = gc_status_warn.
                   ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
                 ENDIF.
               ELSE.
                 ROLLBACK WORK.
-                ls_res-status  = '@0A@'.
+                ls_res-status  = gc_status_err.
                 ls_res-action  = 'ERROR'.
                 PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
                 IF ls_res-message IS INITIAL.

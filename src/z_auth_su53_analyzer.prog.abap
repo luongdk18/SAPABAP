@@ -31,7 +31,7 @@ TYPES: tt_check_value TYPE STANDARD TABLE OF ty_check_value WITH DEFAULT KEY.
 
 TYPES: BEGIN OF ty_missing_auth,
          sel         TYPE c LENGTH 1,         " Checkbox
-         status      TYPE c LENGTH 4,         " Status Icon (@0A@ Red / @08@ Green)
+         status      TYPE c LENGTH 12,        " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          tcode       TYPE tstc-tcode,         " Transaction Code
          object      TYPE tobj-objct,         " Authorization Object
          object_text TYPE c LENGTH 60,        " Object Description
@@ -118,9 +118,9 @@ DATA: gt_missing_auth  TYPE tt_missing_auth,
       go_grid_roles    TYPE REF TO cl_gui_alv_grid,
       go_grid_auths    TYPE REF TO cl_gui_alv_grid.
 
-CONSTANTS: gc_icon_red    TYPE c LENGTH 4 VALUE '@0A@',
-           gc_icon_green  TYPE c LENGTH 4 VALUE '@08@',
-           gc_icon_yellow TYPE c LENGTH 4 VALUE '@09@',
+CONSTANTS: gc_icon_red    TYPE c LENGTH 12 VALUE '@0A@ [ERR]',
+           gc_icon_green  TYPE c LENGTH 12 VALUE '@08@ [OK]',
+           gc_icon_yellow TYPE c LENGTH 12 VALUE '@09@ [WARN]',
            gc_radio_on    TYPE c LENGTH 4 VALUE '@06@',
            gc_radio_off   TYPE c LENGTH 4 VALUE '@07@'.
 
@@ -643,7 +643,7 @@ FORM display_alv_grid_lvc.
     fieldname = 'STATUS'
     coltext   = 'Status'
     icon      = 'X'
-    outputlen = 6
+    outputlen = 10
   ) TO lt_fieldcat.
 
   APPEND VALUE #(
