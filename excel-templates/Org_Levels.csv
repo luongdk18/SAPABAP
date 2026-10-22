@@ -1,72 +1,56 @@
-﻿Org Level Description,Org Level Variable
-Business Partner for Provider of Information,$/ECRS/POIB
-Activity Area,$/SCWM/AREA
-Authorized Drawer,$/SCWM/ENTL
-Warehouse number / warehouse complex,$/SCWM/LGNU
-Storage type,$/SCWM/LGTY
-Chart of Depreciation,$AFAPL
-Asset Class,$ANLKL
-Applicant Group,$APGRP
-Applicant Range,$APTYP
-Work Center,$ARBPL
-Aspect (application area),$ASPET
-Order Type,$AUFART
-Bank Area,$BKKRS
-Company Code,$BUKRS
-Consolidation Unit,$BUNIT
-Valuation area,$BWKEY
-Aspect,$CFASPET
-User Group,$CLASS
-Condition Area,$CONDAREA
-Consolidation Group,$CONGR
-View,$DIMEN
-MRP Controller,$DISPO
-Purchasing Group,$EKGRP
-Purchasing Organization,$EKORG
-Operating Concern,$ERKRS
-FM area,$FIKRS
-Functional Area,$FKBER
-Business Area,$GSBER
-User Group,$HIEID
-Maintenance planning plant,$IWERK
-Credit Control Area,$KKBER
-Costing Variant,$KLVAR
-Account Type,$KOART
-Controlling Area,$KOKRS
-Cost Element,$KSTAR
-Contact Type,$KTAAR
-Chart of Accounts,$KTOPL
-Cost Object Category,$KTRAT
-Warehouse Number / Warehouse Complex,$LGNUM
-Storage type,$LGTYP
-Location,$LTRM_LOCAT
-Personnel Area,$PERSA
-Employee Group,$PERSG
-Employee Subgroup,$PERSK
-Plan Version,$PLVAR
-Profit Centers,$PRCTR
-Company,$RCOMP
-Personnel officer for the job application,$RESRF
-Ledger,$RLDNR
-Payroll Administrator,$SACHA
-Administrator for HR Master Data,$SACHP
-Administrator for Time Recording,$SACHZ
-Administrator Group,$SBMOD
-Division,$SPART
-Maintenance plant,$SWERK
-Transportation Planning Point,$TPLST
-Organizational Key,$VDSK1
-Sales Office,$VKBUR
-Sales Group,$VKGRP
-Sales Organization,$VKORG
-Shipping Point,$VSTEL
-Distribution Channel,$VTWEG
-Plant,$WERKS
-Enterprise Organization,$XCORG
-Planning and Execution Group,$XEGRP
-Planning and Execution Organization,$XEORG
-Purchasing Group,$XPGRP
-Purchasing Organization,$XPORG
-Sales Group,$XSGRP
-Sales Office,$XSOFF
-Sales Organization,$XSORG
+﻿Org Level Description,Org Level Variable,Field Name
+Account Type,,KOART
+Aspect,,CFASPET
+Asset Plant,,RAS_PLANT
+Bank Area,,BKKRS
+Business Area,,GSBER
+Company,,RCOMP
+Company Code,,BUKRS
+Company Code,,COMP_CODE
+Company Code (Cash Management),,FCLM_BUKRS
+Condition Area,,CONDAREA
+Consolidation Group,,CONGR
+Consolidation Unit,,BUNIT
+Controlling Area,,KOKRS
+Credit Control Area,,KKBER
+Dimension / View,,DIMEN
+Distribution Channel,,VTWEG
+Division,,SPART
+Enterprise Organization (TM),,TM_XCORG
+FM Area,,FM_FIKRS
+Functional Area,,FKBER
+Location (TRM),,LTRM_LOCAT
+Location Plant,,LOCPLANT
+Maintenance Planning Plant,,IWERK
+Maintenance Plant,,SWERK
+Operating Concern,,CEERKRS
+Plan Version,,PLVAR
+Planning and Execution Group (TM),,TM_XEGRP
+Planning and Execution Organization (TM),,TM_XEORG
+Plant,,WERKS
+Plant (Customer Site),,CSWRK
+Plant ID,,PLANT_ID
+Profit Center,,PRCTR
+Purchasing Group,,EKGRP
+Purchasing Group (TM),,TM_XPGRP
+Purchasing Organization,,EKORG
+Purchasing Organization,,PUR_ORG
+Purchasing Organization (TM),,TM_XPORG
+Sales Group,,VKGRP
+Sales Group (TM),,TM_XSGRP
+Sales Office,,VKBUR
+Sales Office (TM),,TM_XSOFF
+Sales Organization,,SLS_ORG
+Sales Organization,,VKORG
+Sales Organization (TM),,TM_XSORG
+Shipping Point,,VSTEL
+Storage Type,,LGTYP
+Transportation Planning Point,,TPLST
+Valuation Area,,BWKEY
+Warehouse Number / Warehouse Complex,,LGNUM
+Work Center,,ARBPL
+Business Partner for Provider of Information,$/ECRS/POIB,/ECRS/POIB
+Activity Area,$/SCWM/AREA,/SCWM/AREA
+Authorized Drawer,$/SCWM/ENTL,/SCWM/ENTL
+Warehouse Number / Warehouse Complex (EWM),$/SCWM/LGNU,/SCWM/LGNU
+Storage Type (EWM),$/SCWM/LGTY,/SCWM/LGTY

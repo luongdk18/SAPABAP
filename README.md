@@ -47,17 +47,17 @@ This repository connects AI coding assistants directly to live **SAP S/4HANA** a
 .
 ├── docs/                 # Streamlined technical documentation
 ├── excel-templates/      # Anonymized templates & sample data
-│   ├── Org_Levels.csv    # Standard SAP 71 Org Level definitions
+│   ├── Org_Levels.csv    # Standard SAP 55 Org Level definitions (USORG)
 │   ├── Object_Levels.csv # Standard SAP 13,457 Authorization Object definitions
-│   ├── *.xlsx            # Matrix templates (Roles & Users)
+│   ├── Template_Role.xlsx # All-in-one consolidated role template (Sheets 1, 2, 3)
+│   ├── *.xlsx            # Standalone matrix templates (Roles & Users)
 │   └── converted/        # Sample converted CSVs for batch upload
 ├── excel-working/        # Real business matrices (Git-ignored)
 │   └── converted/        # Converted CSV outputs (Git-ignored)
 ├── scripts/              # Python preprocessors & Node.js deployer
 │   ├── convert_role_01_master.py    # Master Role matrix -> CSV
 │   ├── convert_role_02_derive.py    # Derived Role mapping -> CSV
-│   ├── convert_role_03_org.py       # Derived Org matrix -> CSV
-│   ├── convert_role_03_object.py    # Object & Activity matrix -> CSV
+│   ├── convert_role_03_org_obj.py   # Unified Org & Object classifier -> 2 CSVs
 │   ├── convert_role_04_composite.py # Composite Role matrix -> CSV
 │   ├── convert_user_01_create.py    # User list -> normalized CSV
 │   ├── convert_user_02_assign.py    # User-Role matrix -> CSV
@@ -157,20 +157,25 @@ Deploy and activate ABAP programs selectively to the connected SAP system:
 
 Convert business Excel matrices into flat, normalized CSV files.
 
-- **Indicator Filter**: Accepts `Y`, `y`, `X`, `x` across all matrices.
+- **All-in-One Role Workbook**: Supports a single consolidated workbook (`*_Role.xlsx`, e.g. `FICO_Role.xlsx` or `Template_Role.xlsx`):
+  - **Sheet 1**: Master Roles (Menu & TCodes)
+  - **Sheet 2**: Derived Roles & Org + Object Levels (Cols 1-3: Role mapping, Cols 4+: Org & Object mixed)
+  - **Sheet 3**: Composite Roles (Role bundling)
+- **Unified Org & Object Separation**: `convert_role_03_org_obj.py` automatically distinguishes Org Levels (`*_03_Org_converted.csv`) from Authorization Objects (`*_03_Object_converted.csv`) with zero overlap and excludes `S_TCODE-TCD`.
+- **Legacy Compatibility**: Standalone files (`*_01_Master.xlsx`, etc.) remain fully supported.
 - **Output Destination**: Automatically saves to `<parent_dir>/converted/<name>_converted.csv`.
 - **Confidentiality**: Files in `excel-working/` and `excel-working/converted/` are protected by `.gitignore`.
 
 | npm Shortcut | Script | Input Matrix | Output CSV |
 | :--- | :--- | :--- | :--- |
-| `npm run convert:role:01` | `convert_role_01_master.py` | Master Roles Matrix (Dynamic TCode col) | `*_Role_01_Master_converted.csv` |
-| `npm run convert:role:02` | `convert_role_02_derive.py` | Derived Roles Mapping | `*_Role_02_Derived_converted.csv` |
-| `npm run convert:role:03` | `convert_role_03_org.py` | Derived Role Org Levels | `*_Role_03_Org_converted.csv` |
-| `npm run convert:role:03:obj` | `convert_role_03_object.py` | Role Auth Objects & Activities | `*_Role_03_Object_converted.csv` |
-| `npm run convert:role:04` | `convert_role_04_composite.py`| Composite Roles Matrix | `*_Role_04_Composite_converted.csv` |
+| `npm run convert:role:01` | `convert_role_01_master.py` | Sheet 1 / Master Roles Matrix | `*_Role_01_Master_converted.csv` |
+| `npm run convert:role:02` | `convert_role_02_derive.py` | Sheet 2 / Derived Roles Mapping | `*_Role_02_Derived_converted.csv` |
+| `npm run convert:role:03` | `convert_role_03_org_obj.py` | Sheet 2 / Org & Object Mixed | `*_Role_03_Org_converted.csv`<br>`*_Role_03_Object_converted.csv` |
+| `npm run convert:role:04` | `convert_role_04_composite.py`| Sheet 3 / Composite Roles Matrix | `*_Role_04_Composite_converted.csv` |
+| `npm run convert:role:all`| *Runs all 4 Role converters* | Consolidated `*_Role.xlsx` or separate | All Role CSVs in `converted/` |
 | `npm run convert:user:01` | `convert_user_01_create.py` | User Creation List (Phones without `+`) | `User_01_Create_converted.csv` |
 | `npm run convert:user:02` | `convert_user_02_assign.py` | User Role Assignment Matrix | `User_02_Assign_converted.csv` |
-| `npm run convert:all` | *Runs all 7 converters* | All Role & User Matrices | All CSVs in `converted/` |
+| `npm run convert:all` | *Runs Role & User converters* | All Role & User Matrices | All CSVs in `converted/` |
 | `npm run templates:generate`| `create_templates.py` | Generates sample Excel files | `excel-templates/converted/*.csv` |
 
 Detailed guide: [`docs/ROLE_CONVERSION_GUIDE.md`](docs/ROLE_CONVERSION_GUIDE.md).

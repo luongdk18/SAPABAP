@@ -24,6 +24,7 @@ import os
 import sys
 import csv
 import glob
+import re
 import openpyxl
 
 # --- Safe Console Output on Windows ---
@@ -50,7 +51,11 @@ def convert_role_04_composite(input_path, output_dir=None):
     base_name = os.path.basename(input_path)
     stem, _ = os.path.splitext(base_name)
 
-    out_csv_name = f"{stem}_converted.csv"
+    if not stem.endswith("_04_Composite"):
+        out_csv_name = f"{stem}_04_Composite_converted.csv"
+    else:
+        out_csv_name = f"{stem}_converted.csv"
+
     if output_dir is None:
         dir_name = os.path.dirname(input_path) or "."
         output_dir = os.path.join(dir_name, "converted")
@@ -70,18 +75,25 @@ def convert_role_04_composite(input_path, output_dir=None):
         print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
         sys.exit(1)
 
-    # Locate target sheet: prefer sheet with 'composite' in title, else active sheet
-    target_sheet = None
-    for name in wb_in.sheetnames:
-        if 'composite' in name.strip().lower():
-            target_sheet = wb_in[name]
-            break
+    # Locate target sheet:
+    # If consolidated role file (e.g. FICO_Role.xlsx, Template_Role.xlsx), Sheet 3 (Index 2) is Composite Role.
+    # If standalone legacy file (e.g. MM_Role_04_Composite.xlsx), find sheet matching 'composite' or use active/Sheet 1.
+    is_consolidated = not any(k in stem.lower() for k in ('_01_', '_02_', '_03_', '_04_', '_master', '_derive', '_org', '_object', '_composite'))
 
-    if target_sheet is None:
-        target_sheet = wb_in.active
-        print(f"[INFO] Using active sheet '{target_sheet.title}'.")
+    if is_consolidated and len(wb_in.sheetnames) >= 3:
+        target_sheet = wb_in.worksheets[2]
+        print(f"[INFO] Consolidated file: Using Sheet 3 (Index 2): '{target_sheet.title}' for Composite Role data.")
     else:
-        print(f"[INFO] Processing sheet: '{target_sheet.title}'")
+        target_sheet = None
+        for name in wb_in.sheetnames:
+            if 'composite' in name.strip().lower():
+                target_sheet = wb_in[name]
+                break
+        if target_sheet is None:
+            target_sheet = wb_in.worksheets[0] if wb_in.worksheets else wb_in.active
+            print(f"[INFO] Using sheet: '{target_sheet.title}'.")
+        else:
+            print(f"[INFO] Processing sheet: '{target_sheet.title}'")
 
     ws = target_sheet
 
@@ -169,15 +181,30 @@ if __name__ == "__main__":
                 target_files.append(arg)
     else:
         # Default candidates lookup in working and template directories
-        raw_candidates = (glob.glob(os.path.join("excel-working", "*_04_Composite.xlsx")) +
-                          glob.glob(os.path.join("excel-working", "*_Composite.xlsx")))
-        unique_working = sorted(list({c for c in raw_candidates if not os.path.basename(c).startswith('~$')}))
+        # Prioritize consolidated *Role*.xlsx, fallback to legacy *_04_Composite.xlsx
+        working_consolidated = [f for f in glob.glob(os.path.join("excel-working", "*Role*.xlsx"))
+                                if not os.path.basename(f).startswith('~$')
+                                and not any(k in os.path.basename(f) for k in ('_01_', '_02_', '_03_', '_04_', '_converted'))]
+        working_legacy = [f for f in glob.glob(os.path.join("excel-working", "*_04_Composite*.xlsx"))
+                          if not os.path.basename(f).startswith('~$')]
+        
+        consolidated_stems = {re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() for f in working_consolidated}
+        filtered_legacy = [f for f in working_legacy if re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() not in consolidated_stems]
+        
+        unique_working = sorted(working_consolidated + filtered_legacy)
+        
         if unique_working:
             target_files = unique_working
         else:
-            raw_templates = (glob.glob(os.path.join("excel-templates", "*_04_Composite.xlsx")) +
-                             glob.glob(os.path.join("excel-templates", "*_Composite.xlsx")))
-            unique_templates = sorted(list({c for c in raw_templates if not os.path.basename(c).startswith('~$')}))
+            tpl_consolidated = [f for f in glob.glob(os.path.join("excel-templates", "*Role*.xlsx"))
+                                if not os.path.basename(f).startswith('~$')
+                                and not any(k in os.path.basename(f) for k in ('_01_', '_02_', '_03_', '_04_', '_converted'))]
+            tpl_legacy = [f for f in glob.glob(os.path.join("excel-templates", "*_04_Composite*.xlsx"))
+                          if not os.path.basename(f).startswith('~$')]
+            tpl_stems = {re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() for f in tpl_consolidated}
+            filtered_tpl = [f for f in tpl_legacy if re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() not in tpl_stems]
+            
+            unique_templates = sorted(tpl_consolidated + filtered_tpl)
             if unique_templates:
                 target_files = unique_templates
             else:
