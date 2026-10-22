@@ -2,7 +2,7 @@
 
 > **Source Code**: [`src/z_auth_su53_analyzer.prog.abap`](../src/z_auth_su53_analyzer.prog.abap)  
 > **Transaction Code**: `ZAT`  
-> **End-User Guide**: [📘 English (MD)](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.md) \| [📄 PDF (EN)](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf) \| [🇻🇳 Tiếng Việt (MD)](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.md) \| [📄 PDF (VN)](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.pdf)  
+> **End-User Guide**: [📘 User Guide (MD)](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.md) \| [📄 PDF Guide](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf)  
 > **Repository**: [https://github.com/luongdk18/SAPABAP](https://github.com/luongdk18/SAPABAP)
 
 Interactive dual-grid operational cockpit for SAP Security Administrators. Automates SU53 failure extraction, evaluates coverage across user single roles, and injects missing objects into PFCG roles with 100% mandatory `TOBJ` field completeness and background profile regeneration.

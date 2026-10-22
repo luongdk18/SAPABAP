@@ -4,7 +4,6 @@
 > **Transaction Code**: `ZAT`  
 > **ABAP Program**: [`src/z_auth_su53_analyzer.prog.abap`](../src/z_auth_su53_analyzer.prog.abap)  
 > **Print-Ready PDF Guide**: [📄 `docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf`](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf)  
-> **Vietnamese Version**: [🇻🇳 `docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.md`](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.md)  
 > **Cockpit Version**: v2.0 (Dual-Grid ALV Architecture)
 
 ---

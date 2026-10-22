@@ -503,28 +503,16 @@ def build_pdf_from_html(html_file: Path, pdf_file: Path):
     return False
 
 def main():
-    print("[*] Generating English and Vietnamese Guides...")
+    print("[*] Generating English Guide (PDF)...")
     
-    # 1. English
     en_html = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.html"
     en_pdf = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf"
-    default_pdf = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE.pdf"
     
     if en_html.exists():
         build_pdf_from_html(en_html, en_pdf)
-        shutil.copyfile(en_pdf, default_pdf)
-        print(f"[+] Synced {default_pdf.name} to English master.")
-
-    # 2. Vietnamese
-    vn_html = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.html"
-    vn_pdf = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.pdf"
-    old_vn_html = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE.html"
-
-    if old_vn_html.exists() and not vn_html.exists():
-        shutil.copyfile(old_vn_html, vn_html)
-    
-    if vn_html.exists():
-        build_pdf_from_html(vn_html, vn_pdf)
+        print(f"[+] Generated {en_pdf.name} successfully.")
+    else:
+        print(f"[-] Error: {en_html.name} not found.")
 
     # Clean up redundant temporary generator if present
     temp_gen = BASE_DIR / "scripts" / "generate_user_guide_en.py"
@@ -532,7 +520,7 @@ def main():
         temp_gen.unlink()
         print("[+] Cleaned up temporary generator script.")
 
-    print("[*] All guides generated successfully.")
+    print("[*] English User Guide PDF generation completed.")
 
 if __name__ == "__main__":
     main()
