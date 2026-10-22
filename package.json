@@ -24,7 +24,8 @@
     "convert:user:02": "python scripts/convert_user_02_assign.py",
     "convert:user:all": "npm run convert:user:01 && npm run convert:user:02",
     "convert:all": "npm run convert:role:all && npm run convert:user:all",
-    "templates:generate": "python scripts/create_templates.py"
+    "templates:generate": "python scripts/create_templates.py",
+    "docs:pdf": "python scripts/generate_user_guide_pdf.py"
   },
   "keywords": [
     "sap",
