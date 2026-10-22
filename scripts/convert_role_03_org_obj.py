@@ -70,22 +70,79 @@ COMMON_ORG_SYNONYMS = {
     'work center': '$ARBPL',
 }
 
-# Common Business Field to SAP Authorization Object-Field Mapping
+# Common Business Field to SAP Authorization Object-Field Mapping (Comprehensive Multi-Object Expansion)
 COMMON_OBJECT_FIELDS = {
-    'segment': ['F_FAGL_SEG-SEGMENT'],
-    'business place': ['F_BUK_BUPL-BUPLA'],
-    'cost center': ['K_CSKS-KOSTL'],
-    'cost centers': ['K_CSKS-KOSTL'],
-    'order type': ['K_ORDER-AUFART'],
-    'order types': ['K_ORDER-AUFART'],
-    'asset class': ['A_S_ANLKL-ANLKL'],
-    'credit segment': ['F_UKM_SGMT-UKM_SGMNT'],
-    'costing variant': ['K_KEKO-KLVAR'],
-    'person responsible': ['C_PROJ_VNR-PS_VERNR', 'C_PRPS_VNR-PS_VERNR'],
-    'project type': ['C_PRPS_ART-PS_PRART'],
-    'release group': ['M_EINK_FRG-FRGGR'],
-    'release code': ['M_EINK_FRG-FRGCO'],
-    'storage location': ['M_MSEG_LGO-LGORT'],
+    'segment': [
+        'F_FAGL_SEG-SEGMENT', 'F_FUD_DOCV-SEGMENT', 'F_ICA_U5-SEGMENT',
+        'F_ICA_U9-SEGMENT', 'F_ICA_U11-SEGMENT', 'E_CS_RPT-SEGMENT', 'FI_CS_RPT-SEGMENT'
+    ],
+    'business place': [
+        'F_BUK_BUPL-BUPLA', 'F_BR_BUPLA-BUPLA', 'J_1IEWTCER-BUPLA', 'J_1IEWTCHL-BUPLA',
+        'J_1IEWTMIS-BUPLA', 'J_1IEWT_AR-BUPLA', 'J_1IIRN-BUPLA', 'NFE_MBUPLA-BUPLA',
+        'NFE_UPLOAD-BUPLA', 'M_ASSETFIN-BUPLA', 'M_CIAP_RET-BUPLA', 'M_CIAP_WRI-BUPLA',
+        'M_CR_FACTR-BUPLA', 'M_CUR_ACCT-BUPLA', 'M_INV_STCK-BUPLA', 'M_PST_ACCT-BUPLA',
+        'M_REC_CANC-BUPLA', 'M_REC_DISP-BUPLA', 'M_REC_EDIT-BUPLA', 'M_REC_SUSP-BUPLA',
+        'M_REV_ACCT-BUPLA', 'LOBR_BUPLA-BUPLA', 'LOBR_NFCDS-BUPLA', 'LOBR_NFIMP-BUPLA'
+    ],
+    'cost center': [
+        'K_CSKS-KOSTL', 'K_REPO_CCA-KOSTL', 'K_CSKS_BUD-KOSTL', 'K_CSKS_PLA-KOSTL',
+        'A_S_KOSTL-KOSTL', 'K_FCO-KOSTL', 'F_FUD_DOCV-KOSTL', 'F_RELOCAT-KOSTL',
+        'F_TRAVL-KOSTL', 'F_TRAVL_TG-KOSTL', 'F_TRAVL_TP-KOSTL', 'F_TV_TGREQ-KOSTL',
+        'P_TRAVL-KOSTL', 'F_ICA_U3-KOSTL', 'P_CATSXT-KOSTL', 'P_DRL_COST-KOSTL',
+        'I_KOSTL-KOSTL', 'RSH_RES-KOSTL', 'V_PRS_LS_H-KOSTL', 'F_BR_KOSTL-KOSTL',
+        'W_COCO_PER-KOSTL', 'W_WBRK_PER-KOSTL', '/S4PPM/PR1-KOSTL', '/S4PPM/PRJ-KOSTL'
+    ],
+    'cost centers': [
+        'K_CSKS-KOSTL', 'K_REPO_CCA-KOSTL', 'K_CSKS_BUD-KOSTL', 'K_CSKS_PLA-KOSTL',
+        'A_S_KOSTL-KOSTL', 'K_FCO-KOSTL', 'F_FUD_DOCV-KOSTL', 'F_RELOCAT-KOSTL',
+        'F_TRAVL-KOSTL', 'F_TRAVL_TG-KOSTL', 'F_TRAVL_TP-KOSTL', 'F_TV_TGREQ-KOSTL',
+        'P_TRAVL-KOSTL', 'F_ICA_U3-KOSTL', 'P_CATSXT-KOSTL', 'P_DRL_COST-KOSTL',
+        'I_KOSTL-KOSTL', 'RSH_RES-KOSTL', 'V_PRS_LS_H-KOSTL', 'F_BR_KOSTL-KOSTL',
+        'W_COCO_PER-KOSTL', 'W_WBRK_PER-KOSTL', '/S4PPM/PR1-KOSTL', '/S4PPM/PRJ-KOSTL'
+    ],
+    'order type': [
+        'K_ORDER-AUFART', 'K_REPO_OPA-AUFART', 'K_AUFK_ART-AUFART', 'F_BKPF_ORD-AUFART',
+        'C_AFKO_AWA-AUFART', 'C_AFKO_AWK-AUFART', 'C_AFKO_CST-AUFART', 'C_AFKO_REL-AUFART',
+        'C_AFRU_AWK-AUFART', 'C_MPE_ASCR-AUFART', 'C_OAI_PLAN-AUFART', 'I_AER-AUFART',
+        'I_AUART-AUFART', 'I_EXCP_MO-AUFART', 'I_ILOA-AUFART', 'I_PHSE_CTL-AUFART',
+        'I_VORG_ORD-AUFART', 'P_DRL_COST-AUFART', 'DF_PMTRAIN-AUFART', 'DF_TRAIN_C-AUFART',
+        'DF_TRAIN_P-AUFART', '/CUM/CPEDT-AUFART', '/CUM/EFEDT-AUFART'
+    ],
+    'order types': [
+        'K_ORDER-AUFART', 'K_REPO_OPA-AUFART', 'K_AUFK_ART-AUFART', 'F_BKPF_ORD-AUFART',
+        'C_AFKO_AWA-AUFART', 'C_AFKO_AWK-AUFART', 'C_AFKO_CST-AUFART', 'C_AFKO_REL-AUFART',
+        'C_AFRU_AWK-AUFART', 'C_MPE_ASCR-AUFART', 'C_OAI_PLAN-AUFART', 'I_AER-AUFART',
+        'I_AUART-AUFART', 'I_EXCP_MO-AUFART', 'I_ILOA-AUFART', 'I_PHSE_CTL-AUFART',
+        'I_VORG_ORD-AUFART', 'P_DRL_COST-AUFART', 'DF_PMTRAIN-AUFART', 'DF_TRAIN_C-AUFART',
+        'DF_TRAIN_P-AUFART', '/CUM/CPEDT-AUFART', '/CUM/EFEDT-AUFART'
+    ],
+    'asset class': [
+        'A_S_ANLKL-ANLKL', 'A_B_ANLKL-ANLKL', 'A_M_ANLKL-ANLKL', 'A_B_BWART-ANLKL', 'A_S_MD-ANLKL'
+    ],
+    'credit segment': [
+        'F_UKM_SGMT-UKM_SGMNT', 'F_UKM_CLRA-UKM_SGMNT', 'F_UKM_DCDA-UKM_SGMNT', 'F_UKM_SUP-UKM_SGMNT'
+    ],
+    'costing variant': [
+        'K_KEKO-KLVAR'
+    ],
+    'person responsible': [
+        'C_PROJ_VNR-PS_VERNR', 'C_PRPS_VNR-PS_VERNR'
+    ],
+    'project type': [
+        'C_PRPS_ART-PS_PRART', '/S4PPM/PR1-PS_PRART'
+    ],
+    'release group': [
+        'M_EINK_FRG-FRGGR'
+    ],
+    'release code': [
+        'M_EINK_FRG-FRGCO', 'M_BANF_FRG-FRGCD'
+    ],
+    'storage location': [
+        'M_MSEG_LGO-LGORT', 'M_BEST_LGO-LGORT', 'M_BANF_LGO-LGORT', 'M_ANFR_LGO-LGORT',
+        'M_ANGB_LGO-LGORT', 'M_RAHM_LGO-LGORT', 'M_LPET_LGO-LGORT', 'M_QTN_LGO-LGORT',
+        'M_RFQ_LGO-LGORT', 'C_BACKFL-LGORT', '/ACCGO/NET-LGORT', 'O_OIJ_PROL-LGORT',
+        'O_SILO-LGORT', 'O_SILO1-LGORT'
+    ],
 }
 
 
@@ -120,10 +177,11 @@ def load_org_levels_reference(org_levels_path):
 def load_object_levels_reference(obj_levels_path):
     """Loads Object_Levels.csv into lookup structures."""
     if not os.path.exists(obj_levels_path):
-        return {}, {}, {}
+        return {}, {}, {}, {}
 
     pair_dict = {}
     object_fields_map = {}
+    field_pairs_map = {}
     desc_dict = {}
 
     try:
@@ -144,15 +202,25 @@ def load_object_levels_reference(obj_levels_path):
                         object_fields_map[obj] = []
                     object_fields_map[obj].append((field, fdesc, odesc, pair))
 
-                if fdesc:
-                    desc_dict[fdesc.lower()] = pair
+                if field and pair:
+                    if field not in field_pairs_map:
+                        field_pairs_map[field] = []
+                    if pair not in field_pairs_map[field]:
+                        field_pairs_map[field].append(pair)
+
+                if fdesc and pair:
+                    k_desc = fdesc.lower()
+                    if k_desc not in desc_dict:
+                        desc_dict[k_desc] = []
+                    if pair not in desc_dict[k_desc]:
+                        desc_dict[k_desc].append(pair)
     except Exception as e:
         print(f"[WARN] Could not load Object_Levels.csv: {e}")
 
-    return pair_dict, object_fields_map, desc_dict
+    return pair_dict, object_fields_map, field_pairs_map, desc_dict
 
 
-def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_desc_dict):
+def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_pairs_map, obj_desc_dict):
     """
     Classifies an Excel column header as either:
       ('ORG', [varbl])
@@ -226,7 +294,7 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
     # =========================================================================
     # STEP 2: CHECK IF AUTHORIZATION OBJECT / FIELD (Non-Org)
     # =========================================================================
-    # 2.1 Check common business object fields mapping first (e.g. Storage Location -> M_MSEG_LGO-LGORT)
+    # 2.1 Check common business object fields mapping first (e.g. Storage Location, Cost Center, Order Type...)
     if stripped_paren in COMMON_OBJECT_FIELDS:
         return ('OBJECT', COMMON_OBJECT_FIELDS[stripped_paren])
     if clean_lower in COMMON_OBJECT_FIELDS:
@@ -270,25 +338,17 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
                 if chosen and chosen not in matched_pairs:
                     matched_pairs.append(chosen)
 
-            # Token is a FIELD name (e.g. FRGGR, FRGCO, LGORT)
-            # Check if any obj_pairs end with -TOKEN
-            matching_pairs = [p for p in obj_pairs if p.endswith(f"-{t}")]
-            if matching_pairs:
-                chosen_pair = None
-                for p in matching_pairs:
-                    obj_name, fld_name, fdesc, odesc = obj_pairs[p]
-                    if any(w in clean_lower for w in fdesc.lower().split()) or any(w in clean_lower for w in odesc.lower().split()):
-                        chosen_pair = p
-                        break
-                if not chosen_pair:
-                    chosen_pair = matching_pairs[0]
-                if chosen_pair not in matched_pairs:
-                    matched_pairs.append(chosen_pair)
+            # Token is a FIELD name (e.g. FRGGR, FRGCO, LGORT, KOSTL, AUFART)
+            # Match ALL objects in SAP containing this field!
+            if t in field_pairs_map:
+                for p in field_pairs_map[t]:
+                    if p not in matched_pairs:
+                        matched_pairs.append(p)
 
         if matched_pairs:
             return ('OBJECT', matched_pairs)
 
-    # 2.2 Check standalone OBJECT-FIELD in header
+    # 2.3 Check standalone OBJECT-FIELD in header
     if m_pair_std:
         fld_part = m_pair_std.group(2).upper()
         if fld_part in org_ref_map:
@@ -297,17 +357,11 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
         if pair in obj_pairs:
             return ('OBJECT', [pair])
 
-    # 2.3 Check common business object fields mapping
-    if stripped_paren in COMMON_OBJECT_FIELDS:
-        return ('OBJECT', COMMON_OBJECT_FIELDS[stripped_paren])
-    if clean_lower in COMMON_OBJECT_FIELDS:
-        return ('OBJECT', COMMON_OBJECT_FIELDS[clean_lower])
-
-    # 2.4 Check Object_Levels.csv field description dictionary
+    # 2.4 Check Object_Levels.csv field description dictionary (returns all matching pairs)
     if stripped_paren in obj_desc_dict:
-        return ('OBJECT', [obj_desc_dict[stripped_paren]])
+        return ('OBJECT', obj_desc_dict[stripped_paren])
     if clean_lower in obj_desc_dict:
-        return ('OBJECT', [obj_desc_dict[clean_lower]])
+        return ('OBJECT', obj_desc_dict[clean_lower])
 
     return None
 
@@ -350,7 +404,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     obj_ref_path = os.path.join("excel-templates", "Object_Levels.csv")
 
     org_ref_map = load_org_levels_reference(org_ref_path)
-    obj_pairs, obj_fields_map, obj_desc_dict = load_object_levels_reference(obj_ref_path)
+    obj_pairs, obj_fields_map, field_pairs_map, obj_desc_dict = load_object_levels_reference(obj_ref_path)
 
     # Load Workbook
     try:
@@ -420,7 +474,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
         if not h_text:
             continue
 
-        kind_info = classify_column(h_text, org_ref_map, obj_pairs, obj_fields_map, obj_desc_dict)
+        kind_info = classify_column(h_text, org_ref_map, obj_pairs, obj_fields_map, field_pairs_map, obj_desc_dict)
         if kind_info:
             kind, idents = kind_info
             if kind == 'SKIP_TCODE':
