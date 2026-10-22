@@ -31,10 +31,10 @@
 
 | Command | Executes | Input Candidate Priority |
 | :--- | :--- | :--- |
-| `npm run convert:role:01` | `convert_role_01_master.py` | `excel-working/*_01_Master.xlsx` ➔ `excel-templates/` |
-| `npm run convert:role:02` | `convert_role_02_derive.py` | `excel-working/*_02_Derived.xlsx` ➔ `excel-templates/` |
-| `npm run convert:role:03` | `convert_role_03_org.py` | `excel-working/*_03_Org.xlsx` ➔ `excel-templates/` |
-| `npm run convert:role:04` | `convert_role_04_composite.py` | `excel-working/*_04_Composite.xlsx` ➔ `excel-templates/` |
+| `npm run convert:role:01` | `convert_role_01_master.py` | `excel-working/*_Role.xlsx` (Sheet 1) ➔ `excel-templates/` |
+| `npm run convert:role:02` | `convert_role_02_derive.py` | `excel-working/*_Role.xlsx` (Sheet 2) ➔ `excel-templates/` |
+| `npm run convert:role:03` | `convert_role_03_org_obj.py`| `excel-working/*_Role.xlsx` (Sheet 2) ➔ `excel-templates/` |
+| `npm run convert:role:04` | `convert_role_04_composite.py` | `excel-working/*_Role.xlsx` (Sheet 3) ➔ `excel-templates/` |
 | `npm run convert:role:all` | *All 4 Role Converters* | All role matrices in working directory |
 | `npm run convert:user:01` | `convert_user_01_create.py` | `excel-working/User_01_Create.xlsx` ➔ `excel-templates/` |
 | `npm run convert:user:02` | `convert_user_02_assign.py` | `excel-working/User_02_Assign.xlsx` ➔ `excel-templates/` |
@@ -72,30 +72,30 @@
 
 ---
 
-## 3. Organizational Levels (`convert_role_03_org.py`)
+## 3. Organizational Levels & Authorization Objects (`convert_role_03_org_obj.py`)
 
-- **Input**: Matrix with Derived Roles in rows and Org Levels in columns.
-- **Variable Matching**: Resolves column headers against standard variables in [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv) or USORG mappings (e.g. `Company Code` ➔ `$BUKRS`, `Plant` ➔ `$WERKS`).
+Reads Sheet 2 of the consolidated role workbook (where Derived Roles and mixed Org / Object columns reside) and automatically splits them into **two strictly complementary, non-overlapping flat CSV files**:
+
+### 3a. Organizational Levels (`*_03a_Org_Levels_converted.csv`)
+- **Purpose**: Batch maintenance of SAP Organizational Level variables in table `AGR_1252` via report `Z_ROLE_03_UPDATE_ORG`.
+- **Classification**: Matches against standard SAP 55 Org Level definitions in [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv) (e.g., Company Code ➔ `$BUKRS`, Plant ➔ `$WERKS`, Controlling Area ➔ `$KOKRS`, Purchasing Org ➔ `$EKORG`).
 - **Target ABAP**: `Z_ROLE_03_UPDATE_ORG`
-- **Output CSV Columns**:
+- **Output CSV Format**:
   ```csv
-  Role Name,Org Level Variable,Org Value
+  Role,Org_Level,Value
   Z_FI_DRV_GL_1000,$BUKRS,1000
   Z_FI_DRV_GL_1000,$KOKRS,1000
   ```
 
----
-
-## 3b. Authorization Objects & Activities (`convert_role_03_object.py`)
-
-- **Input**: Matrix with Roles in rows and Authorization Objects / Activities in columns.
-- **Object-Field Matching**: Resolves column headers against standard objects in [`excel-templates/Object_Levels.csv`](../excel-templates/Object_Levels.csv) (13,457 standard SAP object-field pairs). Supports direct `OBJECT-FIELD` (e.g. `F_BKPF_BUK-BUKRS`) or parenthesized descriptions (e.g. `Accounting Document - Activity (F_BKPF_BUK-ACTVT)`).
-- **Target Workflow**: Batch authorization object maintenance / upload for PFCG roles.
-- **Output CSV Columns**:
+### 3b. Authorization Objects & Fields (`*_03b_Auth_Objects_converted.csv`)
+- **Purpose**: Batch maintenance of authorization objects & fields in table `AGR_1251` (e.g., Cost Center, Order Type, Asset Class, Segment, Business Place, Credit Segment, Costing Variant, Release Group/Code).
+- **Classification**: Resolves non-Org headers against [`excel-templates/Object_Levels.csv`](../excel-templates/Object_Levels.csv) (13,457 SAP standard object-field pairs). Supports multi-object expansion (e.g. Person Responsible in `C_PROJ_VNR` & `C_PRPS_VNR`).
+- **Strict Boundary**: If a field belongs to Org Levels (e.g. `BUKRS`), it is NEVER output here. TCode checks (`S_TCODE-TCD`) are excluded (maintained via Menu).
+- **Output CSV Format**:
   ```csv
   Role,object-field,value
-  Z_FI_PERIOD_CONTROL_1000,F_BKPF_BUK-BUKRS,1000
-  Z_FI_PERIOD_CONTROL_1000,F_BKPF_BUK-ACTVT,01, 02, 03
+  Z_FI_PERIOD_CONTROL_1000,F_FAGL_SEG-SEGMENT,1000_A
+  Z_FI_PERIOD_CONTROL_1000,K_CSKS-KOSTL,CC_1000
   ```
 
 ---

@@ -7,25 +7,26 @@ Features:
 - Reads consolidated role workbooks (Sheet 2: Derived role, Org, and Object data)
   or standalone matrix files.
 - Automatically classifies columns:
-  * Organizational Levels (matched against Org_Levels.csv / SAP USORG) -> outputs <stem>_03_Org_converted.csv
-  * Authorization Objects / Fields (matched against Object_Levels.csv)  -> outputs <stem>_03_Object_converted.csv
-- Prevents Org values from leaking into Object output.
+  * Organizational Levels (matched against Org_Levels.csv / SAP USORG) -> outputs <stem>_03a_Org_Levels_converted.csv
+  * Authorization Objects / Fields (matched against Object_Levels.csv)  -> outputs <stem>_03b_Auth_Objects_converted.csv
+- Strictly non-overlapping: Org values are maintained in AGR_1252 via Org Level variables ($VARBL)
+  and are NEVER mixed into Object output (AGR_1251).
 - Excludes TCode check (S_TCODE-TCD) as it is maintained via the role menu.
 - Supports multi-object columns where one value applies to multiple objects (e.g. Person Responsible in C_PROJ_VNR and C_PRPS_VNR).
 
 Output formats:
-1. Org CSV:
+1. Org CSV (03a_Org_Levels):
    Col 1: Role
    Col 2: Org_Level ($VARBL)
    Col 3: Value
-2. Object CSV:
+2. Object CSV (03b_Auth_Objects):
    Col 1: Role
    Col 2: object-field (e.g., F_BKPF_BUK-BUKRS)
    Col 3: value
 
 Outputs:
-- <parent_dir>/converted/<stem>_03_Org_converted.csv
-- <parent_dir>/converted/<stem>_03_Object_converted.csv
+- <parent_dir>/converted/<stem>_03a_Org_Levels_converted.csv
+- <parent_dir>/converted/<stem>_03b_Auth_Objects_converted.csv
 """
 
 import os
@@ -82,6 +83,9 @@ COMMON_OBJECT_FIELDS = {
     'costing variant': ['K_KEKO-KLVAR'],
     'person responsible': ['C_PROJ_VNR-PS_VERNR', 'C_PRPS_VNR-PS_VERNR'],
     'project type': ['C_PRPS_ART-PS_PRART'],
+    'release group': ['M_EINK_FRG-FRGGR'],
+    'release code': ['M_EINK_FRG-FRGCO'],
+    'storage location': ['M_MSEG_LGO-LGORT'],
 }
 
 
@@ -103,8 +107,10 @@ def load_org_levels_reference(org_levels_path):
                     mapping[desc] = varbl
                 if fld and varbl:
                     mapping[fld] = varbl
+                    mapping[fld.lstrip('/')] = varbl
                 if varbl:
                     mapping[varbl] = varbl
+                    mapping[varbl.lstrip('$')] = varbl
     except Exception as e:
         print(f"[WARN] Could not load Org_Levels.csv: {e}")
 
@@ -153,6 +159,9 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
       ('OBJECT', [object_field_1, object_field_2, ...])
       ('SKIP_TCODE', 'S_TCODE-TCD')
       or None if unclassified.
+
+    Guarantees strict non-overlapping classification:
+    Org levels are NEVER routed to Object CSV.
     """
     raw = str(header_text or '').strip()
     if not raw:
@@ -182,24 +191,48 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
         if cand_var in org_ref_map.values() or cand_var in COMMON_ORG_SYNONYMS.values():
             return ('ORG', [cand_var])
 
-    # 1.3 Check common business synonyms
+    # 1.3 Check parenthesized field name if it is an Org Level (e.g. (BUKRS), (WERKS), (KOKRS))
+    m_paren = re.search(r'\((.*?)\)', clean)
+    if m_paren:
+        inside = m_paren.group(1).strip()
+        tokens = [t.strip().upper() for t in inside.split(',') if t.strip()]
+        for t in tokens:
+            t_clean = t.lstrip('$')
+            if t in org_ref_map:
+                return ('ORG', [org_ref_map[t]])
+            if t_clean in org_ref_map:
+                return ('ORG', [org_ref_map[t_clean]])
+
+    # 1.4 Check common business synonyms
     stripped_paren = re.sub(r'\(.*?\)', '', clean).strip().lower()
     if stripped_paren in COMMON_ORG_SYNONYMS:
         return ('ORG', [COMMON_ORG_SYNONYMS[stripped_paren]])
     if clean_lower in COMMON_ORG_SYNONYMS:
         return ('ORG', [COMMON_ORG_SYNONYMS[clean_lower]])
 
-    # 1.4 Check Org_Levels.csv reference
+    # 1.5 Check Org_Levels.csv reference
     if stripped_paren in org_ref_map:
         return ('ORG', [org_ref_map[stripped_paren]])
     if clean_lower in org_ref_map:
         return ('ORG', [org_ref_map[clean_lower]])
 
+    # 1.6 Check if header is an explicit OBJECT-FIELD whose field is an Org Level (e.g. F_BKPF_BUK-BUKRS)
+    m_pair_std = re.search(r'([A-Za-z0-9_]{3,10})[-:.]([A-Za-z0-9_]{2,10})', raw)
+    if m_pair_std:
+        fld_part = m_pair_std.group(2).upper()
+        if fld_part in org_ref_map:
+            return ('ORG', [org_ref_map[fld_part]])
+
     # =========================================================================
     # STEP 2: CHECK IF AUTHORIZATION OBJECT / FIELD (Non-Org)
     # =========================================================================
-    # 2.1 Check parenthesized content: could be single or comma-separated objects/fields
-    m_paren = re.search(r'\((.*?)\)', clean)
+    # 2.1 Check common business object fields mapping first (e.g. Storage Location -> M_MSEG_LGO-LGORT)
+    if stripped_paren in COMMON_OBJECT_FIELDS:
+        return ('OBJECT', COMMON_OBJECT_FIELDS[stripped_paren])
+    if clean_lower in COMMON_OBJECT_FIELDS:
+        return ('OBJECT', COMMON_OBJECT_FIELDS[clean_lower])
+
+    # 2.2 Check parenthesized content: could be single or comma-separated objects/fields
     if m_paren:
         inside = m_paren.group(1).strip()
         tokens = [t.strip().upper() for t in inside.split(',') if t.strip()]
@@ -209,10 +242,11 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
             # Token is an explicit OBJECT-FIELD (e.g. F_BKPF_BUK-BUKRS or F_BKPF_BUK:BUKRS)
             if '-' in t or ':' in t or '.' in t:
                 norm_pair = re.sub(r'[:.]', '-', t)
-                if norm_pair in obj_pairs:
-                    matched_pairs.append(norm_pair)
-                else:
-                    matched_pairs.append(norm_pair)
+                fld_cand = norm_pair.split('-')[1] if '-' in norm_pair else ''
+                # Protect: If field belongs to Org Levels, redirect to Org Level
+                if fld_cand in org_ref_map:
+                    return ('ORG', [org_ref_map[fld_cand]])
+                matched_pairs.append(norm_pair)
                 continue
 
             # Token is an OBJECT name (e.g. K_KEKO, C_PROJ_VNR, C_PRPS_VNR)
@@ -236,12 +270,29 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, obj_des
                 if chosen and chosen not in matched_pairs:
                     matched_pairs.append(chosen)
 
+            # Token is a FIELD name (e.g. FRGGR, FRGCO, LGORT)
+            # Check if any obj_pairs end with -TOKEN
+            matching_pairs = [p for p in obj_pairs if p.endswith(f"-{t}")]
+            if matching_pairs:
+                chosen_pair = None
+                for p in matching_pairs:
+                    obj_name, fld_name, fdesc, odesc = obj_pairs[p]
+                    if any(w in clean_lower for w in fdesc.lower().split()) or any(w in clean_lower for w in odesc.lower().split()):
+                        chosen_pair = p
+                        break
+                if not chosen_pair:
+                    chosen_pair = matching_pairs[0]
+                if chosen_pair not in matched_pairs:
+                    matched_pairs.append(chosen_pair)
+
         if matched_pairs:
             return ('OBJECT', matched_pairs)
 
     # 2.2 Check standalone OBJECT-FIELD in header
-    m_pair_std = re.search(r'([A-Za-z0-9_]{3,10})[-:.]([A-Za-z0-9_]{2,10})', raw)
     if m_pair_std:
+        fld_part = m_pair_std.group(2).upper()
+        if fld_part in org_ref_map:
+            return ('ORG', [org_ref_map[fld_part]])
         pair = f"{m_pair_std.group(1).upper()}-{m_pair_std.group(2).upper()}"
         if pair in obj_pairs:
             return ('OBJECT', [pair])
@@ -265,8 +316,8 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     """
     Reads an Excel file and converts Organizational levels and Authorization Objects
     into two separate flat CSV files:
-      - <stem>_03_Org_converted.csv (Role, Org_Level, Value)
-      - <stem>_03_Object_converted.csv (Role, object-field, value)
+      - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, Value) -> for AGR_1252
+      - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value) -> for AGR_1251
     """
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -285,14 +336,14 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     os.makedirs(output_dir, exist_ok=True)
 
     # Determine output file stems
-    clean_stem = re.sub(r'_(03_)?(org|object|obj).*$', '', stem, flags=re.IGNORECASE)
+    clean_stem = re.sub(r'_(03[ab]?_)?(org|object|obj).*$', '', stem, flags=re.IGNORECASE)
     if not clean_stem.endswith('_Role') and stem.endswith('_Role'):
         clean_stem = stem
     elif not clean_stem:
         clean_stem = stem
 
-    out_org_path = os.path.join(output_dir, f"{clean_stem}_03_Org_converted.csv")
-    out_obj_path = os.path.join(output_dir, f"{clean_stem}_03_Object_converted.csv")
+    out_org_path = os.path.join(output_dir, f"{clean_stem}_03a_Org_Levels_converted.csv")
+    out_obj_path = os.path.join(output_dir, f"{clean_stem}_03b_Auth_Objects_converted.csv")
 
     # Load Reference Dictionaries
     org_ref_path = os.path.join("excel-templates", "Org_Levels.csv")
@@ -432,9 +483,9 @@ def convert_role_03_org_obj(input_path, output_dir=None):
             writer = csv.writer(f)
             writer.writerow(["Role", "Org_Level", "Value"])
             writer.writerows(org_rows)
-        print(f"[OK] Wrote Org CSV   : {out_org_path} ({len(org_rows)} rows across {roles_processed} roles)")
+        print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {roles_processed} roles)")
     except Exception as e:
-        print(f"[ERROR] Could not write Org CSV '{out_org_path}': {e}")
+        print(f"[ERROR] Could not write Org Levels CSV '{out_org_path}': {e}")
         return False
 
     # Write Object CSV
@@ -443,9 +494,9 @@ def convert_role_03_org_obj(input_path, output_dir=None):
             writer = csv.writer(f)
             writer.writerow(["Role", "object-field", "value"])
             writer.writerows(obj_rows)
-        print(f"[OK] Wrote Object CSV: {out_obj_path} ({len(obj_rows)} rows across {roles_processed} roles)")
+        print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {roles_processed} roles)")
     except Exception as e:
-        print(f"[ERROR] Could not write Object CSV '{out_obj_path}': {e}")
+        print(f"[ERROR] Could not write Auth Objects CSV '{out_obj_path}': {e}")
         return False
 
     return True

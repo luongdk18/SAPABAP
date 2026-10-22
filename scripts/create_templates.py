@@ -10,8 +10,8 @@ Generated Files:
    -> Auto-converts to:
       * Template_Role_01_Master_converted.csv
       * Template_Role_02_Derived_converted.csv
-      * Template_Role_03_Org_converted.csv
-      * Template_Role_03_Object_converted.csv
+      * Template_Role_03a_Org_Levels_converted.csv
+      * Template_Role_03b_Auth_Objects_converted.csv
       * Template_Role_04_Composite_converted.csv
 2. Template_User_01_Create.xlsx -> Template_User_01_Create_converted.csv
 3. Template_User_02_Assign.xlsx -> Template_User_02_Assign_converted.csv

@@ -1,9 +1,9 @@
 # 🏢 Z_ROLE_03_UPDATE_ORG: Batch Organizational Levels Maintenance
 
 > **Source Code**: [`src/z_role_03_update_org.prog.abap`](../src/z_role_03_update_org.prog.abap)  
-> **Companion Script**: [`scripts/convert_role_03_org.py`](../scripts/convert_role_03_org.py)  
+> **Companion Script**: [`scripts/convert_role_03_org_obj.py`](../scripts/convert_role_03_org_obj.py)  
 > **Org Levels Reference**: [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv)  
-> **Sample CSV**: [`excel-templates/converted/Template_Role_03_Org_converted.csv`](../excel-templates/converted/Template_Role_03_Org_converted.csv)
+> **Sample CSV**: [`excel-templates/converted/Template_Role_03a_Org_Levels_converted.csv`](../excel-templates/converted/Template_Role_03a_Org_Levels_converted.csv)
 
 Automates the mass maintenance and update of **Organizational Levels** (`AGR_1252`) across Single and Derived Roles directly from flat CSV data, restores variable bindings in `AGR_1251`, and regenerates authorization profiles in background mode.
 

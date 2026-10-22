@@ -1,56 +1,56 @@
-﻿Org Level Description,Org Level Variable,Field Name
-Account Type,,KOART
-Aspect,,CFASPET
-Asset Plant,,RAS_PLANT
-Bank Area,,BKKRS
-Business Area,,GSBER
-Company,,RCOMP
-Company Code,,BUKRS
-Company Code,,COMP_CODE
-Company Code (Cash Management),,FCLM_BUKRS
-Condition Area,,CONDAREA
-Consolidation Group,,CONGR
-Consolidation Unit,,BUNIT
-Controlling Area,,KOKRS
-Credit Control Area,,KKBER
-Dimension / View,,DIMEN
-Distribution Channel,,VTWEG
-Division,,SPART
-Enterprise Organization (TM),,TM_XCORG
-FM Area,,FM_FIKRS
-Functional Area,,FKBER
-Location (TRM),,LTRM_LOCAT
-Location Plant,,LOCPLANT
-Maintenance Planning Plant,,IWERK
-Maintenance Plant,,SWERK
-Operating Concern,,CEERKRS
-Plan Version,,PLVAR
-Planning and Execution Group (TM),,TM_XEGRP
-Planning and Execution Organization (TM),,TM_XEORG
-Plant,,WERKS
-Plant (Customer Site),,CSWRK
-Plant ID,,PLANT_ID
-Profit Center,,PRCTR
-Purchasing Group,,EKGRP
-Purchasing Group (TM),,TM_XPGRP
-Purchasing Organization,,EKORG
-Purchasing Organization,,PUR_ORG
-Purchasing Organization (TM),,TM_XPORG
-Sales Group,,VKGRP
-Sales Group (TM),,TM_XSGRP
-Sales Office,,VKBUR
-Sales Office (TM),,TM_XSOFF
-Sales Organization,,SLS_ORG
-Sales Organization,,VKORG
-Sales Organization (TM),,TM_XSORG
-Shipping Point,,VSTEL
-Storage Type,,LGTYP
-Transportation Planning Point,,TPLST
-Valuation Area,,BWKEY
-Warehouse Number / Warehouse Complex,,LGNUM
-Work Center,,ARBPL
-Business Partner for Provider of Information,$/ECRS/POIB,/ECRS/POIB
+Org Level Description,Org Level Variable,Field Name
 Activity Area,$/SCWM/AREA,/SCWM/AREA
 Authorized Drawer,$/SCWM/ENTL,/SCWM/ENTL
-Warehouse Number / Warehouse Complex (EWM),$/SCWM/LGNU,/SCWM/LGNU
+Business Partner for Provider of Information,$/ECRS/POIB,/ECRS/POIB
 Storage Type (EWM),$/SCWM/LGTY,/SCWM/LGTY
+Warehouse Number / Warehouse Complex (EWM),$/SCWM/LGNU,/SCWM/LGNU
+Work Center,$ARBPL,ARBPL
+Bank Area,$BKKRS,BKKRS
+Company Code,$BUKRS,BUKRS
+Company Code,$BUKRS,COMP_CODE
+Company Code (Cash Management),$BUKRS,FCLM_BUKRS
+Consolidation Unit,$BUNIT,BUNIT
+Valuation Area,$BWKEY,BWKEY
+Aspect,$CFASPET,CFASPET
+Condition Area,$CONDAREA,CONDAREA
+Consolidation Group,$CONGR,CONGR
+Dimension / View,$DIMEN,DIMEN
+Purchasing Group,$EKGRP,EKGRP
+Purchasing Organization,$EKORG,EKORG
+Purchasing Organization,$EKORG,PUR_ORG
+Operating Concern,$ERKRS,CEERKRS
+Functional Area,$FKBER,FKBER
+FM Area,$FIKRS,FM_FIKRS
+Business Area,$GSBER,GSBER
+Maintenance Planning Plant,$IWERK,IWERK
+Credit Control Area,$KKBER,KKBER
+Account Type,$KOART,KOART
+Controlling Area,$KOKRS,KOKRS
+Warehouse Number / Warehouse Complex,$LGNUM,LGNUM
+Storage Type,$LGTYP,LGTYP
+Location (TRM),$LTRM_LOCAT,LTRM_LOCAT
+Plan Version,$PLVAR,PLVAR
+Profit Center,$PRCTR,PRCTR
+Company,$RCOMP,RCOMP
+Division,$SPART,SPART
+Maintenance Plant,$SWERK,SWERK
+Transportation Planning Point,$TPLST,TPLST
+Sales Office,$VKBUR,VKBUR
+Sales Group,$VKGRP,VKGRP
+Sales Organization,$VKORG,SLS_ORG
+Sales Organization,$VKORG,VKORG
+Shipping Point,$VSTEL,VSTEL
+Distribution Channel,$VTWEG,VTWEG
+Asset Plant,$WERKS,RAS_PLANT
+Location Plant,$WERKS,LOCPLANT
+Plant,$WERKS,CSWRK
+Plant,$WERKS,WERKS
+Plant ID,$WERKS,PLANT_ID
+Enterprise Organization (TM),$XCORG,TM_XCORG
+Planning and Execution Group (TM),$XEGRP,TM_XEGRP
+Planning and Execution Organization (TM),$XEORG,TM_XEORG
+Purchasing Group (TM),$XPGRP,TM_XPGRP
+Purchasing Organization (TM),$XPORG,TM_XPORG
+Sales Group (TM),$XSGRP,TM_XSGRP
+Sales Office (TM),$XSOFF,TM_XSOFF
+Sales Organization (TM),$XSORG,TM_XSORG

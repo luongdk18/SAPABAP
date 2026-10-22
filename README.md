@@ -161,7 +161,7 @@ Convert business Excel matrices into flat, normalized CSV files.
   - **Sheet 1**: Master Roles (Menu & TCodes)
   - **Sheet 2**: Derived Roles & Org + Object Levels (Cols 1-3: Role mapping, Cols 4+: Org & Object mixed)
   - **Sheet 3**: Composite Roles (Role bundling)
-- **Unified Org & Object Separation**: `convert_role_03_org_obj.py` automatically distinguishes Org Levels (`*_03_Org_converted.csv`) from Authorization Objects (`*_03_Object_converted.csv`) with zero overlap and excludes `S_TCODE-TCD`.
+- **Unified Org & Object Separation**: `convert_role_03_org_obj.py` automatically distinguishes Org Levels (`*_03a_Org_Levels_converted.csv`) from Authorization Objects (`*_03b_Auth_Objects_converted.csv`) with zero overlap and excludes `S_TCODE-TCD`.
 - **Legacy Compatibility**: Standalone files (`*_01_Master.xlsx`, etc.) remain fully supported.
 - **Output Destination**: Automatically saves to `<parent_dir>/converted/<name>_converted.csv`.
 - **Confidentiality**: Files in `excel-working/` and `excel-working/converted/` are protected by `.gitignore`.
@@ -170,7 +170,7 @@ Convert business Excel matrices into flat, normalized CSV files.
 | :--- | :--- | :--- | :--- |
 | `npm run convert:role:01` | `convert_role_01_master.py` | Sheet 1 / Master Roles Matrix | `*_Role_01_Master_converted.csv` |
 | `npm run convert:role:02` | `convert_role_02_derive.py` | Sheet 2 / Derived Roles Mapping | `*_Role_02_Derived_converted.csv` |
-| `npm run convert:role:03` | `convert_role_03_org_obj.py` | Sheet 2 / Org & Object Mixed | `*_Role_03_Org_converted.csv`<br>`*_Role_03_Object_converted.csv` |
+| `npm run convert:role:03` | `convert_role_03_org_obj.py` | Sheet 2 / Org & Object Mixed | `*_Role_03a_Org_Levels_converted.csv`<br>`*_Role_03b_Auth_Objects_converted.csv` |
 | `npm run convert:role:04` | `convert_role_04_composite.py`| Sheet 3 / Composite Roles Matrix | `*_Role_04_Composite_converted.csv` |
 | `npm run convert:role:all`| *Runs all 4 Role converters* | Consolidated `*_Role.xlsx` or separate | All Role CSVs in `converted/` |
 | `npm run convert:user:01` | `convert_user_01_create.py` | User Creation List (Phones without `+`) | `User_01_Create_converted.csv` |
