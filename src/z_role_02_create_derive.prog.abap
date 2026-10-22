@@ -430,33 +430,27 @@ FORM process_role_derivation.
       ENDIF.
 
       " --- Update Existing Derived Role ---
-      " Update PARENT_AGR link in AGR_DEFINE if different
+      " Update PARENT_AGR link in AGR_DEFINE if different via standard FM
       IF lv_curr_par NE ls_drv-master_role.
-        UPDATE agr_define
-          SET parent_agr = @ls_drv-master_role,
-              change_usr = @sy-uname,
-              change_dat = @sy-datum,
-              change_tim = @sy-uzeit
-          WHERE agr_name = @ls_drv-derived_role.
+        DATA: lt_def_upd TYPE STANDARD TABLE OF agr_define.
+        CLEAR lt_def_upd.
+        APPEND VALUE agr_define(
+          agr_name   = ls_drv-derived_role
+          parent_agr = ls_drv-master_role
+        ) TO lt_def_upd.
+        CALL FUNCTION 'PRGN_STRU_SAVE_DEFINITION'
+          EXPORTING
+            enqueue        = 'X'
+            message_output = space
+          TABLES
+            i_definition   = lt_def_upd
+            return         = lt_bapiret
+          EXCEPTIONS
+            OTHERS         = 0.
       ENDIF.
 
-      " Update Role Description in AGR_TEXTS (exact spacing)
-      UPDATE agr_texts SET text = @ls_drv-derived_desc
-        WHERE agr_name = @ls_drv-derived_role AND line = '00000'.
-      IF sy-subrc <> 0.
-        DATA(ls_txt_upd) = VALUE agr_texts(
-          mandt    = sy-mandt
-          agr_name = ls_drv-derived_role
-          spras    = sy-langu
-          line     = '00000'
-          text     = ls_drv-derived_desc
-        ).
-        MODIFY agr_texts FROM @ls_txt_upd.
-      ENDIF.
-
-      " Remove automatic comment lines from AGR_TEXTS
-      DELETE FROM agr_texts
-        WHERE agr_name = @ls_drv-derived_role AND line > '00000'.
+      " Update Role Description and remove comment lines via standard FM
+      PERFORM set_role_description USING ls_drv-derived_role ls_drv-derived_desc.
 
       " Synchronize / Adjust Auth data from master role
       CALL FUNCTION 'PRGN_RFC_CREATE_DERIVATION'
@@ -557,9 +551,8 @@ FORM process_role_derivation.
         CONTINUE.
       ENDIF.
 
-      " Step 2: Clean automatic comments from AGR_TEXTS
-      DELETE FROM agr_texts
-        WHERE agr_name = @ls_drv-derived_role AND line > '00000'.
+      " Step 2: Clean automatic comments from AGR_TEXTS via standard FM
+      PERFORM set_role_description USING ls_drv-derived_role ls_drv-derived_desc.
       COMMIT WORK AND WAIT.
 
       " Step 3: Inherit auths from Master Role
@@ -639,6 +632,31 @@ FORM process_role_derivation.
 
     APPEND ls_res TO gt_results.
   ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form set_role_description
+*&---------------------------------------------------------------------*
+* Sets role description and clears comments via standard PFCG FM
+*&---------------------------------------------------------------------*
+FORM set_role_description USING iv_agr_name TYPE agr_name
+                                iv_desc     TYPE csequence.
+  DATA: lt_texts TYPE STANDARD TABLE OF agr_texts.
+  CLEAR lt_texts.
+  APPEND VALUE agr_texts(
+    spras = sy-langu
+    line  = '00000'
+    text  = iv_desc
+  ) TO lt_texts.
+
+  CALL FUNCTION 'PRGN_RFC_CHANGE_TEXTS'
+    EXPORTING
+      activity_group = iv_agr_name
+      no_dialog      = 'X'
+    TABLES
+      texts          = lt_texts
+    EXCEPTIONS
+      OTHERS         = 0.
 ENDFORM.
 
 *&---------------------------------------------------------------------*

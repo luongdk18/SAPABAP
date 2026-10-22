@@ -417,12 +417,38 @@ FORM process_org_update.
     " 2. Restore Org Variable Bindings in AGR_1251 (if corrupted with '-1')
     " -----------------------------------------------------------------
     IF p_fix51 = abap_true AND p_test = abap_false.
-      LOOP AT gt_usorg_map INTO DATA(ls_um).
-        UPDATE agr_1251 SET low = @ls_um-varbl
-          WHERE agr_name = @ls_role-agr_name
-            AND field    = @ls_um-field
-            AND low      = '-1'.
-      ENDLOOP.
+      DATA: lt_pt1251_fix TYPE STANDARD TABLE OF pt1251,
+            lv_fix_needed TYPE abap_bool.
+      CLEAR: lt_pt1251_fix, lv_fix_needed.
+
+      CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
+        EXPORTING
+          activity_group    = ls_role-agr_name
+        TABLES
+          field_values      = lt_pt1251_fix
+        EXCEPTIONS
+          OTHERS            = 1.
+
+      IF sy-subrc = 0 AND lt_pt1251_fix IS NOT INITIAL.
+        LOOP AT gt_usorg_map INTO DATA(ls_um).
+          LOOP AT lt_pt1251_fix ASSIGNING FIELD-SYMBOL(<ls_f51>)
+            WHERE field = ls_um-field AND low = '-1'.
+            <ls_f51>-low      = ls_um-varbl.
+            <ls_f51>-modified = 'U'.
+            lv_fix_needed     = abap_true.
+          ENDLOOP.
+        ENDLOOP.
+
+        IF lv_fix_needed = abap_true.
+          CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
+            EXPORTING
+              activity_group = ls_role-agr_name
+            TABLES
+              field_values   = lt_pt1251_fix.
+          CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+          COMMIT WORK AND WAIT.
+        ENDIF.
+      ENDIF.
     ENDIF.
 
     " -----------------------------------------------------------------

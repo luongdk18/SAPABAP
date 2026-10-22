@@ -515,20 +515,42 @@ FORM process_object_update.
     " 5. Real Run Execution
     " -----------------------------------------------------------------
     IF lv_upd_cnt > 0.
-      " Update AGR_1251 database table
+      " Read current field values via standard PFCG FM
+      DATA: lt_pt1251 TYPE STANDARD TABLE OF pt1251.
+      CLEAR lt_pt1251.
+      CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
+        EXPORTING
+          activity_group    = ls_role-agr_name
+        TABLES
+          field_values      = lt_pt1251
+        EXCEPTIONS
+          no_data_available = 1
+          OTHERS            = 2.
+
+      " Apply modifications to matching objects and fields in internal table
       LOOP AT gt_role_auths INTO DATA(ls_upd) WHERE agr_name = ls_role-agr_name.
         " Only update if object and field exist in role
         READ TABLE lt_curr_1250 WITH KEY object = ls_upd-object TRANSPORTING NO FIELDS.
         IF sy-subrc = 0.
-          UPDATE agr_1251
-            SET low      = @ls_upd-val_low,
-                high     = @ls_upd-val_high,
-                modified = 'G'
-            WHERE agr_name = @ls_role-agr_name
-              AND object   = @ls_upd-object
-              AND field    = @ls_upd-field.
+          LOOP AT lt_pt1251 ASSIGNING FIELD-SYMBOL(<ls_fld>)
+            WHERE object = ls_upd-object
+              AND field  = ls_upd-field.
+            <ls_fld>-low      = ls_upd-val_low.
+            <ls_fld>-high     = ls_upd-val_high.
+            <ls_fld>-modified = 'U'.
+          ENDLOOP.
         ENDIF.
       ENDLOOP.
+
+      " Save via standard PFCG FM (replaces direct OpenSQL UPDATE on AGR_1251)
+      CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
+        EXPORTING
+          activity_group = ls_role-agr_name
+        TABLES
+          field_values   = lt_pt1251.
+
+      CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+      COMMIT WORK AND WAIT.
 
       " Update Role Timestamp in PFCG
       CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'

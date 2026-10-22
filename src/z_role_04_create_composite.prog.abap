@@ -500,23 +500,8 @@ FORM process_composite_roles.
         CONTINUE.
       ENDIF.
 
-      " Update Description in AGR_TEXTS (preserving exact spacing)
-      UPDATE agr_texts SET text = @ls_comp-role_desc
-        WHERE agr_name = @ls_comp-role_name AND line = '00000'.
-      IF sy-subrc <> 0.
-        DATA(ls_txt_upd) = VALUE agr_texts(
-          mandt    = sy-mandt
-          agr_name = ls_comp-role_name
-          spras    = sy-langu
-          line     = '00000'
-          text     = ls_comp-role_desc
-        ).
-        MODIFY agr_texts FROM @ls_txt_upd.
-      ENDIF.
-
-      " Strip automatic comments from AGR_TEXTS
-      DELETE FROM agr_texts
-        WHERE agr_name = @ls_comp-role_name AND line > '00000'.
+      " Update Description in AGR_TEXTS (preserving exact spacing, standard FM)
+      PERFORM set_role_description USING ls_comp-role_name ls_comp-role_desc.
 
       ls_res-action = 'UPDATED'.
 
@@ -551,11 +536,8 @@ FORM process_composite_roles.
         CONTINUE.
       ENDIF.
 
-      " Ensure clean description in AGR_TEXTS (exact spacing, remove comment lines)
-      UPDATE agr_texts SET text = @ls_comp-role_desc
-        WHERE agr_name = @ls_comp-role_name AND line = '00000'.
-      DELETE FROM agr_texts
-        WHERE agr_name = @ls_comp-role_name AND line > '00000'.
+      " Ensure clean description in AGR_TEXTS (exact spacing, remove comment lines via standard FM)
+      PERFORM set_role_description USING ls_comp-role_name ls_comp-role_desc.
       COMMIT WORK AND WAIT.
 
       ls_res-action = 'CREATED'.
@@ -672,6 +654,31 @@ FORM format_bapi_message USING    it_bapiret TYPE bapiret2_t
       CONCATENATE cv_msg '|' ls_bapi-message INTO cv_msg SEPARATED BY space.
     ENDIF.
   ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form set_role_description
+*&---------------------------------------------------------------------*
+* Sets role description and clears comments via standard PFCG FM
+*&---------------------------------------------------------------------*
+FORM set_role_description USING iv_agr_name TYPE agr_name
+                                iv_desc     TYPE csequence.
+  DATA: lt_texts TYPE STANDARD TABLE OF agr_texts.
+  CLEAR lt_texts.
+  APPEND VALUE agr_texts(
+    spras = sy-langu
+    line  = '00000'
+    text  = iv_desc
+  ) TO lt_texts.
+
+  CALL FUNCTION 'PRGN_RFC_CHANGE_TEXTS'
+    EXPORTING
+      activity_group = iv_agr_name
+      no_dialog      = 'X'
+    TABLES
+      texts          = lt_texts
+    EXCEPTIONS
+      OTHERS         = 0.
 ENDFORM.
 
 *----------------------------------------------------------------------*

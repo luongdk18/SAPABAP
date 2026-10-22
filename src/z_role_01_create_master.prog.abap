@@ -594,10 +594,7 @@ FORM process_role_generation.
         IF sy-subrc = 0.
           PERFORM set_org_levels_default USING ls_role-agr_name.
 
-          UPDATE agr_texts SET text = @ls_role-role_desc
-            WHERE agr_name = @ls_role-agr_name AND line = '00000'.
-          DELETE FROM agr_texts
-            WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+          PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
           COMMIT WORK AND WAIT.
 
           ls_res-action = 'CREATED'.
@@ -671,10 +668,7 @@ FORM process_role_generation.
             PERFORM set_org_levels_default USING ls_role-agr_name.
           ENDIF.
 
-          UPDATE agr_texts SET text = @ls_role-role_desc
-            WHERE agr_name = @ls_role-agr_name AND line = '00000'.
-          DELETE FROM agr_texts
-            WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+          PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
           COMMIT WORK AND WAIT.
 
           ls_res-status  = gc_status_ok.
@@ -705,18 +699,8 @@ FORM process_role_generation.
           ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
         ENDIF.
       ELSE.
-        " Update role description & remove auto comments
-        UPDATE agr_texts SET text = @ls_role-role_desc
-          WHERE agr_name = @ls_role-agr_name AND line = '00000'.
-        IF sy-subrc <> 0.
-          INSERT agr_texts FROM @( VALUE #( mandt    = sy-mandt
-                                            agr_name = ls_role-agr_name
-                                            spras    = sy-langu
-                                            line     = '00000'
-                                            text     = ls_role-role_desc ) ).
-        ENDIF.
-        DELETE FROM agr_texts
-          WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+        " Update role description & remove auto comments via standard FM
+        PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
 
         IF lv_valid_cnt = 0.
           PERFORM set_org_levels_default USING ls_role-agr_name.
@@ -796,8 +780,7 @@ FORM process_role_generation.
                 PERFORM set_org_levels_default USING ls_role-agr_name.
               ENDIF.
 
-              DELETE FROM agr_texts
-                WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+              PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
               COMMIT WORK AND WAIT.
 
               ls_res-status  = gc_status_ok.
@@ -839,8 +822,7 @@ FORM process_role_generation.
                 PERFORM set_org_levels_default USING ls_role-agr_name.
               ENDIF.
 
-              DELETE FROM agr_texts
-                WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+              PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
               COMMIT WORK AND WAIT.
 
               ls_res-status  = gc_status_ok.
@@ -947,8 +929,7 @@ FORM process_role_generation.
                   PERFORM set_org_levels_default USING ls_role-agr_name.
                 ENDIF.
 
-                DELETE FROM agr_texts
-                  WHERE agr_name = @ls_role-agr_name AND line > '00000'.
+                PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
                 COMMIT WORK AND WAIT.
 
                 lv_added_cnt = lines( lt_tcodes_to_add ).
@@ -1033,14 +1014,32 @@ FORM set_org_levels_default USING iv_agr_name TYPE agr_name.
     ENDIF.
   ENDIF.
 
-  " Directly ensure database table AGR_1252 has low = '-1'
-  UPDATE agr_1252 SET low = '-1'
-    WHERE agr_name = @iv_agr_name.
-
-  " Note: AGR_1251 keeps standard variable references ($VARBL).
-  " Actual values are maintained in AGR_1252.
-
   COMMIT WORK AND WAIT.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form set_role_description
+*&---------------------------------------------------------------------*
+* Sets role description and clears comments via standard PFCG FM
+*&---------------------------------------------------------------------*
+FORM set_role_description USING iv_agr_name TYPE agr_name
+                                iv_desc     TYPE csequence.
+  DATA: lt_texts TYPE STANDARD TABLE OF agr_texts.
+  CLEAR lt_texts.
+  APPEND VALUE agr_texts(
+    spras = sy-langu
+    line  = '00000'
+    text  = iv_desc
+  ) TO lt_texts.
+
+  CALL FUNCTION 'PRGN_RFC_CHANGE_TEXTS'
+    EXPORTING
+      activity_group = iv_agr_name
+      no_dialog      = 'X'
+    TABLES
+      texts          = lt_texts
+    EXCEPTIONS
+      OTHERS         = 0.
 ENDFORM.
 
 *----------------------------------------------------------------------*
