@@ -249,6 +249,67 @@ def create_org_template():
     print(f"[OK] Generated: {csv_path} ({len(flat_csv_rows)} rows)")
 
 
+# --- 3b. Authorization Objects & Activities Template (Template_Role_03_Object.xlsx & CSV) ---
+def create_object_template():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "OBJECT_LEVELS"
+
+    columns = [
+        ("Role Name", None),
+        ("GL Document CoCode (F_BKPF_BUK-BUKRS)", "F_BKPF_BUK-BUKRS"),
+        ("GL Document Activity (F_BKPF_BUK-ACTVT)", "F_BKPF_BUK-ACTVT"),
+        ("GL Account Type (F_BKPF_KOA-KOART)", "F_BKPF_KOA-KOART"),
+        ("PO Document Type (M_BEST_BSA-BSART)", "M_BEST_BSA-BSART"),
+        ("PO Activity (M_BEST_BSA-ACTVT)", "M_BEST_BSA-ACTVT"),
+        ("PO Purchasing Group (M_BEST_EKG-EKGRP)", "M_BEST_EKG-EKGRP"),
+        ("Goods Movement Plant (M_MSEG_WMB-WERKS)", "M_MSEG_WMB-WERKS"),
+        ("Goods Movement Activity (M_MSEG_WMB-ACTVT)", "M_MSEG_WMB-ACTVT"),
+        ("Sales Org (V_VBAK_VKO-VKORG)", "V_VBAK_VKO-VKORG"),
+        ("Sales Order Activity (V_VBAK_VKO-ACTVT)", "V_VBAK_VKO-ACTVT"),
+        ("Transaction Code Check (S_TCODE-TCD)", "S_TCODE-TCD")
+    ]
+
+    for col_idx, (col_name, _) in enumerate(columns, start=1):
+        c = ws.cell(1, col_idx, value=col_name)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = left_align
+
+    roles_data = [
+        ("Z_FI_PERIOD_CONTROL_1000", "1000", "01, 02, 03", "S", None, None, None, None, None, None, None, "OB52, S_ALR_87003642"),
+        ("Z_FI_GL_MASTER_MAINT_1000", "1000", "01, 02, 03", "S", None, None, None, None, None, None, None, "FS00, FSP0, FSS0"),
+        ("Z_FI_JOURNAL_POST_1000", "1000", "01, 02, 03", "S, D, K", None, None, None, None, None, None, None, "FB01, FB02, FB03, FB50"),
+        ("Z_FI_AP_INVOICE_PROCESS_1000", "1000", "01, 02, 03", "K", None, None, None, None, None, None, None, "FB60, FB02, FB03, F-53"),
+        ("Z_MM_PURCHASER_1000", None, None, None, "NB, UB", "01, 02, 03", "P01, P02", None, None, None, None, "ME21N, ME22N, ME23N"),
+        ("Z_MM_INVENTORY_1000", None, None, None, None, None, None, "1000", "01, 02, 03", None, None, "MIGO, MB51, MMBE"),
+        ("Z_SD_SALES_REP_1000", None, None, None, None, None, None, None, None, "1000", "01, 02, 03", "VA01, VA02, VA03"),
+    ]
+
+    for row_idx, r in enumerate(roles_data, start=2):
+        for col_idx, val in enumerate(r, start=1):
+            c = ws.cell(row_idx, col_idx, value=val)
+            c.font = data_font
+            c.border = thin_border
+
+    ws.column_dimensions['A'].width = 32
+    for col_letter in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']:
+        ws.column_dimensions[col_letter].width = 36
+
+    xlsx_path = os.path.join(OUT_DIR, "Template_Role_03_Object.xlsx")
+    wb.save(xlsx_path)
+    print(f"[OK] Generated: {xlsx_path}")
+
+    # Convert using convert_role_03_object
+    try:
+        from convert_role_03_object import convert_role_03_object
+        convert_role_03_object(xlsx_path)
+    except ImportError:
+        import subprocess
+        script_path = os.path.join(os.path.dirname(__file__), "convert_role_03_object.py")
+        subprocess.run([sys.executable, script_path, xlsx_path], check=True)
+
+
 # --- 4. Composite Roles Template (Template_Roles_Composite.xlsx & CSV) ---
 def create_composite_template():
     wb = openpyxl.Workbook()
@@ -504,6 +565,7 @@ if __name__ == "__main__":
     create_master_template()
     create_derived_template()
     create_org_template()
+    create_object_template()
     create_composite_template()
     create_users_template()
     create_user_assign_role_template()

@@ -86,6 +86,20 @@
 
 ---
 
+## 3b. Authorization Objects & Activities (`convert_role_03_object.py`)
+
+- **Input**: Matrix with Roles in rows and Authorization Objects / Activities in columns.
+- **Object-Field Matching**: Resolves column headers against standard objects in [`excel-templates/Object_Levels.csv`](../excel-templates/Object_Levels.csv) (13,457 standard SAP object-field pairs). Supports direct `OBJECT-FIELD` (e.g. `F_BKPF_BUK-BUKRS`) or parenthesized descriptions (e.g. `Accounting Document - Activity (F_BKPF_BUK-ACTVT)`).
+- **Target Workflow**: Batch authorization object maintenance / upload for PFCG roles.
+- **Output CSV Columns**:
+  ```csv
+  Role,object-field,value
+  Z_FI_PERIOD_CONTROL_1000,F_BKPF_BUK-BUKRS,1000
+  Z_FI_PERIOD_CONTROL_1000,F_BKPF_BUK-ACTVT,01, 02, 03
+  ```
+
+---
+
 ## 4. Composite Roles (`convert_role_04_composite.py`)
 
 - **Input**: Matrix with Composite Roles in columns (Row 1: Description, Row 2: Composite Role ID) and Member Single Roles in Column 1.
