@@ -271,7 +271,12 @@ FORM parse_csv_line USING    iv_line TYPE string
   ENDIF.
   IF lines( lt_tokens ) >= 3.
     ev_col3 = lt_tokens[ 3 ].
-    ev_col3 = condense( ev_col3 ).
+    DATA(lv_trim_col3) = condense( ev_col3 ).
+    IF lv_trim_col3 = ''' ''' OR lv_trim_col3 = '''  '''.
+      ev_col3 = ''' '''.
+    ELSE.
+      ev_col3 = lv_trim_col3.
+    ENDIF.
   ENDIF.
   IF lines( lt_tokens ) >= 4.
     ev_col4 = lt_tokens[ 4 ].
@@ -307,18 +312,27 @@ FORM aggregate_input_data.
       lv_var = '$' && lv_var.
     ENDIF.
 
-    " Strip surrounding quotes or Excel formula wrapping (e.g. ="00000000" -> 00000000)
-    IF lv_low CP '="*"' OR lv_low CP '=*'.
-      REPLACE FIRST OCCURRENCE OF '="' IN lv_low WITH ''.
-      REPLACE FIRST OCCURRENCE OF '=' IN lv_low WITH ''.
-      REPLACE ALL OCCURRENCES OF '"' IN lv_low WITH ''.
-      lv_low = condense( lv_low ).
+    " Preserve valid empty/space value ' '
+    IF lv_low = ''' ''' OR lv_low = '''  ''' OR lv_low = '''   '''.
+      lv_low = ''' '''.
+    ELSE.
+      " Strip surrounding quotes or Excel formula wrapping (e.g. ="00000000" -> 00000000)
+      IF lv_low CP '="*"' OR lv_low CP '=*'.
+        REPLACE FIRST OCCURRENCE OF '="' IN lv_low WITH ''.
+        REPLACE FIRST OCCURRENCE OF '=' IN lv_low WITH ''.
+        REPLACE ALL OCCURRENCES OF '"' IN lv_low WITH ''.
+        lv_low = condense( lv_low ).
+      ENDIF.
     ENDIF.
-    IF lv_high CP '="*"' OR lv_high CP '=*'.
-      REPLACE FIRST OCCURRENCE OF '="' IN lv_high WITH ''.
-      REPLACE FIRST OCCURRENCE OF '=' IN lv_high WITH ''.
-      REPLACE ALL OCCURRENCES OF '"' IN lv_high WITH ''.
-      lv_high = condense( lv_high ).
+    IF lv_high = ''' ''' OR lv_high = '''  ''' OR lv_high = '''   '''.
+      lv_high = ''' '''.
+    ELSE.
+      IF lv_high CP '="*"' OR lv_high CP '=*'.
+        REPLACE FIRST OCCURRENCE OF '="' IN lv_high WITH ''.
+        REPLACE FIRST OCCURRENCE OF '=' IN lv_high WITH ''.
+        REPLACE ALL OCCURRENCES OF '"' IN lv_high WITH ''.
+        lv_high = condense( lv_high ).
+      ENDIF.
     ENDIF.
 
     " Handle potential ranges (LOW - HIGH or LOW:HIGH) if col4 is initial (backwards compatibility)
@@ -331,6 +345,29 @@ FORM aggregate_input_data.
         SPLIT lv_low AT ':' INTO lv_low lv_high.
         lv_low  = condense( lv_low ).
         lv_high = condense( lv_high ).
+      ENDIF.
+    ENDIF.
+
+    " Apply conversion exit ALPHA for $PRCTR and $KOSTL if pure digits (10 digits)
+    IF ( lv_var = '$PRCTR' OR lv_var = '$KOSTL' ).
+      IF lv_low CO '0123456789' AND lv_low IS NOT INITIAL.
+        DATA: lv_alpha_10 TYPE c LENGTH 10.
+        lv_alpha_10 = lv_low.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = lv_alpha_10
+          IMPORTING
+            output = lv_alpha_10.
+        lv_low = lv_alpha_10.
+      ENDIF.
+      IF lv_high CO '0123456789' AND lv_high IS NOT INITIAL.
+        lv_alpha_10 = lv_high.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = lv_alpha_10
+          IMPORTING
+            output = lv_alpha_10.
+        lv_high = lv_alpha_10.
       ENDIF.
     ENDIF.
 
@@ -535,60 +572,114 @@ FORM process_org_update.
     " 7. Build Updated Org Levels Table (PT1252)
     " -----------------------------------------------------------------
     LOOP AT lt_all_vars INTO DATA(lv_varbl).
-      CLEAR: lv_t_low, lv_t_high, lv_from_file.
+      CLEAR: lv_from_file.
 
-      " Priority 1: Value from input file
-      READ TABLE gt_role_orgs INTO DATA(ls_org_in)
-        WITH KEY agr_name = ls_role-agr_name varbl = lv_varbl.
-      IF sy-subrc = 0.
-        lv_t_low     = ls_org_in-val_low.
-        lv_t_high    = ls_org_in-val_high.
+      " Priority 1: Value from input file (supports multiple entries, e.g. range + ' ')
+      DATA: lt_file_orgs TYPE STANDARD TABLE OF ty_role_org.
+      CLEAR lt_file_orgs.
+      LOOP AT gt_role_orgs INTO DATA(ls_fo)
+        WHERE agr_name = ls_role-agr_name AND varbl = lv_varbl.
+        APPEND ls_fo TO lt_file_orgs.
+      ENDLOOP.
+
+      IF lt_file_orgs IS NOT INITIAL.
         lv_from_file = abap_true.
-        lv_match_cnt = lv_match_cnt + 1.
+        lv_match_cnt = lv_match_cnt + lines( lt_file_orgs ).
+
+        LOOP AT lt_file_orgs INTO DATA(ls_org_in).
+          APPEND VALUE pt1252(
+            varbl = lv_varbl
+            low   = ls_org_in-val_low
+            high  = ls_org_in-val_high
+          ) TO lt_pt1252.
+
+          IF lv_detail IS INITIAL.
+            lv_detail = |{ lv_varbl }={ ls_org_in-val_low }|.
+          ELSEIF strlen( lv_detail ) < 200.
+            lv_detail = |{ lv_detail }, { lv_varbl }={ ls_org_in-val_low }|.
+          ENDIF.
+        ENDLOOP.
       ELSE.
         " Priority 2: Keep existing value in AGR_1252 if maintained & valid (not empty, not $, not -1)
-        READ TABLE lt_curr_1252 INTO DATA(ls_c_exist)
-          WITH KEY varbl = lv_varbl.
-        IF sy-subrc = 0 AND ls_c_exist-low IS NOT INITIAL
-                        AND ls_c_exist-low <> '$'
-                        AND ls_c_exist-low <> '-1'.
-          lv_t_low  = ls_c_exist-low.
-          lv_t_high = ls_c_exist-high.
+        DATA: lt_curr_varbl_rows TYPE STANDARD TABLE OF agr_1252.
+        CLEAR lt_curr_varbl_rows.
+        LOOP AT lt_curr_1252 INTO DATA(ls_c_exist)
+          WHERE varbl = lv_varbl
+            AND low IS NOT INITIAL
+            AND low <> '$'
+            AND low <> '-1'.
+          APPEND ls_c_exist TO lt_curr_varbl_rows.
+        ENDLOOP.
+
+        IF lt_curr_varbl_rows IS NOT INITIAL.
+          LOOP AT lt_curr_varbl_rows INTO DATA(ls_c_keep).
+            APPEND VALUE pt1252(
+              varbl = lv_varbl
+              low   = ls_c_keep-low
+              high  = ls_c_keep-high
+            ) TO lt_pt1252.
+          ENDLOOP.
         ELSEIF p_astnon = abap_true.
           " Priority 3: Default unlisted Org Levels to '*' to guarantee GREEN status
-          lv_t_low = '*'.
-          CLEAR lv_t_high.
+          APPEND VALUE pt1252(
+            varbl = lv_varbl
+            low   = '*'
+            high  = space
+          ) TO lt_pt1252.
         ELSE.
           " Priority 4: Inherit from parent role if available
-          READ TABLE lt_parent_1252 INTO DATA(ls_p_exist)
-            WITH KEY varbl = lv_varbl.
-          IF sy-subrc = 0 AND ls_p_exist-low IS NOT INITIAL AND ls_p_exist-low <> '$'.
-            lv_t_low  = ls_p_exist-low.
-            lv_t_high = ls_p_exist-high.
+          DATA: lt_parent_varbl_rows TYPE STANDARD TABLE OF agr_1252.
+          CLEAR lt_parent_varbl_rows.
+          LOOP AT lt_parent_1252 INTO DATA(ls_p_exist)
+            WHERE varbl = lv_varbl
+              AND low IS NOT INITIAL
+              AND low <> '$'.
+            APPEND ls_p_exist TO lt_parent_varbl_rows.
+          ENDLOOP.
+
+          IF lt_parent_varbl_rows IS NOT INITIAL.
+            LOOP AT lt_parent_varbl_rows INTO DATA(ls_p_keep).
+              APPEND VALUE pt1252(
+                varbl = lv_varbl
+                low   = ls_p_keep-low
+                high  = ls_p_keep-high
+              ) TO lt_pt1252.
+            ENDLOOP.
           ELSE.
-            lv_t_low = '*'.
+            APPEND VALUE pt1252(
+              varbl = lv_varbl
+              low   = '*'
+              high  = space
+            ) TO lt_pt1252.
           ENDIF.
         ENDIF.
       ENDIF.
 
-      " Check if changed or newly added
-      READ TABLE lt_curr_1252 INTO DATA(ls_old_chk) WITH KEY varbl = lv_varbl.
-      IF sy-subrc <> 0 OR ls_old_chk-low <> lv_t_low OR ls_old_chk-high <> lv_t_high.
-        lv_chg_cnt = lv_chg_cnt + 1.
+      " Check if changed or newly added for this lv_varbl
+      DATA: lt_curr_chk TYPE STANDARD TABLE OF agr_1252,
+            lt_new_chk  TYPE STANDARD TABLE OF pt1252.
+      CLEAR: lt_curr_chk, lt_new_chk.
+      LOOP AT lt_curr_1252 INTO DATA(ls_cc) WHERE varbl = lv_varbl.
+        APPEND ls_cc TO lt_curr_chk.
+      ENDLOOP.
+      LOOP AT lt_pt1252 INTO DATA(ls_nc) WHERE varbl = lv_varbl.
+        APPEND ls_nc TO lt_new_chk.
+      ENDLOOP.
+
+      DATA(lv_var_changed) = abap_false.
+      IF lines( lt_curr_chk ) <> lines( lt_new_chk ).
+        lv_var_changed = abap_true.
+      ELSE.
+        LOOP AT lt_new_chk INTO DATA(ls_nc_row).
+          READ TABLE lt_curr_chk WITH KEY low = ls_nc_row-low high = ls_nc_row-high TRANSPORTING NO FIELDS.
+          IF sy-subrc <> 0.
+            lv_var_changed = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
       ENDIF.
-
-      APPEND VALUE pt1252(
-        varbl = lv_varbl
-        low   = lv_t_low
-        high  = lv_t_high
-      ) TO lt_pt1252.
-
-      IF lv_from_file = abap_true.
-        IF lv_detail IS INITIAL.
-          lv_detail = |{ lv_varbl }={ lv_t_low }|.
-        ELSEIF strlen( lv_detail ) < 200.
-          lv_detail = |{ lv_detail }, { lv_varbl }={ lv_t_low }|.
-        ENDIF.
+      IF lv_var_changed = abap_true.
+        lv_chg_cnt = lv_chg_cnt + 1.
       ENDIF.
     ENDLOOP.
 

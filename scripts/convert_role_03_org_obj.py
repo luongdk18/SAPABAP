@@ -309,9 +309,12 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_p
         matched_pairs = []
 
         for t in tokens:
+            # Strip 'FIELD ' or 'FLD ' prefix if present, e.g. "FIELD PS_ACTVT" -> "PS_ACTVT"
+            t_clean_fld = re.sub(r'^(FIELD|FLD)\s+', '', t)
+
             # Token is an explicit OBJECT-FIELD (e.g. F_BKPF_BUK-BUKRS or F_BKPF_BUK:BUKRS)
-            if '-' in t or ':' in t or '.' in t:
-                norm_pair = re.sub(r'[:.]', '-', t)
+            if '-' in t_clean_fld or ':' in t_clean_fld or '.' in t_clean_fld:
+                norm_pair = re.sub(r'[:.]', '-', t_clean_fld)
                 fld_cand = norm_pair.split('-')[1] if '-' in norm_pair else ''
                 # Protect: If field belongs to Org Levels, redirect to Org Level
                 if fld_cand in org_ref_map:
@@ -320,8 +323,8 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_p
                 continue
 
             # Token is an OBJECT name (e.g. K_KEKO, C_PROJ_VNR, C_PRPS_VNR)
-            if t in obj_fields_map:
-                fields = obj_fields_map[t]
+            if t_clean_fld in obj_fields_map:
+                fields = obj_fields_map[t_clean_fld]
                 chosen = None
                 # First check if field description or field name matches header
                 for fld, fdesc, odesc, p in fields:
@@ -340,10 +343,10 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_p
                 if chosen and chosen not in matched_pairs:
                     matched_pairs.append(chosen)
 
-            # Token is a FIELD name (e.g. FRGGR, FRGCO, LGORT, KOSTL, AUFART)
+            # Token is a FIELD name (e.g. FRGGR, FRGCO, LGORT, KOSTL, AUFART, PS_ACTVT)
             # Match ALL objects in SAP containing this field!
-            if t in field_pairs_map:
-                for p in field_pairs_map[t]:
+            if t_clean_fld in field_pairs_map:
+                for p in field_pairs_map[t_clean_fld]:
                     if p not in matched_pairs:
                         matched_pairs.append(p)
 
@@ -368,16 +371,51 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_p
     return None
 
 
-def parse_low_high_values(raw_val):
+def _format_cell_token(v, field_name=None):
+    """
+    Formats an individual token: normalizes space quotes and applies SAP domain conversion exit rules:
+    - Space in quotes: ' ' or " " -> "' '"
+    - PS_VERNR / Person Responsible: NUMC 8 -> zfill(8) (e.g. 30 -> 00000030)
+    - PRCTR / Profit Center ($PRCTR): CHAR 10 with ALPHA conversion exit -> zfill(10) (e.g. 11010100 -> 0011010100)
+    - KOSTL / Cost Center: CHAR 10 with ALPHA conversion exit -> zfill(10)
+    """
+    v = str(v).strip()
+    # Normalize space quotes: if user has ' ' or " " or '  '
+    if re.match(r"^['\"][\s]*['\"]$", v):
+        return "' '"
+    
+    fn_upper = str(field_name or '').upper()
+
+    # Check if PS_VERNR padding is needed (NUMC 8)
+    if any(k in fn_upper for k in ('VERNR', 'PERSON RESPONSIBLE')):
+        if v.isdigit() and len(v) < 8:
+            return v.zfill(8)
+
+    # Check if PRCTR / Profit Center padding is needed (CHAR 10, Conversion Exit ALPHA)
+    if any(k in fn_upper for k in ('PRCTR', 'PROFIT CENTER', '$PRCTR')):
+        if v.isdigit() and len(v) < 10:
+            return v.zfill(10)
+
+    # Check if KOSTL / Cost Center padding is needed (CHAR 10, Conversion Exit ALPHA)
+    if any(k in fn_upper for k in ('KOSTL', 'COST CENTER', '$KOSTL')):
+        if v.isdigit() and len(v) < 10:
+            return v.zfill(10)
+
+    return v
+
+
+def parse_low_high_values(raw_val, field_name=None):
     """
     Parses cell content into pairs of (value-low, value-high).
     Preserves leading zeros and guarantees data integrity.
 
     Rules:
-    - 1 value (e.g. '*', '1100', '1101*') -> [(val, '')]
-    - 2 values separated by ';', ',', '\\n' (e.g. '00000000; 00000080') -> [('00000000', '00000080')]
-    - Ranges with ' - ', ':', or '-' (e.g. '1000 - 2000', '00000000-00000080') -> [(low, high)]
-    - Multiple ranges or values -> list of (low, high) pairs
+    - Preserves exact ' ' if string is literally ' ' or " ' ".
+    - Semicolons (;), commas (,), and newlines (\n) separate distinct values.
+    - Ranges are ONLY denoted by ' - ' or ':' or an explicit numeric range '1000-2000'.
+    - Special SAP value `' '` (a space in quotes) is preserved as ("' '", "").
+    - If field_name is PS_VERNR (or Person Responsible) and value is numeric with length < 8,
+      it is zero-padded to 8 digits (e.g. 30 -> 00000030, 80 -> 00000080).
     """
     if raw_val is None:
         return []
@@ -385,73 +423,59 @@ def parse_low_high_values(raw_val):
     if not s or s.lower() in ('none', 'n/a', '-'):
         return []
 
+    # Normalize space quotes directly if the whole cell is ' '
+    if re.match(r"^['\"][\s]*['\"]$", s):
+        return [("' '", '')]
+
     # Replace newlines with semicolon
     normalized = s.replace('\r\n', ';').replace('\n', ';').replace('\r', ';')
 
-    # Split by semicolon
-    tokens = [t.strip() for t in normalized.split(';') if t.strip() and t.strip().lower() not in ('none', 'n/a', '-')]
-    if not tokens:
+    # Split by semicolon first
+    raw_tokens = [t.strip() for t in normalized.split(';') if t.strip() and t.strip().lower() not in ('none', 'n/a', '-')]
+    if not raw_tokens:
         return []
 
-    # If 1 token, check comma, hyphen range, colon, or single
-    if len(tokens) == 1:
-        single = tokens[0]
-        # Check range with ' - '
-        if ' - ' in single:
-            parts = [p.strip() for p in single.split(' - ') if p.strip()]
-            if len(parts) == 2:
-                return [(parts[0], parts[1])]
-        elif ':' in single:
-            parts = [p.strip() for p in single.split(':') if p.strip()]
-            if len(parts) == 2:
-                return [(parts[0], parts[1])]
+    # For each token, check if it contains comma-separated values (e.g. '03, F4')
+    # BUT do not split if within quotes
+    split_tokens = []
+    for tok in raw_tokens:
+        if ',' in tok and not (tok.startswith("'") and tok.endswith("'")):
+            comma_parts = [p.strip() for p in tok.split(',') if p.strip()]
+            split_tokens.extend(comma_parts)
+        else:
+            split_tokens.append(tok)
 
-        # Check comma separated (e.g. '00000000, 00000080')
-        if ',' in single:
-            comma_parts = [p.strip() for p in single.split(',') if p.strip()]
-            if len(comma_parts) == 2:
-                return [(comma_parts[0], comma_parts[1])]
-            elif len(comma_parts) > 2:
-                return [(p, '') for p in comma_parts]
-
-        # Check hyphen range without spaces: e.g. 00000000-00000080 or 1000-2000
-        m_rng = re.match(r'^([A-Za-z0-9_*]+)\s*-\s*([A-Za-z0-9_*]+)$', single)
-        if m_rng:
-            v1, v2 = m_rng.group(1), m_rng.group(2)
-            if v1.isdigit() and v2.isdigit():
-                return [(v1, v2)]
-            elif v1.isalpha() and v2.isalpha() and len(v1) == len(v2) and v1 < v2:
-                return [(v1, v2)]
-
-        return [(single, '')]
-
-    # If exactly 2 tokens (e.g. from '00000000; 00000080' or '00000000;\n00000030')
-    if len(tokens) == 2:
-        t1, t2 = tokens[0], tokens[1]
-        # If neither is already an explicit range, treat as (value-low, value-high)
-        if ' - ' not in t1 and ' - ' not in t2:
-            return [(t1, t2)]
-
-    # If multiple tokens, parse each token individually
     results = []
-    for t in tokens:
+    for t in split_tokens:
+        # Check range with ' - '
         if ' - ' in t:
             parts = [p.strip() for p in t.split(' - ') if p.strip()]
             if len(parts) == 2:
-                results.append((parts[0], parts[1]))
+                v1 = _format_cell_token(parts[0], field_name)
+                v2 = _format_cell_token(parts[1], field_name)
+                results.append((v1, v2))
                 continue
+        # Check range with ':'
         elif ':' in t:
             parts = [p.strip() for p in t.split(':') if p.strip()]
             if len(parts) == 2:
-                results.append((parts[0], parts[1]))
-                continue
-        m_rng = re.match(r'^([A-Za-z0-9_*]+)\s*-\s*([A-Za-z0-9_*]+)$', t)
-        if m_rng:
-            v1, v2 = m_rng.group(1), m_rng.group(2)
-            if v1.isdigit() and v2.isdigit():
+                v1 = _format_cell_token(parts[0], field_name)
+                v2 = _format_cell_token(parts[1], field_name)
                 results.append((v1, v2))
                 continue
-        results.append((t, ''))
+
+        # Check numeric hyphen range without spaces: e.g. 1000-2000
+        m_rng = re.match(r'^([0-9]+)\s*-\s*([0-9]+)$', t)
+        if m_rng:
+            v1 = _format_cell_token(m_rng.group(1), field_name)
+            v2 = _format_cell_token(m_rng.group(2), field_name)
+            results.append((v1, v2))
+            continue
+
+        # Single value
+        v = _format_cell_token(t, field_name)
+        results.append((v, ''))
+
     return results
 
 
@@ -587,19 +611,28 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     # Process Data Rows
     org_rows = []
     obj_rows = []
-    roles_processed = 0
+    roles_processed = set()
+    current_role = None
 
     for r in range(header_row + 1, ws.max_row + 1):
         role_val = ws.cell(r, role_col).value
-        if role_val is None:
-            continue
-        role_name = str(role_val).strip()
-        if not role_name or role_name.lower() in ('none', 'role', 'derived role', 'role name'):
+        if role_val is not None and str(role_val).strip() and str(role_val).strip().lower() not in ('none', 'role', 'derived role', 'role name'):
+            current_role = str(role_val).strip()
+
+        if not current_role:
             continue
 
-        roles_processed += 1
+        # Check if row has any non-empty data in classified columns
+        has_data = any(
+            ws.cell(r, c).value is not None and str(ws.cell(r, c).value).strip() not in ('', 'None', 'n/a', '-')
+            for c, _, _, _ in classified_cols
+        )
+        if not has_data:
+            continue
 
-        for c, kind, idents, _ in classified_cols:
+        roles_processed.add(current_role)
+
+        for c, kind, idents, h_text in classified_cols:
             val_cell = ws.cell(r, c).value
             if val_cell is None:
                 continue
@@ -613,20 +646,25 @@ def convert_role_03_org_obj(input_path, output_dir=None):
                 continue
 
             # Multi-value & Range Parsing:
-            # Parses cell content into pairs of (value-low, value-high)
-            pairs = parse_low_high_values(raw_val)
+            # Passes combined field context (header text + SAP idents) for domain conversion padding (ALPHA, NUMC)
+            full_context = f"{h_text} {' '.join(idents)}"
+            pairs = parse_low_high_values(raw_val, field_name=full_context)
             if not pairs:
                 continue
 
-            # Populate rows
+            # Populate rows (with deduplication)
             if kind == 'ORG':
                 for varbl in idents:
                     for v_low, v_high in pairs:
-                        org_rows.append([role_name, varbl, v_low, v_high])
+                        row_entry = [current_role, varbl, v_low, v_high]
+                        if row_entry not in org_rows:
+                            org_rows.append(row_entry)
             elif kind == 'OBJECT':
                 for obj_field in idents:
                     for v_low, v_high in pairs:
-                        obj_rows.append([role_name, obj_field, v_low, v_high])
+                        row_entry = [current_role, obj_field, v_low, v_high]
+                        if row_entry not in obj_rows:
+                            obj_rows.append(row_entry)
 
     # Write Org CSV
     try:
@@ -634,7 +672,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
             writer = csv.writer(f)
             writer.writerow(["Role", "Org_Level", "value-low", "value-high"])
             writer.writerows(org_rows)
-        print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {roles_processed} roles)")
+        print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {len(roles_processed)} roles)")
     except Exception as e:
         print(f"[ERROR] Could not write Org Levels CSV '{out_org_path}': {e}")
         return False
@@ -645,7 +683,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
             writer = csv.writer(f)
             writer.writerow(["Role", "object-field", "value-low", "value-high"])
             writer.writerows(obj_rows)
-        print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {roles_processed} roles)")
+        print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {len(roles_processed)} roles)")
     except Exception as e:
         print(f"[ERROR] Could not write Auth Objects CSV '{out_obj_path}': {e}")
         return False

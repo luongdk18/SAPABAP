@@ -47,6 +47,11 @@ TYPES: BEGIN OF ty_role_auth,
          val_high TYPE xuval,
        END OF ty_role_auth.
 
+TYPES: BEGIN OF ty_obj_fld,
+         object TYPE xuobject,
+         field  TYPE xufield,
+       END OF ty_obj_fld.
+
 TYPES: BEGIN OF ty_alv_result,
          status        TYPE char12,    " Status Icon: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action        TYPE char12,    " Action: UPDATED / UP-TO-DATE / SIMULATE / ERROR
@@ -270,7 +275,12 @@ FORM parse_csv_line USING    iv_line TYPE string
   ENDIF.
   IF lines( lt_tokens ) >= 3.
     ev_col3 = lt_tokens[ 3 ].
-    ev_col3 = condense( ev_col3 ).
+    DATA(lv_trim_col3) = condense( ev_col3 ).
+    IF lv_trim_col3 = ''' ''' OR lv_trim_col3 = '''  '''.
+      ev_col3 = ''' '''.
+    ELSE.
+      ev_col3 = lv_trim_col3.
+    ENDIF.
   ENDIF.
   IF lines( lt_tokens ) >= 4.
     ev_col4 = lt_tokens[ 4 ].
@@ -321,18 +331,27 @@ FORM aggregate_input_data.
       CONTINUE.
     ENDIF.
 
-    " Strip surrounding quotes or Excel formula wrapping (e.g. ="00000000" -> 00000000)
-    IF lv_low CP '="*"' OR lv_low CP '=*'.
-      REPLACE FIRST OCCURRENCE OF '="' IN lv_low WITH ''.
-      REPLACE FIRST OCCURRENCE OF '=' IN lv_low WITH ''.
-      REPLACE ALL OCCURRENCES OF '"' IN lv_low WITH ''.
-      lv_low = condense( lv_low ).
+    " Preserve valid empty/space value ' '
+    IF lv_low = ''' ''' OR lv_low = '''  ''' OR lv_low = '''   '''.
+      lv_low = ''' '''.
+    ELSE.
+      " Strip surrounding quotes or Excel formula wrapping (e.g. ="00000000" -> 00000000)
+      IF lv_low CP '="*"' OR lv_low CP '=*'.
+        REPLACE FIRST OCCURRENCE OF '="' IN lv_low WITH ''.
+        REPLACE FIRST OCCURRENCE OF '=' IN lv_low WITH ''.
+        REPLACE ALL OCCURRENCES OF '"' IN lv_low WITH ''.
+        lv_low = condense( lv_low ).
+      ENDIF.
     ENDIF.
-    IF lv_high CP '="*"' OR lv_high CP '=*'.
-      REPLACE FIRST OCCURRENCE OF '="' IN lv_high WITH ''.
-      REPLACE FIRST OCCURRENCE OF '=' IN lv_high WITH ''.
-      REPLACE ALL OCCURRENCES OF '"' IN lv_high WITH ''.
-      lv_high = condense( lv_high ).
+    IF lv_high = ''' ''' OR lv_high = '''  ''' OR lv_high = '''   '''.
+      lv_high = ''' '''.
+    ELSE.
+      IF lv_high CP '="*"' OR lv_high CP '=*'.
+        REPLACE FIRST OCCURRENCE OF '="' IN lv_high WITH ''.
+        REPLACE FIRST OCCURRENCE OF '=' IN lv_high WITH ''.
+        REPLACE ALL OCCURRENCES OF '"' IN lv_high WITH ''.
+        lv_high = condense( lv_high ).
+      ENDIF.
     ENDIF.
 
     " Parse potential ranges (LOW - HIGH or LOW:HIGH) if col4 is initial (backwards compatibility)
@@ -345,6 +364,49 @@ FORM aggregate_input_data.
         SPLIT lv_low AT ':' INTO lv_low lv_high.
         lv_low  = condense( lv_low ).
         lv_high = condense( lv_high ).
+      ENDIF.
+    ENDIF.
+
+    " Apply conversion exit ALPHA for PS_VERNR (8 digits) and KOSTL / PRCTR (10 digits) if pure digits
+    IF lv_field = 'PS_VERNR'.
+      IF lv_low CO '0123456789' AND lv_low IS NOT INITIAL.
+        DATA: lv_vnr_8 TYPE c LENGTH 8.
+        lv_vnr_8 = lv_low.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = lv_vnr_8
+          IMPORTING
+            output = lv_vnr_8.
+        lv_low = lv_vnr_8.
+      ENDIF.
+      IF lv_high CO '0123456789' AND lv_high IS NOT INITIAL.
+        lv_vnr_8 = lv_high.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = lv_vnr_8
+          IMPORTING
+            output = lv_vnr_8.
+        lv_high = lv_vnr_8.
+      ENDIF.
+    ELSEIF lv_field = 'KOSTL' OR lv_field = 'PRCTR'.
+      IF lv_low CO '0123456789' AND lv_low IS NOT INITIAL.
+        DATA: lv_alpha_obj_10 TYPE c LENGTH 10.
+        lv_alpha_obj_10 = lv_low.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = lv_alpha_obj_10
+          IMPORTING
+            output = lv_alpha_obj_10.
+        lv_low = lv_alpha_obj_10.
+      ENDIF.
+      IF lv_high CO '0123456789' AND lv_high IS NOT INITIAL.
+        lv_alpha_obj_10 = lv_high.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = lv_alpha_obj_10
+          IMPORTING
+            output = lv_alpha_obj_10.
+        lv_high = lv_alpha_obj_10.
       ENDIF.
     ENDIF.
 
@@ -428,55 +490,85 @@ FORM process_object_update.
     SELECT * FROM agr_1251 INTO TABLE @lt_curr_1251
       WHERE agr_name = @ls_role-agr_name.
 
+    " Assemble distinct (object, field) pairs from input file for this role
+    DATA: lt_distinct_of TYPE STANDARD TABLE OF ty_obj_fld.
+    CLEAR lt_distinct_of.
+
+    LOOP AT gt_role_auths INTO DATA(ls_raw_auth) WHERE agr_name = ls_role-agr_name.
+      READ TABLE lt_distinct_of WITH KEY object = ls_raw_auth-object field = ls_raw_auth-field TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND VALUE ty_obj_fld( object = ls_raw_auth-object field = ls_raw_auth-field ) TO lt_distinct_of.
+      ENDIF.
+    ENDLOOP.
+
     " -----------------------------------------------------------------
-    " 3. Validate Each Object-Field Against Real Role Data
+    " 3. Validate Each Distinct Object-Field Against Real Role Data
     "    Strict Rule: Only update if OBJECT exists in AGR_1250
     "                 AND FIELD exists in AGR_1251.
     "                 DO NOT add foreign objects from CSV into role!
     " -----------------------------------------------------------------
-    LOOP AT gt_role_auths INTO DATA(ls_in) WHERE agr_name = ls_role-agr_name.
+    LOOP AT lt_distinct_of INTO DATA(ls_of).
       " Check 1: Does OBJECT exist in role?
-      READ TABLE lt_curr_1250 WITH KEY object = ls_in-object TRANSPORTING NO FIELDS.
+      READ TABLE lt_curr_1250 WITH KEY object = ls_of-object TRANSPORTING NO FIELDS.
       IF sy-subrc <> 0.
         lv_skip_cnt = lv_skip_cnt + 1.
         IF lv_skip_det IS INITIAL.
-          lv_skip_det = |{ ls_in-object }-{ ls_in-field }|.
+          lv_skip_det = |{ ls_of-object }-{ ls_of-field }|.
         ELSEIF strlen( lv_skip_det ) < 150.
-          lv_skip_det = |{ lv_skip_det }, { ls_in-object }-{ ls_in-field }|.
+          lv_skip_det = |{ lv_skip_det }, { ls_of-object }-{ ls_of-field }|.
         ENDIF.
         CONTINUE.
       ENDIF.
 
       " Check 2: Does FIELD exist under this OBJECT in role?
-      READ TABLE lt_curr_1251 WITH KEY object = ls_in-object field = ls_in-field TRANSPORTING NO FIELDS.
+      READ TABLE lt_curr_1251 WITH KEY object = ls_of-object field = ls_of-field TRANSPORTING NO FIELDS.
       IF sy-subrc <> 0.
         lv_skip_cnt = lv_skip_cnt + 1.
         IF lv_skip_det IS INITIAL.
-          lv_skip_det = |{ ls_in-object }-{ ls_in-field }|.
+          lv_skip_det = |{ ls_of-object }-{ ls_of-field }|.
         ELSEIF strlen( lv_skip_det ) < 150.
-          lv_skip_det = |{ lv_skip_det }, { ls_in-object }-{ ls_in-field }|.
+          lv_skip_det = |{ lv_skip_det }, { ls_of-object }-{ ls_of-field }|.
         ENDIF.
         CONTINUE.
       ENDIF.
 
-      " Check 3: Check if value needs to be updated
-      DATA(lv_field_changed) = abap_false.
-      LOOP AT lt_curr_1251 ASSIGNING FIELD-SYMBOL(<ls_c1251>)
-        WHERE object = ls_in-object AND field = ls_in-field.
-        IF <ls_c1251>-low <> ls_in-val_low OR <ls_c1251>-high <> ls_in-val_high.
-          lv_field_changed = abap_true.
-          <ls_c1251>-low      = ls_in-val_low.
-          <ls_c1251>-high     = ls_in-val_high.
-          <ls_c1251>-modified = 'G'. " Changed / Maintained
-        ENDIF.
+      " Check 3: Check if values differ between file and role
+      DATA: lt_new_vals TYPE STANDARD TABLE OF ty_role_auth,
+            lt_cur_vals TYPE STANDARD TABLE OF agr_1251.
+      CLEAR: lt_new_vals, lt_cur_vals.
+
+      LOOP AT gt_role_auths INTO DATA(ls_n)
+        WHERE agr_name = ls_role-agr_name AND object = ls_of-object AND field = ls_of-field.
+        APPEND ls_n TO lt_new_vals.
       ENDLOOP.
+
+      LOOP AT lt_curr_1251 INTO DATA(ls_c)
+        WHERE object = ls_of-object AND field = ls_of-field.
+        APPEND ls_c TO lt_cur_vals.
+      ENDLOOP.
+
+      DATA(lv_field_changed) = abap_false.
+      IF lines( lt_new_vals ) <> lines( lt_cur_vals ).
+        lv_field_changed = abap_true.
+      ELSE.
+        LOOP AT lt_new_vals INTO DATA(ls_nv).
+          READ TABLE lt_cur_vals WITH KEY low = ls_nv-val_low high = ls_nv-val_high TRANSPORTING NO FIELDS.
+          IF sy-subrc <> 0.
+            lv_field_changed = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
 
       IF lv_field_changed = abap_true.
         lv_upd_cnt = lv_upd_cnt + 1.
-        IF lv_upd_det IS INITIAL.
-          lv_upd_det = |{ ls_in-object }-{ ls_in-field }={ ls_in-val_low }|.
-        ELSEIF strlen( lv_upd_det ) < 150.
-          lv_upd_det = |{ lv_upd_det }, { ls_in-object }-{ ls_in-field }={ ls_in-val_low }|.
+        READ TABLE lt_new_vals INTO DATA(ls_first_nv) INDEX 1.
+        IF sy-subrc = 0.
+          IF lv_upd_det IS INITIAL.
+            lv_upd_det = |{ ls_of-object }-{ ls_of-field }={ ls_first_nv-val_low }|.
+          ELSEIF strlen( lv_upd_det ) < 150.
+            lv_upd_det = |{ lv_upd_det }, { ls_of-object }-{ ls_of-field }={ ls_first_nv-val_low }|.
+          ENDIF.
         ENDIF.
       ENDIF.
     ENDLOOP.
@@ -528,18 +620,50 @@ FORM process_object_update.
           OTHERS            = 2.
 
       " Apply modifications to matching objects and fields in internal table
-      LOOP AT gt_role_auths INTO DATA(ls_upd) WHERE agr_name = ls_role-agr_name.
+      LOOP AT lt_distinct_of INTO ls_of.
         " Only update if object and field exist in role
-        READ TABLE lt_curr_1250 WITH KEY object = ls_upd-object TRANSPORTING NO FIELDS.
-        IF sy-subrc = 0.
-          LOOP AT lt_pt1251 ASSIGNING FIELD-SYMBOL(<ls_fld>)
-            WHERE object = ls_upd-object
-              AND field  = ls_upd-field.
-            <ls_fld>-low      = ls_upd-val_low.
-            <ls_fld>-high     = ls_upd-val_high.
-            <ls_fld>-modified = 'U'.
-          ENDLOOP.
+        READ TABLE lt_curr_1250 WITH KEY object = ls_of-object TRANSPORTING NO FIELDS.
+        IF sy-subrc <> 0.
+          CONTINUE.
         ENDIF.
+        READ TABLE lt_curr_1251 WITH KEY object = ls_of-object field = ls_of-field TRANSPORTING NO FIELDS.
+        IF sy-subrc <> 0.
+          CONTINUE.
+        ENDIF.
+
+        " Find all distinct authorization IDs (AUTH) for this object & field in lt_pt1251
+        DATA: lt_auth_ids TYPE STANDARD TABLE OF xuauth.
+        CLEAR lt_auth_ids.
+        LOOP AT lt_pt1251 INTO DATA(ls_p) WHERE object = ls_of-object AND field = ls_of-field.
+          READ TABLE lt_auth_ids WITH KEY table_line = ls_p-auth TRANSPORTING NO FIELDS.
+          IF sy-subrc <> 0.
+            APPEND ls_p-auth TO lt_auth_ids.
+          ENDIF.
+        ENDLOOP.
+
+        " For each AUTH instance, replace old field rows with new values from gt_role_auths
+        LOOP AT lt_auth_ids INTO DATA(lv_auth_id).
+          READ TABLE lt_pt1251 INTO DATA(ls_tmpl)
+            WITH KEY object = ls_of-object auth = lv_auth_id field = ls_of-field.
+          IF sy-subrc = 0.
+            DELETE lt_pt1251 WHERE object = ls_of-object AND auth = lv_auth_id AND field = ls_of-field.
+
+            LOOP AT gt_role_auths INTO DATA(ls_new)
+              WHERE agr_name = ls_role-agr_name
+                AND object   = ls_of-object
+                AND field    = ls_of-field.
+              APPEND VALUE pt1251(
+                object   = ls_of-object
+                auth     = lv_auth_id
+                variant  = ls_tmpl-variant
+                field    = ls_of-field
+                low      = ls_new-val_low
+                high     = ls_new-val_high
+                modified = 'U'
+              ) TO lt_pt1251.
+            ENDLOOP.
+          ENDIF.
+        ENDLOOP.
       ENDLOOP.
 
       " Save via standard PFCG FM (replaces direct OpenSQL UPDATE on AGR_1251)

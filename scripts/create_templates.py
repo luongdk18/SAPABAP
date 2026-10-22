@@ -115,14 +115,16 @@ def create_consolidated_role_template():
         "Controlling area\n($KOKRS)",
         "Company Code ($BUKRS)",
         "Plant / Valuation Area",
-        "Profit Center",
+        "Profit Center (C_PROJ_PRC, C_PRPS_PRC)",
         "Cost center",
         "Order type",
         "Asset Class",
         "Segment",
         "Business Place",
         "Credit segment",
-        "Costing variant (K_KEKO)"
+        "Costing variant (K_KEKO)",
+        "Person Responsible (C_PROJ_VNR-PS_VERNR, C_PRPS_VNR-PS_VERNR)",
+        "Project System (Field PS_ACTVT)"
     ]
 
     for col_idx, h in enumerate(headers_s2, start=1):
@@ -135,37 +137,46 @@ def create_consolidated_role_template():
 
     derived_rows = [
         ("Z_FI_PERIOD_CONTROL", "Z_FI_PERIOD_CONTROL_1000", "GL Period Control - CC 1000",
-         "1000", "1000", "1000", "1000", "1000*", "1000*", "*", "*", "*", "*", "*", "*"),
+         "1000", "1000", "1000", "1000", "10000100 - 10009899; ' '", "1000*", "*", "*", "*", "*", "*", "*",
+         "00000000; 00000080", "*"),
         ("Z_FI_PERIOD_CONTROL", "Z_FI_PERIOD_CONTROL_2000", "GL Period Control - CC 2000",
-         "1000", "1000", "2000", "2000", "2000*", "2000*", "*", "*", "*", "*", "*", "*"),
+         "1000", "1000", "2000", "2000", "' '", "2000*", "*", "*", "*", "*", "*", "*",
+         "*", "03, F4"),
         ("Z_FI_GL_MASTER_MAINT", "Z_FI_GL_MASTER_MAINT_1000", "GL Master Data Maint - CC 1000",
-         "1000", "1000", "1000", "1000", "1000*", "1000*", "*", "*", "*", "*", "*", "*"),
+         "1000", "1000", "1000", "1000", "10009930; ' '", "1000*", "*", "*", "*", "*", "*", "*",
+         "00000000;", "*"),
+        (None, None, None,
+         None, None, None, None, None, "*", None, None, None, None, None, None,
+         30, None),
         ("Z_FI_GL_MASTER_MAINT", "Z_FI_GL_MASTER_MAINT_2000", "GL Master Data Maint - CC 2000",
-         "1000", "1000", "2000", "2000", "2000*", "2000*", "*", "*", "*", "*", "*", "*"),
+         "1000", "1000", "2000", "2000", "20000100 - 20009899; ' '", "2000*", "*", "*", "*", "*", "*", "*",
+         "*", "03, F4"),
         ("Z_FI_JOURNAL_POST", "Z_FI_JOURNAL_POST_1000", "General Ledger Posting - CC 1000",
-         "1000", "1000", "1000", "1000", "1000*", "1000*", "*", "*", "*", "*", "*", "*"),
+         "1000", "1000", "1000", "1000", "1000*", "1000*", "*", "*", "*", "*", "*", "*",
+         "*", "*"),
         ("Z_FI_JOURNAL_POST", "Z_FI_JOURNAL_POST_2000", "General Ledger Posting - CC 2000",
-         "1000", "1000", "2000", "2000", "2000*", "2000*", "*", "*", "*", "*", "*", "*"),
+         "1000", "1000", "2000", "2000", "2000*", "2000*", "*", "*", "*", "*", "*", "*",
+         "*", "*"),
     ]
 
     for row_idx, r_data in enumerate(derived_rows, start=2):
         for col_idx, val in enumerate(r_data, start=1):
             c = ws2.cell(row_idx, col_idx, value=val)
-            if col_idx in (1, 2):
+            if col_idx in (1, 2) and val:
                 c.font = role_name_font
                 c.fill = role_name_fill
             else:
                 c.font = data_font
-                if col_idx > 3:
+                if col_idx > 3 and val:
                     c.alignment = center_align
             c.border = thin_border
 
     ws2.column_dimensions['A'].width = 28
     ws2.column_dimensions['B'].width = 32
     ws2.column_dimensions['C'].width = 35
-    for col_idx in range(4, 16):
+    for col_idx in range(4, 18):
         col_letter = openpyxl.utils.get_column_letter(col_idx)
-        ws2.column_dimensions[col_letter].width = 24
+        ws2.column_dimensions[col_letter].width = 28
 
     # -------------------------------------------------------------
     # Sheet 3: Composite Roles
