@@ -1,6 +1,6 @@
-# 🏢 Z_ROLE_03_UPDATE_ORG: Batch Organizational Levels Maintenance
+# 🏢 Z_ROLE_03A_UPDATE_ORG: Batch Organizational Levels Maintenance
 
-> **Source Code**: [`src/z_role_03_update_org.prog.abap`](../src/z_role_03_update_org.prog.abap)  
+> **Source Code**: [`src/z_role_03a_update_org.prog.abap`](../src/z_role_03a_update_org.prog.abap)  
 > **Companion Script**: [`scripts/convert_role_03_org_obj.py`](../scripts/convert_role_03_org_obj.py)  
 > **Org Levels Reference**: [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv)  
 > **Sample CSV**: [`excel-templates/converted/Template_Role_03a_Org_Levels_converted.csv`](../excel-templates/converted/Template_Role_03a_Org_Levels_converted.csv)
@@ -12,7 +12,7 @@ Automates the mass maintenance and update of **Organizational Levels** (`AGR_125
 ## 📌 Workflow
 
 ```
-[ Input CSV: Role Name, Org Variable ($VARBL), Org Value ]
+[ Input CSV: Role Name, Org Variable ($VARBL), Org Value-Low, Org Value-High ]
             │
             ▼  Upload via GUI_UPLOAD (UTF-8)
 [ Validate Role Existence in AGR_DEFINE ]
@@ -95,5 +95,7 @@ DRPS00_PRJ_STRUC_MAIN_1101_A,$WERKS,*,
 ## 🚀 Deployment
 
 ```bash
+npm run deploy:role:03a
+# or deploy both 03a and 03b together:
 npm run deploy:role:03
 ```

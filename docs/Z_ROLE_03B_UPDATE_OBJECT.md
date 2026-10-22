@@ -1,6 +1,6 @@
-# 🛡️ Z_ROLE_03_UPDATE_OBJECT: Batch Authorization Objects Maintenance
+# 🛡️ Z_ROLE_03B_UPDATE_OBJECT: Batch Authorization Objects Maintenance
 
-> **Source Code**: [`src/z_role_03_update_object.prog.abap`](../src/z_role_03_update_object.prog.abap)  
+> **Source Code**: [`src/z_role_03b_update_object.prog.abap`](../src/z_role_03b_update_object.prog.abap)  
 > **Companion Script**: [`scripts/convert_role_03_org_obj.py`](../scripts/convert_role_03_org_obj.py)  
 > **Sample CSV**: [`excel-templates/converted/Template_Role_03b_Auth_Objects_converted.csv`](../excel-templates/converted/Template_Role_03b_Auth_Objects_converted.csv)
 
@@ -11,7 +11,7 @@ Automates the mass maintenance and update of **Authorization Objects & Fields** 
 ## 📌 Workflow
 
 ```
-[ Input CSV: Role Name, Object-Field (OBJECT-FIELD), Value ]
+[ Input CSV: Role Name, Object-Field (OBJECT-FIELD), Value-Low, Value-High ]
             │
             ▼  Upload via GUI_UPLOAD (UTF-8)
 [ Validate Role Existence in AGR_DEFINE ]
@@ -45,8 +45,10 @@ Automates the mass maintenance and update of **Authorization Objects & Fields** 
 1. **Strict Object Existence Enforcement (Zero Injection)**:
    - Evaluates each row against the role's actual `AGR_1250` and `AGR_1251` data in SAP.
    - If an object or field from the CSV is not currently part of the role's business scope/transactions, it is **strictly skipped** and never injected into the role.
-2. **Standard Value Range Parsing**:
-   - Supports single values (e.g. `1100*`, `*`) and value ranges (e.g. `1000 - 2000`, `1000:2000`).
+2. **Dual-Value Support (Low & High Values)**:
+   - Standard 4-column CSV format: `Role,object-field,value-low,value-high`.
+   - Accommodates single values (where `value-high` is empty) and explicit intervals/ranges (`value-low` and `value-high`).
+   - Backwards compatible with 3-column CSV (`Role,object-field,value`) where intervals (`LOW - HIGH` or `LOW:HIGH`) are automatically split.
 3. **Change Tracking & Audit Readiness**:
    - Updates modified authorization entries with `MODIFIED = 'G'` (Changed/Maintained status) and records timestamp via `PRGN_SET_ACTGROUP_TIMESTAMP`.
 4. **Dark Profile Compilation**:
@@ -73,6 +75,7 @@ Automates the mass maintenance and update of **Authorization Objects & Fields** 
 
 ## 📊 CSV File Format
 
+Standard 4-column format:
 ```csv
 Role,object-field,value-low,value-high
 DRFI01_PERIOD_CONTROL_1100,F_FAGL_SEG-SEGMENT,*,
@@ -83,4 +86,14 @@ DRFI01_PERIOD_CONTROL_1100,A_S_ANLKL-ANLKL,*,
 DRFI01_PERIOD_CONTROL_1100,F_UKM_SGMT-UKM_SGMNT,*,
 DRFI01_PERIOD_CONTROL_1100,K_KEKO-KLVAR,*,
 DRPS00_PRJ_STRUC_MAIN_1101_A,C_PROJ_VNR-PS_VERNR,00000000,00000080
+```
+
+---
+
+## 🚀 Deployment
+
+```bash
+npm run deploy:role:03b
+# or deploy both 03a and 03b together:
+npm run deploy:role:03
 ```

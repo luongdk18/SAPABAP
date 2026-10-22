@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report Z_ROLE_03_UPDATE_OBJECT
+*& Report Z_ROLE_03B_UPDATE_OBJECT
 *&---------------------------------------------------------------------*
 *& Purpose: Batch Update Authorization Objects & Fields for PFCG Roles
 *& Description:
@@ -20,7 +20,7 @@
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP (Local Object) or Custom Package
 *&---------------------------------------------------------------------*
-REPORT z_role_03_update_object.
+REPORT z_role_03b_update_object.
 
 TABLES: agr_define, agr_texts, agr_1250, agr_1251, agr_1016.
 
@@ -323,16 +323,16 @@ FORM aggregate_input_data.
 
     " Strip surrounding quotes or Excel formula wrapping (e.g. ="00000000" -> 00000000)
     IF lv_low CP '="*"' OR lv_low CP '=*'.
-      SHIFT lv_low BY 2 PLACES.
-      IF lv_low IS NOT INITIAL AND lv_low+strlen( lv_low )-1(1) = '"'.
-        lv_low = lv_low(strlen( lv_low ) - 1).
-      ENDIF.
+      REPLACE FIRST OCCURRENCE OF '="' IN lv_low WITH ''.
+      REPLACE FIRST OCCURRENCE OF '=' IN lv_low WITH ''.
+      REPLACE ALL OCCURRENCES OF '"' IN lv_low WITH ''.
+      lv_low = condense( lv_low ).
     ENDIF.
     IF lv_high CP '="*"' OR lv_high CP '=*'.
-      SHIFT lv_high BY 2 PLACES.
-      IF lv_high IS NOT INITIAL AND lv_high+strlen( lv_high )-1(1) = '"'.
-        lv_high = lv_high(strlen( lv_high ) - 1).
-      ENDIF.
+      REPLACE FIRST OCCURRENCE OF '="' IN lv_high WITH ''.
+      REPLACE FIRST OCCURRENCE OF '=' IN lv_high WITH ''.
+      REPLACE ALL OCCURRENCES OF '"' IN lv_high WITH ''.
+      lv_high = condense( lv_high ).
     ENDIF.
 
     " Parse potential ranges (LOW - HIGH or LOW:HIGH) if col4 is initial (backwards compatibility)

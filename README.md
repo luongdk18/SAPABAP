@@ -66,8 +66,8 @@ This repository connects AI coding assistants directly to live **SAP S/4HANA** a
 ├── src/                  # Production-ready ABAP source programs
 │   ├── z_role_01_create_master.prog.abap
 │   ├── z_role_02_create_derive.prog.abap
-│   ├── z_role_03_update_org.prog.abap
-│   ├── z_role_03_update_object.prog.abap
+│   ├── z_role_03a_update_org.prog.abap
+│   ├── z_role_03b_update_object.prog.abap
 │   ├── z_role_04_composite.prog.abap
 │   ├── z_user_01_create.prog.abap
 │   ├── z_user_02_assign_role.prog.abap
@@ -143,8 +143,8 @@ Deploy and activate ABAP programs selectively to the connected SAP system:
 | `npm run deploy:role:01` | `Z_ROLE_01_CREATE_MASTER` | Batch Master Role & Menu Creation |
 | `npm run deploy:role:02` | `Z_ROLE_02_CREATE_DERIVE` | Batch Derived Role Derivation |
 | `npm run deploy:role:03` | *Both 03a & 03b Programs* | Full Org & Object Maintenance |
-| `npm run deploy:role:03a` | `Z_ROLE_03_UPDATE_ORG` | Batch Organizational Levels Maintenance |
-| `npm run deploy:role:03b` | `Z_ROLE_03_UPDATE_OBJECT` | Batch Authorization Objects Maintenance |
+| `npm run deploy:role:03a` | `Z_ROLE_03A_UPDATE_ORG` | Batch Organizational Levels Maintenance |
+| `npm run deploy:role:03b` | `Z_ROLE_03B_UPDATE_OBJECT` | Batch Authorization Objects Maintenance |
 | `npm run deploy:role:04` | `Z_ROLE_04_COMPOSITE` | Batch Composite Role Bundling |
 | `npm run deploy:role:all` | *All 5 Role Programs* | Full Role Lifecycle Deployment |
 | `npm run deploy:user:01` | `Z_USER_01_CREATE` | Batch SAP User Creation & Update |
@@ -201,8 +201,8 @@ All utilities feature:
 | :--- | :--- | :--- |
 | **`Z_ROLE_01_CREATE_MASTER`** | [`docs/Z_ROLE_01_CREATE_MASTER.md`](docs/Z_ROLE_01_CREATE_MASTER.md) | Mass creates Master Roles from CSV; builds menu folders; defaults Org Levels to `'-1'`; strips boilerplate PFCG comments. |
 | **`Z_ROLE_02_CREATE_DERIVE`** | [`docs/Z_ROLE_02_CREATE_DERIVE.md`](docs/Z_ROLE_02_CREATE_DERIVE.md) | Batch creates Derived Roles with `PARENT_AGR` link; inherits authorizations; initializes Org Levels to `'-1'`. |
-| **`Z_ROLE_03_UPDATE_ORG`** | [`docs/Z_ROLE_03_UPDATE_ORG.md`](docs/Z_ROLE_03_UPDATE_ORG.md) | Maintains Org Levels (`AGR_1252`); strictly validates existing role org levels (skips unassigned); compiles authorization profiles in dark mode. |
-| **`Z_ROLE_03_UPDATE_OBJECT`** | [`docs/Z_ROLE_03_UPDATE_OBJECT.md`](docs/Z_ROLE_03_UPDATE_OBJECT.md) | Mass updates Authorization Objects & Fields (`AGR_1251`); strictly checks object & field existence before update (zero foreign object injection); compiles profiles. |
+| **`Z_ROLE_03A_UPDATE_ORG`** | [`docs/Z_ROLE_03A_UPDATE_ORG.md`](docs/Z_ROLE_03A_UPDATE_ORG.md) | Maintains Org Levels (`AGR_1252`); strictly validates existing role org levels (skips unassigned); compiles authorization profiles in dark mode. |
+| **`Z_ROLE_03B_UPDATE_OBJECT`** | [`docs/Z_ROLE_03B_UPDATE_OBJECT.md`](docs/Z_ROLE_03B_UPDATE_OBJECT.md) | Mass updates Authorization Objects & Fields (`AGR_1251`); strictly checks object & field existence before update (zero foreign object injection); compiles profiles. |
 | **`Z_ROLE_04_COMPOSITE`** | [`docs/Z_ROLE_04_COMPOSITE.md`](docs/Z_ROLE_04_COMPOSITE.md) | Creates Composite Roles (`COLL_AGR = 'X'`); validates and assigns Single Roles atomically; isolates missing roles. |
 
 ### 6.2. User Management (`Z_USER_*`)
