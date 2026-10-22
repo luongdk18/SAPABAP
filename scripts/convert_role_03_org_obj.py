@@ -523,11 +523,31 @@ def convert_role_03_org_obj(input_path, output_dir=None):
             if not raw_val or raw_val.lower() in ('none', 'n/a', '-'):
                 continue
 
-            # Split multi-value cells (separated by ';' or newlines Alt+Enter) into individual values
-            # Ensures 1 value per CSV row, preventing multiline quote issues in SAP gui_upload
-            normalized = raw_val.replace('\r\n', ';').replace('\n', ';').replace('\r', ';')
-            val_tokens = [t.strip() for t in normalized.split(';') if t.strip()]
-            val_tokens = [t for t in val_tokens if t.lower() not in ('none', 'n/a', '-', '')]
+            # Multi-value & Range Parsing:
+            # 1. Distinct values separated by ';', ',', or newlines (\n) are split into separate items
+            # 2. Intervals/ranges (e.g. 00000000-00000080 or 1000 - 2000) are recognized as Low - High (single range row)
+            normalized = raw_val.replace('\r\n', ';').replace('\n', ';').replace('\r', ';').replace(',', ';')
+            raw_tokens = [t.strip() for t in normalized.split(';') if t.strip()]
+            val_tokens = []
+            for t in raw_tokens:
+                if t.lower() in ('none', 'n/a', '-', ''):
+                    continue
+                # Check for range pattern: v1-v2, v1 - v2, or v1:v2
+                m_rng = re.match(r'^([A-Za-z0-9_*]+)\s*[-:]\s*([A-Za-z0-9_*]+)$', t)
+                if m_rng:
+                    v1, v2 = m_rng.group(1), m_rng.group(2)
+                    is_range = False
+                    if ' - ' in t or ':' in t:
+                        is_range = True
+                    elif v1.isdigit() and v2.isdigit():
+                        is_range = True
+                    elif v1.isalpha() and v2.isalpha() and len(v1) == len(v2) and v1 < v2:
+                        is_range = True
+
+                    if is_range:
+                        val_tokens.append(f"{v1} - {v2}")
+                        continue
+                val_tokens.append(t)
 
             if not val_tokens:
                 continue
