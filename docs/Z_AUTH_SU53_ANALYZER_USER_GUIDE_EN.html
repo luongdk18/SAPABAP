@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>End-User Guide: ZAT (Z_AUTH_SU53_ANALYZER)</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 12mm 10mm;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background-color: #ffffff;
+    line-height: 1.4;
+    font-size: 8.8pt;
+    margin: 0;
+    padding: 0;
+  }
+
+  .page-container {
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 265mm;
+    position: relative;
+  }
+
+  .page-container:last-child {
+    page-break-after: avoid;
+  }
+
+  .page-footer {
+    margin-top: auto;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    color: #64748b;
+  }
+
+  .doc-header {
+    border-bottom: 2.5px solid #005a9e;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+
+  .doc-title-block h1 {
+    font-size: 16.5pt;
+    color: #0b3d60;
+    margin: 0 0 3px 0;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+
+  .doc-title-block .subtitle {
+    font-size: 10pt;
+    color: #475569;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 8pt;
+    color: #475569;
+  }
+
+  .badge-zat {
+    display: inline-block;
+    background: #005a9e;
+    color: #ffffff;
+    font-weight: bold;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 8.5pt;
+    font-family: Consolas, monospace;
+  }
+
+  .badge-tag {
+    display: inline-block;
+    background: #eef3f8;
+    color: #005a9e;
+    border: 1px solid #b9d1ea;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 7.5pt;
+  }
+
+  h2 {
+    font-size: 11pt;
+    color: #0b3d60;
+    border-left: 3.5px solid #005a9e;
+    padding-left: 7px;
+    margin-top: 10px;
+    margin-bottom: 6px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+  }
+
+  h3 {
+    font-size: 9.5pt;
+    color: #1e3a8a;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0 0 5px 0;
+    text-align: justify;
+  }
+
+  ul, ol {
+    margin: 0 0 6px 0;
+    padding-left: 18px;
+  }
+
+  li {
+    margin-bottom: 2px;
+  }
+
+  .callout-info {
+    background-color: #f0f7fc;
+    border-left: 3.5px solid #0078d4;
+    padding: 5px 8px;
+    margin: 5px 0;
+    border-radius: 0 3px 3px 0;
+    font-size: 8.5pt;
+  }
+
+  .callout-warning {
+    background-color: #fff9e6;
+    border-left: 3.5px solid #d97706;
+    padding: 6px 10px;
+    margin: 6px 0;
+    border-radius: 0 3px 3px 0;
+    font-size: 8.5pt;
+  }
+
+  .callout-success {
+    background-color: #eefbee;
+    border-left: 3.5px solid #16a34a;
+    padding: 6px 10px;
+    margin: 6px 0;
+    border-radius: 0 3px 3px 0;
+    font-size: 8.5pt;
+  }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6px 0 8px 0;
+    font-size: 8pt;
+  }
+
+  table.data-table th {
+    background-color: #0b3d60;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 5px 7px;
+    border: 1px solid #09314d;
+    text-align: left;
+  }
+
+  table.data-table td {
+    padding: 4px 7px;
+    border: 1px solid #cbd5e1;
+    vertical-align: middle;
+  }
+
+  table.data-table tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+
+  .sap-window {
+    background: #f8fafc;
+    border: 1px solid #94a3b8;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    margin: 6px 0 10px 0;
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  }
+
+  .sap-titlebar {
+    background: linear-gradient(180deg, #1e4a70 0%, #0d2c47 100%);
+    color: #ffffff;
+    padding: 3px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8pt;
+    font-weight: 600;
+  }
+
+  .sap-titlebar .left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sap-logo-box {
+    background: #d97706;
+    color: #ffffff;
+    font-size: 7pt;
+    font-weight: 900;
+    padding: 1px 4px;
+    border-radius: 2px;
+    letter-spacing: 0.5px;
+  }
+
+  .sap-window-controls {
+    display: flex;
+    gap: 3px;
+  }
+
+  .sap-win-btn {
+    width: 10px;
+    height: 10px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .sap-menubar {
+    background: #f1f5f9;
+    border-bottom: 1px solid #cbd5e1;
+    padding: 2px 8px;
+    font-size: 7.5pt;
+    color: #334155;
+    display: flex;
+    gap: 12px;
+  }
+
+  .sap-toolbar {
+    background: #e2e8f0;
+    border-bottom: 1px solid #cbd5e1;
+    padding: 2px 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 7.5pt;
+  }
+
+  .sap-tcode-box {
+    background: #ffffff;
+    border: 1px solid #64748b;
+    padding: 1px 5px;
+    font-family: Consolas, monospace;
+    font-size: 7.5pt;
+    width: 70px;
+    font-weight: bold;
+    color: #0b3d60;
+  }
+
+  .sap-btn-icon {
+    background: #ffffff;
+    border: 1px solid #94a3b8;
+    padding: 1.5px 6px;
+    border-radius: 2px;
+    font-size: 7pt;
+    font-weight: 600;
+    color: #1e293b;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .sap-btn-green {
+    background: #15803d;
+    color: #ffffff;
+    border-color: #166534;
+  }
+
+  .sap-btn-action {
+    background: #005a9e;
+    color: #ffffff;
+    border-color: #004578;
+    font-weight: bold;
+  }
+
+  .sap-body {
+    padding: 8px;
+    background: #ffffff;
+  }
+
+  .sap-frame {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    border-radius: 3px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+  }
+
+  .sap-frame-title {
+    font-size: 8pt;
+    font-weight: bold;
+    color: #0b3d60;
+    margin-top: -15px;
+    background: #f8fafc;
+    display: inline-block;
+    padding: 0 5px;
+  }
+
+  .sap-field-row {
+    display: flex;
+    align-items: center;
+    margin: 4px 0;
+    font-size: 8pt;
+  }
+
+  .sap-field-label {
+    width: 140px;
+    color: #334155;
+    font-weight: 600;
+  }
+
+  .sap-field-input {
+    background: #ffffff;
+    border: 1px solid #64748b;
+    padding: 1.5px 5px;
+    font-family: Consolas, monospace;
+    font-size: 8pt;
+    color: #0f172a;
+    font-weight: 600;
+    width: 130px;
+  }
+
+  .sap-dual-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sap-grid-box {
+    border: 1px solid #94a3b8;
+    background: #ffffff;
+    border-radius: 2px;
+  }
+
+  .sap-grid-header {
+    background: #e2e8f0;
+    border-bottom: 1px solid #cbd5e1;
+    padding: 3px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 7.5pt;
+    font-weight: bold;
+    color: #0f172a;
+  }
+
+  .sap-alv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  }
+
+  .sap-alv-table th {
+    background: #f1f5f9;
+    color: #1e293b;
+    border: 1px solid #cbd5e1;
+    padding: 3px 5px;
+    font-weight: 700;
+    text-align: left;
+    font-size: 7pt;
+  }
+
+  .sap-alv-table td {
+    border: 1px solid #e2e8f0;
+    padding: 2.5px 5px;
+    vertical-align: middle;
+  }
+
+  .sap-alv-table tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+
+  .sap-alv-table tr.selected-row {
+    background-color: #fef3c7 !important;
+  }
+
+  .led-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: #dcfce7;
+    color: #166534;
+    font-weight: bold;
+    font-family: Consolas, monospace;
+    font-size: 7pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid #86efac;
+  }
+
+  .led-err {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-weight: bold;
+    font-family: Consolas, monospace;
+    font-size: 7pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid #fca5a5;
+  }
+
+  .led-warn {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: #fef3c7;
+    color: #92400e;
+    font-weight: bold;
+    font-family: Consolas, monospace;
+    font-size: 7pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid #fde68a;
+  }
+
+  .sap-tcode-val {
+    font-family: Consolas, monospace;
+    font-weight: bold;
+    color: #0369a1;
+  }
+
+  .sap-obj-val {
+    font-family: Consolas, monospace;
+    font-weight: bold;
+    color: #b45309;
+    text-decoration: underline;
+  }
+
+  .sap-fld-val {
+    font-family: Consolas, monospace;
+    font-size: 7pt;
+    color: #334155;
+  }
+
+  .sap-statusbar {
+    background: #f1f5f9;
+    border-top: 1px solid #cbd5e1;
+    padding: 2.5px 8px;
+    font-size: 7.5pt;
+    color: #334155;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .sap-status-icon {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .sap-status-icon.green {
+    background: #16a34a;
+  }
+
+  .step-card {
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    padding: 8px 12px;
+    margin: 6px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 4px;
+  }
+
+  .step-num {
+    background: #005a9e;
+    color: #ffffff;
+    font-size: 8.5pt;
+    font-weight: bold;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #0b3d60;
+  }
+
+  .code-inline {
+    background: #f1f5f9;
+    color: #0b3d60;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: Consolas, monospace;
+    font-size: 8pt;
+    border: 1px solid #cbd5e1;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== PAGE 1 ==================== -->
+<div class="page-container">
+  <div class="doc-header">
+    <div class="doc-title-block">
+      <h1>USER GUIDE: ZAT (Z_AUTH_SU53_ANALYZER)</h1>
+      <div class="subtitle">Advanced SU53 Authorization Analyzer &amp; Self-Service Remediation Cockpit</div>
+    </div>
+    <div class="doc-meta">
+      <div><strong>Transaction Code:</strong> <span class="badge-zat">ZAT</span></div>
+      <div><strong>Version:</strong> v2.0 (Dual-Grid ALV)</div>
+      <div><strong>Target Audience:</strong> Role Testers / Key Users / UAT Team</div>
+    </div>
+  </div>
+
+  <h2>1. Introduction &amp; Business Purpose</h2>
+  <p>
+    During SAP S/4HANA testing cycles (Unit Testing, Integration Testing, UAT), testers frequently encounter authorization failures (blocked transactions or missing business document authorizations). 
+    Conventionally, testers capture screenshot of standard transaction <code>SU53</code>, send it to Security Administrators, and wait for manual profile adjustments in <code>PFCG</code>. This causes substantial test delays and project bottlenecks.
+  </p>
+  <p>
+    The <strong>Z_AUTH_SU53_ANALYZER (Transaction Code: <span class="badge-zat">ZAT</span>)</strong> utility is an automated cockpit designed to empower testers:
+  </p>
+  <ul>
+    <li><strong>Multi-Failure SU53 History:</strong> Aggregates all failure records from the past <strong>3 hours</strong> directly from kernel buffers (unlike standard SU53 which displays only the single last failed check).</li>
+    <li><strong>Live Role Coverage Analysis:</strong> Automatically cross-references missing checks against the tester's assigned Single Roles (<span class="led-ok">@08@ [OK]</span> or <span class="led-err">@0A@ [ERR]</span>).</li>
+    <li><strong>1-Click Instant Remediation:</strong> Enables testers to select missing permissions and inject them directly into their test Single Role. The program <strong>regenerates authorization profiles in background</strong>, enabling immediate test resumption!</li>
+  </ul>
+
+  <h3>Feature Comparison: Standard SU53 vs ZAT Cockpit</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 25%;">Comparison Criteria</th>
+        <th style="width: 35%;">Standard SAP SU53 Transaction</th>
+        <th style="width: 40%;">Advanced ZAT Cockpit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Failure Retention Scope</strong></td>
+        <td>Stores only the <strong>very last authorization failure</strong>. Executing any other action completely overwrites the buffer.</td>
+        <td><span class="badge-tag">3-Hour History</span> Extracts and aggregates all failed authorization checks over 3 hours via <code>SUSR_USER_SU53_READ</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Assigned Role Evaluation</strong></td>
+        <td>Displays no role information. Testers cannot identify which role is supposed to grant the missing permission.</td>
+        <td>Evaluates active Single Roles assigned to the user in real time, displaying status with intuitive visual indicators.</td>
+      </tr>
+      <tr>
+        <td><strong>Remediation Capability</strong></td>
+        <td>Read-only display. Requires manual ticket submission to Security Admin for PFCG configuration.</td>
+        <td>Integrated <strong>[Add to Role]</strong> action: Automatically updates role menu, populates 100% mandatory fields from <code>TOBJ</code>, and compiles profiles.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. How to Launch the Program</h2>
+  <p>Testers can execute the cockpit via either of the following methods in SAP GUI:</p>
+  <ul>
+    <li><strong>Option 1 (Recommended):</strong> Enter transaction code <span class="badge-zat">ZAT</span> or <span class="code-inline">/nZAT</span> into the Command Field at the top-left corner and press <code>Enter</code>.</li>
+    <li><strong>Option 2:</strong> Open transaction <code>SE38</code> or <code>SA38</code>, enter program name <span class="code-inline">Z_AUTH_SU53_ANALYZER</span>, and click <strong>Execute (F8)</strong>.</li>
+  </ul>
+
+  <h2>3. Selection Screen &amp; Parameters</h2>
+  <p>The initial selection screen specifies the target user ID and active role filtering:</p>
+
+  <!-- MOCKUP SELECTION SCREEN -->
+  <div class="sap-window">
+    <div class="sap-titlebar">
+      <div class="left">
+        <span class="sap-logo-box">SAP</span>
+        <span>Z_AUTH_SU53_ANALYZER: SU53 Authorization Analyzer &amp; Remediation Cockpit</span>
+      </div>
+      <div class="sap-window-controls">
+        <span class="sap-win-btn"></span><span class="sap-win-btn"></span><span class="sap-win-btn"></span>
+      </div>
+    </div>
+    <div class="sap-toolbar">
+      <div class="sap-tcode-box">ZAT</div>
+      <div class="sap-btn-icon sap-btn-green">&#10004; Execute (F8)</div>
+      <div class="sap-btn-icon">&#10006; Cancel</div>
+    </div>
+    <div class="sap-body">
+      <div class="sap-frame">
+        <div class="sap-frame-title">1. User Selection</div>
+        <div class="sap-field-row">
+          <span class="sap-field-label">User Name:</span>
+          <span class="sap-field-input">TEST_USER01</span>
+          <span style="margin-left: 8px; color: #64748b; font-size: 7.5pt;">(Target SAP user account; defaults to the currently logged-on user)</span>
+        </div>
+      </div>
+      <div class="sap-frame" style="margin-bottom: 0;">
+        <div class="sap-frame-title">2. Filter Options</div>
+        <div class="sap-field-row">
+          <input type="checkbox" checked style="margin-right: 5px;">
+          <span class="sap-field-label" style="width: auto; font-weight: normal;">Active Single Roles Only</span>
+          <span style="margin-left: 10px; color: #64748b; font-size: 7.5pt;">(Restricts analysis to valid single roles, automatically filtering out composite roles)</span>
+        </div>
+      </div>
+    </div>
+    <div class="sap-statusbar">
+      <span class="sap-status-icon green"></span>
+      <span>Enter User Name and press F8 to begin analyzing SU53 buffer history</span>
+    </div>
+  </div>
+
+  <div class="callout-info">
+    <strong>Tester Note:</strong> The user field defaults to your active account. Test Leads investigating errors on behalf of another tester can enter the colleague's SAP User ID and press <strong>F8</strong>.
+  </div>
+
+  <div class="page-footer">
+    <span>SAP S/4HANA Project &bull; ZAT End-User Authorization Guide</span>
+    <span>Page 1 / 4</span>
+  </div>
+</div>
+
+<!-- ==================== PAGE 2 ==================== -->
+<div class="page-container">
+  <h2>4. Dual-Grid Cockpit Architecture</h2>
+  <p>
+    Upon executing (<strong>F8</strong>), the cockpit opens a dual-level operational workbench:
+  </p>
+  <ul>
+    <li><strong>Top Grid (Docking Container):</strong> Lists all active Single Roles assigned to the user. The <code>Target Role</code> column contains interactive radio buttons allowing you to designate which role will receive authorizations.</li>
+    <li><strong>Bottom Grid (Fullscreen ALV):</strong> Displays all failed authorization checks from the past 3 hours. Status badges automatically recalculate whenever a different role is selected above.</li>
+  </ul>
+
+  <!-- MOCKUP DUAL GRID -->
+  <div class="sap-window">
+    <div class="sap-titlebar">
+      <div class="left">
+        <span class="sap-logo-box">SAP</span>
+        <span>ZAT - Dual-ALV Authorization Remediation Cockpit [User: TEST_USER01]</span>
+      </div>
+      <div class="sap-window-controls">
+        <span class="sap-win-btn"></span><span class="sap-win-btn"></span><span class="sap-win-btn"></span>
+      </div>
+    </div>
+
+    <div class="sap-body" style="padding: 5px; background: #eef2f6;">
+      <div class="sap-dual-container">
+
+        <!-- TOP GRID -->
+        <div class="sap-grid-box">
+          <div class="sap-grid-header">
+            <span>1. Assigned Single Roles of User (Click Radio Icon to Select Target Single Role)</span>
+            <div style="display: flex; gap: 4px;">
+              <span class="sap-btn-icon sap-btn-action">&#10133; Add to Role</span>
+              <span class="sap-btn-icon">&#9745; Select All</span>
+              <span class="sap-btn-icon">&#9744; Deselect All</span>
+              <span class="sap-btn-icon">&#128259; Refresh from SU53</span>
+            </div>
+          </div>
+          <table class="sap-alv-table">
+            <thead>
+              <tr>
+                <th style="width: 75px; text-align: center;">Target Role</th>
+                <th style="width: 170px;">Single Role Name</th>
+                <th>Role Description</th>
+                <th style="width: 80px;">Valid From</th>
+                <th style="width: 80px;">Valid To</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="selected-row">
+                <td style="text-align: center; font-size: 8.5pt; color: #005a9e; cursor: pointer;"><strong>&bull; (Selected)</strong></td>
+                <td style="font-weight: bold; color: #0b3d60; background: #e0f2fe;">Z_FI_GL_ACCOUNT</td>
+                <td>General Ledger Accounting - Posting &amp; GL Reports</td>
+                <td>01.01.2026</td>
+                <td>31.12.9999</td>
+              </tr>
+              <tr>
+                <td style="text-align: center; font-size: 8.5pt; color: #94a3b8; cursor: pointer;">&cir;</td>
+                <td style="font-weight: bold; color: #334155;">Z_MM_PURCHASER</td>
+                <td>Purchasing Operations - Purchase Orders &amp; GR</td>
+                <td>01.01.2026</td>
+                <td>31.12.9999</td>
+              </tr>
+              <tr>
+                <td style="text-align: center; font-size: 8.5pt; color: #94a3b8; cursor: pointer;">&cir;</td>
+                <td style="font-weight: bold; color: #334155;">Z_PS_PROJECT_MGR</td>
+                <td>Project Management - WBS Element Coordinator</td>
+                <td>01.01.2026</td>
+                <td>31.12.9999</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- BOTTOM GRID -->
+        <div class="sap-grid-box">
+          <div class="sap-grid-header">
+            <span>2. Failed Authorization Checks (Select Items via Checkbox to Add to Target Role)</span>
+            <span style="font-size: 7pt; color: #64748b;">Detected: 3 failed checks in buffer (last 3 hours)</span>
+          </div>
+          <table class="sap-alv-table">
+            <thead>
+              <tr>
+                <th style="width: 38px; text-align: center;">Select</th>
+                <th style="width: 78px; text-align: center;">Status</th>
+                <th style="width: 60px;">TCode</th>
+                <th style="width: 90px;">Auth Object</th>
+                <th style="width: 140px;">Object Description</th>
+                <th style="width: 30px; text-align: center;">RC</th>
+                <th>Checked Fields &amp; Values</th>
+                <th style="width: 135px;">Values in Selected Role</th>
+                <th style="width: 100px;">Trace Timestamp</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="text-align: center;"><input type="checkbox" checked></td>
+                <td style="text-align: center;"><span class="led-err">@0A@ [ERR]</span></td>
+                <td class="sap-tcode-val">FB01</td>
+                <td class="sap-obj-val">F_BKPF_BUK</td>
+                <td>Accounting Document: Company Code</td>
+                <td style="text-align: center; font-weight: bold; color: #b91c1c;">4</td>
+                <td class="sap-fld-val"><strong>ACTVT</strong> = '01', <strong>BUKRS</strong> = '1000'</td>
+                <td style="color: #b91c1c; font-size: 7pt;">Missing in role Z_FI_GL_ACCOUNT</td>
+                <td style="font-size: 7pt;">22.10.2026 08:15:22</td>
+              </tr>
+              <tr>
+                <td style="text-align: center;"><input type="checkbox" checked></td>
+                <td style="text-align: center;"><span class="led-err">@0A@ [ERR]</span></td>
+                <td class="sap-tcode-val">FS00</td>
+                <td class="sap-obj-val">S_TCODE</td>
+                <td>Transaction Code Check</td>
+                <td style="text-align: center; font-weight: bold; color: #b91c1c;">4</td>
+                <td class="sap-fld-val"><strong>TCD</strong> = 'FS00'</td>
+                <td style="color: #b91c1c; font-size: 7pt;">Missing in role Z_FI_GL_ACCOUNT</td>
+                <td style="font-size: 7pt;">22.10.2026 08:16:05</td>
+              </tr>
+              <tr style="background: #f0fdf4;">
+                <td style="text-align: center;"><input type="checkbox" disabled></td>
+                <td style="text-align: center;"><span class="led-ok">@08@ [OK]</span></td>
+                <td class="sap-tcode-val">FB03</td>
+                <td class="sap-obj-val">F_BKPF_BUK</td>
+                <td>Accounting Document: Company Code</td>
+                <td style="text-align: center; font-weight: bold; color: #15803d;">0</td>
+                <td class="sap-fld-val"><strong>ACTVT</strong> = '03', <strong>BUKRS</strong> = '1000'</td>
+                <td style="color: #15803d; font-size: 7pt;">Present in role Z_FI_GL_ACCOUNT</td>
+                <td style="font-size: 7pt;">22.10.2026 08:10:11</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="sap-statusbar">
+      <span class="sap-status-icon green"></span>
+      <span>Target Single Role switched to: Z_FI_GL_ACCOUNT. Coverage re-evaluated successfully.</span>
+    </div>
+  </div>
+
+  <h3>Toolbar Actions &amp; Navigation Controls</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 25%;">Action / Button</th>
+        <th style="width: 22%;">Shortcut / Icon</th>
+        <th style="width: 53%;">Functional Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>[Add to Role]</strong></td>
+        <td>Icon <span class="badge-tag">&#10133;</span> (Dark Blue)</td>
+        <td>Injects all checked authorizations and TCodes into the currently selected Single Role and triggers dark profile regeneration.</td>
+      </tr>
+      <tr>
+        <td><strong>[Select All]</strong></td>
+        <td>Icon <span class="badge-tag">&#9745;</span></td>
+        <td>Selects all missing authorization items (<span class="led-err">@0A@ [ERR]</span>). Items already satisfied (<span class="led-ok">@08@</span>) are automatically bypassed.</td>
+      </tr>
+      <tr>
+        <td><strong>[Deselect All]</strong></td>
+        <td>Icon <span class="badge-tag">&#9744;</span></td>
+        <td>Clears all selected checkboxes in the bottom grid.</td>
+      </tr>
+      <tr>
+        <td><strong>[Refresh from SU53]</strong></td>
+        <td>Icon <span class="badge-tag">&#128259;</span> (or F8 key)</td>
+        <td>Re-reads system failure buffers when the tester performs additional transaction actions in another session.</td>
+      </tr>
+      <tr>
+        <td><strong>Click Radio Button</strong></td>
+        <td><code>Target Role</code> column</td>
+        <td>Switches the active remediation role. The bottom grid immediately re-evaluates all failure rows against the newly chosen role.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>SAP S/4HANA Project &bull; ZAT End-User Authorization Guide</span>
+    <span>Page 2 / 4</span>
+  </div>
+</div>
+
+<!-- ==================== PAGE 3 ==================== -->
+<div class="page-container">
+  <h2>5. Standard 5-Step Remediation Workflow for Testers</h2>
+  <p>Follow this standardized 5-step procedure when blocked by an authorization failure during business scenario execution:</p>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-num">1</span>
+      <span class="step-title">Encounter authorization failure in business transaction</span>
+    </div>
+    <p>
+      While executing your scenario (e.g. <code>FB01</code>, <code>ME21N</code>, <code>FS00</code>), SAP halts execution and outputs a red status bar message:
+      <br><span class="code-inline" style="color: #b91c1c;">&bull; You are not authorized to use transaction FB01</span> or <span class="code-inline" style="color: #b91c1c;">&bull; No authorization for Company Code 1000 (Object F_BKPF_BUK)</span>.
+    </p>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-num">2</span>
+      <span class="step-title">Launch ZAT in a new parallel session</span>
+    </div>
+    <p>
+      Without exiting your active transaction, open a new SAP GUI window by typing <span class="code-inline">/oZAT</span> in the Command Field. 
+      Verify your User Name and press <strong>F8</strong> to retrieve failure buffer logs.
+    </p>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-num">3</span>
+      <span class="step-title">Select the target Single Role in Top Grid</span>
+    </div>
+    <p>
+      Click the circular radio button in the <code>Target Role</code> column corresponding to the functional role you are validating (e.g. <span class="code-inline">Z_FI_GL_ACCOUNT</span>). 
+      The failure rows in the bottom grid instantly recalculate their coverage status.
+    </p>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-num">4</span>
+      <span class="step-title">Select the missing authorizations in Bottom Grid</span>
+    </div>
+    <p>
+      Tick the checkboxes in the <code>Select</code> column for rows marked with red indicator <span class="led-err">@0A@ [ERR]</span>. 
+      Alternatively, click the <strong>[Select All]</strong> toolbar button to select all valid remediation items at once.
+    </p>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-num">5</span>
+      <span class="step-title">Click [Add to Role] for automated remediation</span>
+    </div>
+    <p>
+      Click the <strong>[Add to Role]</strong> button on the Top Grid toolbar. The utility automatically executes in background:
+    </p>
+    <ul>
+      <li><strong>Role Menu Injection:</strong> For missing transaction code checks (<code>S_TCODE</code>), injects the TCode into the role menu via standard BAPI.</li>
+      <li><strong>Authorization Object Population:</strong> Injects the missing object with 100% mandatory fields populated from the SAP standard dictionary (<code>TOBJ</code>).</li>
+      <li><strong>Organizational Level Defaulting:</strong> Automatically sets unmaintained Org Levels to <code>*</code> (full test authorization).</li>
+      <li><strong>Dark Profile Compilation:</strong> Recompiles the authorization profile and synchronizes the active User Buffer.</li>
+    </ul>
+  </div>
+
+  <!-- SUCCESS NOTIFICATION MOCKUP -->
+  <h3>Simulated Status Message Following Remediation</h3>
+  <div class="sap-window" style="margin-bottom: 6px;">
+    <div class="sap-statusbar" style="background: #f0fdf4; border-top: 1px solid #86efac; color: #166534; font-weight: 600; padding: 5px 10px;">
+      <span class="sap-status-icon green"></span>
+      <span>1 transaction(s) added to menu. 1 object(s) added/updated. Profile regenerated. Data refreshed.</span>
+    </div>
+  </div>
+
+  <div class="callout-success">
+    <strong>Outcome:</strong> As soon as the green status message appears, return to your initial transaction window (e.g. <code>FB01</code>) and press <code>Enter</code> or re-execute. The transaction will proceed smoothly without requiring a system logoff!
+  </div>
+
+  <div class="page-footer">
+    <span>SAP S/4HANA Project &bull; ZAT End-User Authorization Guide</span>
+    <span>Page 3 / 4</span>
+  </div>
+</div>
+
+<!-- ==================== PAGE 4 ==================== -->
+<div class="page-container">
+  <h2>6. Status Code Reference &amp; Advanced Features</h2>
+
+  <h3>ALV Grid Status Indicators</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 18%;">Status Code</th>
+        <th style="width: 14%;">Indicator</th>
+        <th style="width: 38%;">Technical Meaning</th>
+        <th style="width: 30%;">Recommended Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>@08@ [OK]</code></td>
+        <td><span class="led-ok">&bull; GREEN</span></td>
+        <td>The authorization object and checked values <strong>already exist</strong> in the selected role. Selection checkbox is disabled.</td>
+        <td>No action required. The failure is already satisfied by this role or granted previously.</td>
+      </tr>
+      <tr>
+        <td><code>@0A@ [ERR]</code></td>
+        <td><span class="led-err">&bull; RED</span></td>
+        <td>The authorization object or field values are <strong>missing</strong> in the selected role. This is the direct cause of the block.</td>
+        <td>Tick the checkbox and click <strong>[Add to Role]</strong> to resolve the failure immediately.</td>
+      </tr>
+      <tr>
+        <td><code>@09@ [WARN]</code></td>
+        <td><span class="led-warn">&bull; YELLOW</span></td>
+        <td>Partial match; or the SU53 buffer contains no failed authorization checks within the last 3 hours.</td>
+        <td>Re-perform the failing transaction step in your business window, then click <strong>[Refresh from SU53]</strong>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Advanced Operational Features</h3>
+  <ul>
+    <li>
+      <strong>Authorization Object Jump (SU03):</strong> Double-click any entry in the <code>Auth Object</code> column (e.g. <span class="code-inline">F_BKPF_BUK</span>). The cockpit automatically opens transaction <code>SU03</code>, displaying official SAP documentation and technical field definitions for that object.
+    </li>
+    <li>
+      <strong>Spreadsheet Export for Audit &amp; Reporting:</strong> Press <code>Ctrl + Shift + F7</code> or navigate to <code>List &rarr; Export &rarr; Spreadsheet</code>. Because status codes include explicit text tags (<code>@08@ [OK]</code>, <code>@0A@ [ERR]</code>), exported Excel files can be filtered cleanly by test leads or PMO teams.
+    </li>
+  </ul>
+
+  <h2>7. Frequently Asked Questions &amp; Troubleshooting (FAQ)</h2>
+
+  <div class="callout-warning">
+    <strong>1. Why does [Add to Role] display "Role is locked (Edit mode)"?</strong><br>
+    <em>Cause:</em> The target role is currently opened in Change Mode in transaction <code>PFCG</code> by another administrator or your own user.<br>
+    <em>Remedy:</em> Exit edit mode in <code>PFCG</code> (enter <code>/n</code>), return to <code>ZAT</code>, and re-click [Add to Role].
+  </div>
+
+  <div class="callout-warning">
+    <strong>2. Why is the newly added transaction not visible in the SAP Easy Access tree?</strong><br>
+    <em>Explanation:</em> ZAT successfully injects the TCode into the role menu and generates the technical <code>S_TCODE</code> authorization. To refresh the visual SAP Easy Access tree on the initial screen, simply type <span class="code-inline">/n</span> or start the transaction directly from the Command Field.
+  </div>
+
+  <div class="callout-success">
+    <strong>3. Are the injected authorizations permanent?</strong><br>
+    <em>Answer:</em> Yes. Authorizations are written directly into standard SAP tables (<code>AGR_1250</code>, <code>AGR_1251</code>, <code>AGR_1252</code>) and compiled into the generated profile. They persist permanently until the role is deliberately modified in a subsequent release cycle.
+  </div>
+
+  <div class="callout-info">
+    <strong>Technical Support Escalation:</strong><br>
+    For structural authorization issues (HR Org Management) or complex custom authority checks, contact the SAP Security Administration Team for specialized assistance.
+  </div>
+
+  <div class="page-footer">
+    <span>SAP S/4HANA Project &bull; ZAT End-User Authorization Guide</span>
+    <span>Page 4 / 4</span>
+  </div>
+</div>
+
+</body>
+</html>

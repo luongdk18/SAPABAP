@@ -204,7 +204,7 @@ All utilities feature:
 
 | Program | Documentation | Key Highlights |
 | :--- | :--- | :--- |
-| **`Z_AUTH_SU53_ANALYZER`** | [`docs/Z_AUTH_SU53_ANALYZER.md`](docs/Z_AUTH_SU53_ANALYZER.md)<br>📘 [**End-User Guide (MD)**](docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE.md)<br>📄 [**End-User Guide (PDF)**](docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE.pdf) | Dual-ALV cockpit (`TCode: ZAT`); extracts SU53 failures from last 3 hours; evaluates user role coverage; injects missing objects with mandatory `TOBJ` fields; regenerates profiles. |
+| **`Z_AUTH_SU53_ANALYZER`** | [`docs/Z_AUTH_SU53_ANALYZER.md`](docs/Z_AUTH_SU53_ANALYZER.md)<br>📘 [**User Guide (EN)**](docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.md) \| [**PDF**](docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf)<br>🇻🇳 [**User Guide (VN)**](docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.md) \| [**PDF**](docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.pdf) | Dual-ALV cockpit (`TCode: ZAT`); extracts SU53 failures from last 3 hours; evaluates user role coverage; injects missing objects with mandatory `TOBJ` fields; regenerates profiles. |
 
 ---
 

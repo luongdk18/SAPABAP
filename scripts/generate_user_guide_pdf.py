@@ -1,36 +1,32 @@
 """
-Script to generate End-User Guide for Z_AUTH_SU53_ANALYZER (TCode: ZAT)
-in HTML and export to high-resolution print-ready 4-page PDF using Headless Chrome.
+Consolidated generator for bilingual End-User Guides of Z_AUTH_SU53_ANALYZER (TCode: ZAT).
+Builds both English and Vietnamese HTML, Markdown, and print-ready 4-page PDFs via Headless Chrome.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 BASE_DIR = Path(r"d:\PROJECTS\SAPABAP")
 DOCS_DIR = BASE_DIR / "docs"
-HTML_OUT = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE.html"
-PDF_OUT = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE.pdf"
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
-HTML_CONTENT = """<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<title>Hướng Dẫn Sử Dụng ZAT - Z_AUTH_SU53_ANALYZER</title>
-<style>
+# ---------------------------------------------------------------------------
+# HTML TEMPLATES (EN & VN)
+# ---------------------------------------------------------------------------
+
+SHARED_CSS = """
   @page {
     size: A4 portrait;
     margin: 10mm 10mm 12mm 10mm;
   }
-
   * {
     box-sizing: border-box;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     color: #1e293b;
@@ -40,20 +36,17 @@ HTML_CONTENT = """<!DOCTYPE html>
     margin: 0;
     padding: 0;
   }
-
   .page-container {
     page-break-after: always;
     display: flex;
     flex-direction: column;
-    min-height: 270mm;
+    justify-content: space-between;
+    height: 265mm;
     position: relative;
   }
-
   .page-container:last-child {
     page-break-after: avoid;
   }
-
-  /* Footer per page */
   .page-footer {
     margin-top: auto;
     border-top: 1px solid #cbd5e1;
@@ -63,8 +56,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-size: 7.5pt;
     color: #64748b;
   }
-
-  /* Header on Page 1 */
   .doc-header {
     border-bottom: 2.5px solid #005a9e;
     padding-bottom: 8px;
@@ -73,28 +64,24 @@ HTML_CONTENT = """<!DOCTYPE html>
     justify-content: space-between;
     align-items: flex-end;
   }
-
   .doc-title-block h1 {
-    font-size: 17pt;
+    font-size: 16.5pt;
     color: #0b3d60;
     margin: 0 0 3px 0;
     font-weight: 800;
     letter-spacing: -0.3px;
   }
-
   .doc-title-block .subtitle {
     font-size: 10pt;
     color: #475569;
     font-weight: 600;
     margin: 0;
   }
-
   .doc-meta {
     text-align: right;
     font-size: 8pt;
     color: #475569;
   }
-
   .badge-zat {
     display: inline-block;
     background: #005a9e;
@@ -105,7 +92,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-size: 8.5pt;
     font-family: Consolas, monospace;
   }
-
   .badge-tag {
     display: inline-block;
     background: #eef3f8;
@@ -116,8 +102,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     border-radius: 3px;
     font-size: 7.5pt;
   }
-
-  /* Section Styling */
   h2 {
     font-size: 11pt;
     color: #0b3d60;
@@ -129,7 +113,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     text-transform: uppercase;
     letter-spacing: 0.2px;
   }
-
   h3 {
     font-size: 9.5pt;
     color: #1e3a8a;
@@ -137,56 +120,47 @@ HTML_CONTENT = """<!DOCTYPE html>
     margin-bottom: 4px;
     font-weight: 700;
   }
-
   p {
-    margin: 0 0 6px 0;
+    margin: 0 0 5px 0;
     text-align: justify;
   }
-
   ul, ol {
-    margin: 0 0 8px 0;
+    margin: 0 0 6px 0;
     padding-left: 18px;
   }
-
   li {
-    margin-bottom: 3px;
+    margin-bottom: 2px;
   }
-
   .callout-info {
     background-color: #f0f7fc;
     border-left: 3.5px solid #0078d4;
-    padding: 6px 10px;
-    margin: 6px 0;
+    padding: 5px 8px;
+    margin: 5px 0;
     border-radius: 0 3px 3px 0;
     font-size: 8.5pt;
   }
-
   .callout-warning {
     background-color: #fff9e6;
     border-left: 3.5px solid #d97706;
-    padding: 6px 10px;
-    margin: 6px 0;
+    padding: 5px 8px;
+    margin: 5px 0;
     border-radius: 0 3px 3px 0;
     font-size: 8.5pt;
   }
-
   .callout-success {
     background-color: #eefbee;
     border-left: 3.5px solid #16a34a;
-    padding: 6px 10px;
-    margin: 6px 0;
+    padding: 5px 8px;
+    margin: 5px 0;
     border-radius: 0 3px 3px 0;
     font-size: 8.5pt;
   }
-
-  /* Comparison Table */
   table.data-table {
     width: 100%;
     border-collapse: collapse;
     margin: 6px 0 8px 0;
     font-size: 8pt;
   }
-
   table.data-table th {
     background-color: #0b3d60;
     color: #ffffff;
@@ -195,18 +169,14 @@ HTML_CONTENT = """<!DOCTYPE html>
     border: 1px solid #09314d;
     text-align: left;
   }
-
   table.data-table td {
     padding: 4px 7px;
     border: 1px solid #cbd5e1;
     vertical-align: middle;
   }
-
   table.data-table tr:nth-child(even) {
     background-color: #f8fafc;
   }
-
-  /* SAP GUI Simulated Windows / Screens */
   .sap-window {
     background: #f8fafc;
     border: 1px solid #94a3b8;
@@ -216,7 +186,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     overflow: hidden;
     font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
   }
-
   .sap-titlebar {
     background: linear-gradient(180deg, #1e4a70 0%, #0d2c47 100%);
     color: #ffffff;
@@ -227,13 +196,11 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-size: 8pt;
     font-weight: 600;
   }
-
   .sap-titlebar .left {
     display: flex;
     align-items: center;
     gap: 6px;
   }
-
   .sap-logo-box {
     background: #d97706;
     color: #ffffff;
@@ -243,12 +210,10 @@ HTML_CONTENT = """<!DOCTYPE html>
     border-radius: 2px;
     letter-spacing: 0.5px;
   }
-
   .sap-window-controls {
     display: flex;
     gap: 3px;
   }
-
   .sap-win-btn {
     width: 10px;
     height: 10px;
@@ -256,7 +221,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     border-radius: 2px;
     display: inline-block;
   }
-
   .sap-menubar {
     background: #f1f5f9;
     border-bottom: 1px solid #cbd5e1;
@@ -266,7 +230,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     display: flex;
     gap: 12px;
   }
-
   .sap-toolbar {
     background: #e2e8f0;
     border-bottom: 1px solid #cbd5e1;
@@ -276,7 +239,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     gap: 5px;
     font-size: 7.5pt;
   }
-
   .sap-tcode-box {
     background: #ffffff;
     border: 1px solid #64748b;
@@ -287,7 +249,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-weight: bold;
     color: #0b3d60;
   }
-
   .sap-btn-icon {
     background: #ffffff;
     border: 1px solid #94a3b8;
@@ -300,26 +261,21 @@ HTML_CONTENT = """<!DOCTYPE html>
     align-items: center;
     gap: 3px;
   }
-
   .sap-btn-green {
     background: #15803d;
     color: #ffffff;
     border-color: #166534;
   }
-
   .sap-btn-action {
     background: #005a9e;
     color: #ffffff;
     border-color: #004578;
     font-weight: bold;
   }
-
   .sap-body {
     padding: 8px;
     background: #ffffff;
   }
-
-  /* Selection Screen Box */
   .sap-frame {
     border: 1px solid #cbd5e1;
     background: #f8fafc;
@@ -327,7 +283,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     padding: 8px 12px;
     margin-bottom: 8px;
   }
-
   .sap-frame-title {
     font-size: 8pt;
     font-weight: bold;
@@ -337,20 +292,17 @@ HTML_CONTENT = """<!DOCTYPE html>
     display: inline-block;
     padding: 0 5px;
   }
-
   .sap-field-row {
     display: flex;
     align-items: center;
     margin: 4px 0;
     font-size: 8pt;
   }
-
   .sap-field-label {
     width: 140px;
     color: #334155;
     font-weight: 600;
   }
-
   .sap-field-input {
     background: #ffffff;
     border: 1px solid #64748b;
@@ -361,20 +313,16 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-weight: 600;
     width: 130px;
   }
-
-  /* Dual ALV Container */
   .sap-dual-container {
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
-
   .sap-grid-box {
     border: 1px solid #94a3b8;
     background: #ffffff;
     border-radius: 2px;
   }
-
   .sap-grid-header {
     background: #e2e8f0;
     border-bottom: 1px solid #cbd5e1;
@@ -386,14 +334,12 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-weight: bold;
     color: #0f172a;
   }
-
   .sap-alv-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 7.5pt;
     font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
   }
-
   .sap-alv-table th {
     background: #f1f5f9;
     color: #1e293b;
@@ -403,22 +349,17 @@ HTML_CONTENT = """<!DOCTYPE html>
     text-align: left;
     font-size: 7pt;
   }
-
   .sap-alv-table td {
     border: 1px solid #e2e8f0;
     padding: 2.5px 5px;
     vertical-align: middle;
   }
-
   .sap-alv-table tr:nth-child(even) {
     background-color: #f8fafc;
   }
-
   .sap-alv-table tr.selected-row {
     background-color: #fef3c7 !important;
   }
-
-  /* Status Indicators */
   .led-ok {
     display: inline-flex;
     align-items: center;
@@ -432,7 +373,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     border-radius: 2px;
     border: 1px solid #86efac;
   }
-
   .led-err {
     display: inline-flex;
     align-items: center;
@@ -446,7 +386,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     border-radius: 2px;
     border: 1px solid #fca5a5;
   }
-
   .led-warn {
     display: inline-flex;
     align-items: center;
@@ -460,27 +399,22 @@ HTML_CONTENT = """<!DOCTYPE html>
     border-radius: 2px;
     border: 1px solid #fde68a;
   }
-
   .sap-tcode-val {
     font-family: Consolas, monospace;
     font-weight: bold;
     color: #0369a1;
   }
-
   .sap-obj-val {
     font-family: Consolas, monospace;
     font-weight: bold;
     color: #b45309;
     text-decoration: underline;
   }
-
   .sap-fld-val {
     font-family: Consolas, monospace;
     font-size: 7pt;
     color: #334155;
   }
-
-  /* Statusbar */
   .sap-statusbar {
     background: #f1f5f9;
     border-top: 1px solid #cbd5e1;
@@ -491,18 +425,15 @@ HTML_CONTENT = """<!DOCTYPE html>
     align-items: center;
     gap: 5px;
   }
-
   .sap-status-icon {
     display: inline-block;
     width: 10px;
     height: 10px;
     border-radius: 50%;
   }
-
   .sap-status-icon.green {
     background: #16a34a;
   }
-
   .step-card {
     border: 1px solid #cbd5e1;
     border-radius: 4px;
@@ -511,14 +442,12 @@ HTML_CONTENT = """<!DOCTYPE html>
     margin: 6px 0;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
-
   .step-header {
     display: flex;
     align-items: center;
     gap: 7px;
     margin-bottom: 4px;
   }
-
   .step-num {
     background: #005a9e;
     color: #ffffff;
@@ -531,13 +460,11 @@ HTML_CONTENT = """<!DOCTYPE html>
     align-items: center;
     justify-content: center;
   }
-
   .step-title {
     font-size: 9.5pt;
     font-weight: 700;
     color: #0b3d60;
   }
-
   .code-inline {
     background: #f1f5f9;
     color: #0b3d60;
@@ -547,512 +474,65 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-size: 8pt;
     border: 1px solid #cbd5e1;
   }
-</style>
-</head>
-<body>
-
-<!-- ==================== PAGE 1 ==================== -->
-<div class="page-container">
-  <div class="doc-header">
-    <div class="doc-title-block">
-      <h1>HƯỚNG DẪN SỬ DỤNG CÔNG CỤ ZAT</h1>
-      <div class="subtitle">Z_AUTH_SU53_ANALYZER &bull; Bàn Làm Việc Phân Tích &amp; Tự Động Xử Lý Lỗi Phân Quyền SAP</div>
-    </div>
-    <div class="doc-meta">
-      <div><strong>Transaction Code:</strong> <span class="badge-zat">ZAT</span></div>
-      <div><strong>Phiên bản:</strong> v2.0 (Dual-Grid ALV)</div>
-      <div><strong>Đối tượng:</strong> Tester / Key User / UAT Team</div>
-    </div>
-  </div>
-
-  <h2>1. Giới Thiệu &amp; Mục Đích Sử Dụng</h2>
-  <p>
-    Trong các đợt kiểm thử hệ thống SAP S/4HANA (Unit Test, Integration Test, UAT), người dùng thường gặp lỗi phân quyền (bị chặn truy cập giao dịch hoặc không có thẩm quyền thao tác dữ liệu chứng từ). 
-    Thông thường, Tester phải chụp ảnh màn hình giao dịch <code>SU53</code> gửi cho Quản trị viên (Security Admin) và mất thời gian chờ đợi xử lý thủ công qua <code>PFCG</code>.
-  </p>
-  <p>
-    Chương trình <strong>Z_AUTH_SU53_ANALYZER (Mã giao dịch: <span class="badge-zat">ZAT</span>)</strong> là công cụ chuyên biệt giúp đội kiểm thử:
-  </p>
-  <ul>
-    <li><strong>Quét toàn diện bộ đệm lỗi:</strong> Thu thập toàn bộ lịch sử lỗi phân quyền phát sinh trong vòng <strong>3 giờ gần nhất</strong> (khác với SU53 chỉ lưu 1 lỗi duy nhất).</li>
-    <li><strong>Đối chiếu vai trò (Role Coverage):</strong> Tự động kiểm tra đối tượng bị chặn đã có trong các Single Role của người dùng hay chưa (<span class="led-ok">@08@ [OK]</span> hoặc <span class="led-err">@0A@ [ERR]</span>).</li>
-    <li><strong>Khắc phục tức thì (1-Click Remediation):</strong> Cho phép Tester tự chọn quyền thiếu và nạp trực tiếp vào Single Role kiểm thử. Hệ thống <strong>tự động sinh Profile ngầm</strong> để người dùng tiếp tục kịch bản kiểm thử ngay lập tức!</li>
-  </ul>
-
-  <h3>So Sánh Giữa Giao Dịch SU53 Chuẩn Và Tiện Ích ZAT</h3>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th style="width: 25%;">Đặc tính so sánh</th>
-        <th style="width: 35%;">SU53 tiêu chuẩn của SAP</th>
-        <th style="width: 40%;">Tiện ích nâng cao ZAT</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>Lịch sử ghi nhận lỗi</strong></td>
-        <td>Chỉ hiển thị duy nhất <strong>01 lỗi cuối cùng</strong>. Nếu thực hiện thao tác khác, lỗi trước đó sẽ bị xóa mất.</td>
-        <td><span class="badge-tag">Lưu trữ 3 giờ</span> Quét toàn bộ lỗi phân quyền trong bộ đệm hệ thống qua hàm <code>SUSR_USER_SU53_READ</code>.</td>
-      </tr>
-      <tr>
-        <td><strong>Đối chiếu vai trò người dùng</strong></td>
-        <td>Không hiển thị thông tin Role. Người dùng không biết quyền đó thuộc Role nào.</td>
-        <td>Tự động phân tích các Single Role đang gán của User và hiển thị trực quan trạng thái tương ứng.</td>
-      </tr>
-      <tr>
-        <td><strong>Khả năng khắc phục lỗi</strong></td>
-        <td>Chỉ xem được thông tin. Phải báo IT Security phân tích và cấu hình thủ công trong PFCG.</td>
-        <td>Tích hợp nút <strong>[Add to Role]</strong>: Tự nạp TCode vào Menu, nạp Object đầy đủ trường từ bảng <code>TOBJ</code> và sinh Profile tự động.</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <h2>2. Cách Khởi Động Chương Trình</h2>
-  <p>Người dùng có thể khởi chạy chương trình bằng 1 trong 2 cách sau trên SAP GUI:</p>
-  <ul>
-    <li><strong>Cách 1 (Nhanh nhất):</strong> Gõ trực tiếp mã lệnh <span class="badge-zat">ZAT</span> hoặc <span class="code-inline">/nZAT</span> vào ô lệnh (Command Field) ở góc trái thanh công cụ rồi nhấn <code>Enter</code>.</li>
-    <li><strong>Cách 2:</strong> Vào giao dịch <code>SE38</code> hoặc <code>SA38</code>, nhập tên chương trình <span class="code-inline">Z_AUTH_SU53_ANALYZER</span> và nhấn <strong>Execute (F8)</strong>.</li>
-  </ul>
-
-  <h2>3. Màn Hình Chọn Dữ Liệu (Selection Screen)</h2>
-  <p>Giao diện màn hình chọn cho phép xác định tài khoản kiểm tra và bộ lọc vai trò:</p>
-
-  <!-- MOCKUP SELECTION SCREEN -->
-  <div class="sap-window">
-    <div class="sap-titlebar">
-      <div class="left">
-        <span class="sap-logo-box">SAP</span>
-        <span>Z_AUTH_SU53_ANALYZER: SU53 Authorization Analyzer &amp; Remediation Cockpit</span>
-      </div>
-      <div class="sap-window-controls">
-        <span class="sap-win-btn"></span><span class="sap-win-btn"></span><span class="sap-win-btn"></span>
-      </div>
-    </div>
-    <div class="sap-toolbar">
-      <div class="sap-tcode-box">ZAT</div>
-      <div class="sap-btn-icon sap-btn-green">&#10004; Execute (F8)</div>
-      <div class="sap-btn-icon">&#10006; Cancel</div>
-    </div>
-    <div class="sap-body">
-      <div class="sap-frame">
-        <div class="sap-frame-title">1. User Selection</div>
-        <div class="sap-field-row">
-          <span class="sap-field-label">User Name:</span>
-          <span class="sap-field-input">TEST_USER01</span>
-          <span style="margin-left: 8px; color: #64748b; font-size: 7.5pt;">(Mặc định là tài khoản SAP đang đăng nhập)</span>
-        </div>
-      </div>
-      <div class="sap-frame" style="margin-bottom: 0;">
-        <div class="sap-frame-title">2. Filter Options</div>
-        <div class="sap-field-row">
-          <input type="checkbox" checked style="margin-right: 5px;">
-          <span class="sap-field-label" style="width: auto; font-weight: normal;">Active Single Roles Only</span>
-          <span style="margin-left: 10px; color: #64748b; font-size: 7.5pt;">(Chỉ nạp các Single Role còn hạn, tự động bỏ qua Composite Role)</span>
-        </div>
-      </div>
-    </div>
-    <div class="sap-statusbar">
-      <span class="sap-status-icon green"></span>
-      <span>Nhập User Name và bấm phím F8 để bắt đầu phân tích dữ liệu</span>
-    </div>
-  </div>
-
-  <div class="callout-info">
-    <strong>Ghi chú:</strong> Tham số <code>Active Single Roles Only</code> (mặc định bật) giúp lọc bỏ các Role hết hạn hoặc Role phân quyền chung (Composite Role), đảm bảo khi bổ sung quyền sẽ nạp chính xác vào Single Role phụ trách.
-  </div>
-
-  <div class="page-footer">
-    <span>Dự án SAP S/4HANA &bull; Tài Liệu Hướng Dẫn Sử Dụng ZAT</span>
-    <span>Trang 1 / 4</span>
-  </div>
-</div>
-
-<!-- ==================== PAGE 2 ==================== -->
-<div class="page-container">
-  <h2>4. Giao Diện Làm Việc Kép (Dual-Grid Cockpit)</h2>
-  <p>
-    Sau khi nhấn <strong>F8</strong>, hệ thống hiển thị màn hình chia làm 2 khu vực trực quan:
-  </p>
-  <ul>
-    <li><strong>Khu vực trên (Top Docking Grid):</strong> Danh sách các Single Role được gán cho User. Cột <code>Target Role</code> có biểu tượng tròn (Radio button) cho phép chỉ định Role nhận phân quyền.</li>
-    <li><strong>Khu vực dưới (Bottom Fullscreen Grid):</strong> Chi tiết toàn bộ các lỗi phân quyền trong 3 giờ qua. Trạng thái mỗi dòng sẽ tự động cập nhật theo Role đang chọn ở khu vực trên.</li>
-  </ul>
-
-  <!-- MOCKUP DUAL GRID -->
-  <div class="sap-window">
-    <div class="sap-titlebar">
-      <div class="left">
-        <span class="sap-logo-box">SAP</span>
-        <span>ZAT - Dual-ALV Authorization Remediation Cockpit [User: TEST_USER01]</span>
-      </div>
-      <div class="sap-window-controls">
-        <span class="sap-win-btn"></span><span class="sap-win-btn"></span><span class="sap-win-btn"></span>
-      </div>
-    </div>
-
-    <div class="sap-body" style="padding: 5px; background: #eef2f6;">
-      <div class="sap-dual-container">
-
-        <!-- TOP GRID -->
-        <div class="sap-grid-box">
-          <div class="sap-grid-header">
-            <span>1. Assigned Single Roles of User (Click Radio Icon to Select Target Single Role)</span>
-            <div style="display: flex; gap: 4px;">
-              <span class="sap-btn-icon sap-btn-action">&#10133; Add to Role</span>
-              <span class="sap-btn-icon">&#9745; Select All</span>
-              <span class="sap-btn-icon">&#9744; Deselect All</span>
-              <span class="sap-btn-icon">&#128259; Refresh from SU53</span>
-            </div>
-          </div>
-          <table class="sap-alv-table">
-            <thead>
-              <tr>
-                <th style="width: 75px; text-align: center;">Target Role</th>
-                <th style="width: 170px;">Single Role Name</th>
-                <th>Role Description</th>
-                <th style="width: 80px;">Valid From</th>
-                <th style="width: 80px;">Valid To</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="selected-row">
-                <td style="text-align: center; font-size: 8.5pt; color: #005a9e; cursor: pointer;"><strong>&bull; (Chọn)</strong></td>
-                <td style="font-weight: bold; color: #0b3d60; background: #e0f2fe;">Z_FI_GL_ACCOUNT</td>
-                <td>Kế toán Tổng hợp - Ghi sổ &amp; Báo cáo sổ cái</td>
-                <td>01.01.2026</td>
-                <td>31.12.9999</td>
-              </tr>
-              <tr>
-                <td style="text-align: center; font-size: 8.5pt; color: #94a3b8; cursor: pointer;">&cir;</td>
-                <td style="font-weight: bold; color: #334155;">Z_MM_PURCHASER</td>
-                <td>Mua hàng - Quản lý Đơn mua &amp; Nhập kho PO</td>
-                <td>01.01.2026</td>
-                <td>31.12.9999</td>
-              </tr>
-              <tr>
-                <td style="text-align: center; font-size: 8.5pt; color: #94a3b8; cursor: pointer;">&cir;</td>
-                <td style="font-weight: bold; color: #334155;">Z_PS_PROJECT_MGR</td>
-                <td>Quản lý Dự án - Điều phối WBS Element</td>
-                <td>01.01.2026</td>
-                <td>31.12.9999</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- BOTTOM GRID -->
-        <div class="sap-grid-box">
-          <div class="sap-grid-header">
-            <span>2. Failed Authorization Checks (Select Items via Checkbox to Add to Target Role)</span>
-            <span style="font-size: 7pt; color: #64748b;">Ghi nhận: 3 lỗi trong 3 giờ qua</span>
-          </div>
-          <table class="sap-alv-table">
-            <thead>
-              <tr>
-                <th style="width: 38px; text-align: center;">Select</th>
-                <th style="width: 78px; text-align: center;">Status</th>
-                <th style="width: 60px;">TCode</th>
-                <th style="width: 90px;">Auth Object</th>
-                <th style="width: 140px;">Object Description</th>
-                <th style="width: 30px; text-align: center;">RC</th>
-                <th>Checked Fields &amp; Values</th>
-                <th style="width: 135px;">Values in Selected Role</th>
-                <th style="width: 100px;">Trace Timestamp</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style="text-align: center;"><input type="checkbox" checked></td>
-                <td style="text-align: center;"><span class="led-err">@0A@ [ERR]</span></td>
-                <td class="sap-tcode-val">FB01</td>
-                <td class="sap-obj-val">F_BKPF_BUK</td>
-                <td>Accounting Document: Company Code</td>
-                <td style="text-align: center; font-weight: bold; color: #b91c1c;">4</td>
-                <td class="sap-fld-val"><strong>ACTVT</strong> = '01', <strong>BUKRS</strong> = '1000'</td>
-                <td style="color: #b91c1c; font-size: 7pt;">Missing in role Z_FI_GL_ACCOUNT</td>
-                <td style="font-size: 7pt;">22.10.2026 08:15:22</td>
-              </tr>
-              <tr>
-                <td style="text-align: center;"><input type="checkbox" checked></td>
-                <td style="text-align: center;"><span class="led-err">@0A@ [ERR]</span></td>
-                <td class="sap-tcode-val">FS00</td>
-                <td class="sap-obj-val">S_TCODE</td>
-                <td>Transaction Code Check</td>
-                <td style="text-align: center; font-weight: bold; color: #b91c1c;">4</td>
-                <td class="sap-fld-val"><strong>TCD</strong> = 'FS00'</td>
-                <td style="color: #b91c1c; font-size: 7pt;">Missing in role Z_FI_GL_ACCOUNT</td>
-                <td style="font-size: 7pt;">22.10.2026 08:16:05</td>
-              </tr>
-              <tr style="background: #f0fdf4;">
-                <td style="text-align: center;"><input type="checkbox" disabled></td>
-                <td style="text-align: center;"><span class="led-ok">@08@ [OK]</span></td>
-                <td class="sap-tcode-val">FB03</td>
-                <td class="sap-obj-val">F_BKPF_BUK</td>
-                <td>Accounting Document: Company Code</td>
-                <td style="text-align: center; font-weight: bold; color: #15803d;">0</td>
-                <td class="sap-fld-val"><strong>ACTVT</strong> = '03', <strong>BUKRS</strong> = '1000'</td>
-                <td style="color: #15803d; font-size: 7pt;">Present in role Z_FI_GL_ACCOUNT</td>
-                <td style="font-size: 7pt;">22.10.2026 08:10:11</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-      </div>
-    </div>
-
-    <div class="sap-statusbar">
-      <span class="sap-status-icon green"></span>
-      <span>Target Single Role switched to: Z_FI_GL_ACCOUNT. Dữ liệu đã sẵn sàng để xử lý.</span>
-    </div>
-  </div>
-
-  <h3>Chi Tiết Các Nút Chức Năng Trên Thanh Công Cụ</h3>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th style="width: 25%;">Nút bấm / Thao tác</th>
-        <th style="width: 25%;">Phím tắt / Icon</th>
-        <th style="width: 50%;">Chức năng thực hiện</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>[Add to Role]</strong></td>
-        <td>Icon <span class="badge-tag">&#10133;</span> (Xanh đậm)</td>
-        <td>Nạp toàn bộ các quyền và TCode được tích chọn ở bảng dưới vào Role đang chọn ở bảng trên, tự sinh Profile ngay lập tức.</td>
-      </tr>
-      <tr>
-        <td><strong>[Select All]</strong></td>
-        <td>Icon <span class="badge-tag">&#9745;</span></td>
-        <td>Tự động tích chọn tất cả các dòng lỗi còn thiếu (<span class="led-err">@0A@ [ERR]</span>). Các dòng đã có quyền (<span class="led-ok">@08@</span>) sẽ tự động bị bỏ qua.</td>
-      </tr>
-      <tr>
-        <td><strong>[Deselect All]</strong></td>
-        <td>Icon <span class="badge-tag">&#9744;</span></td>
-        <td>Hủy bỏ toàn bộ lựa chọn trong cột Checkbox.</td>
-      </tr>
-      <tr>
-        <td><strong>[Refresh from SU53]</strong></td>
-        <td>Icon <span class="badge-tag">&#128259;</span> (hoặc phím F8)</td>
-        <td>Đọc lại bộ nhớ đệm lỗi của hệ thống khi Tester vừa thử nghiệm một nghiệp vụ mới trên cửa sổ khác.</td>
-      </tr>
-      <tr>
-        <td><strong>Click biểu tượng Radio</strong></td>
-        <td>Cột <code>Target Role</code></td>
-        <td>Chuyển đổi Role kiểm thử mục tiêu. Khi chuyển, hệ thống tự động so khớp lại toàn bộ danh sách lỗi phía dưới theo Role mới.</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="page-footer">
-    <span>Dự án SAP S/4HANA &bull; Tài Liệu Hướng Dẫn Sử Dụng ZAT</span>
-    <span>Trang 2 / 4</span>
-  </div>
-</div>
-
-<!-- ==================== PAGE 3 ==================== -->
-<div class="page-container">
-  <h2>5. Quy Trình 5 Bước Khắc Phục Lỗi Dành Cho Tester</h2>
-  <p>Khi gặp thông báo lỗi phân quyền trong lúc kiểm thử, Tester thực hiện theo trình tự 5 bước chuẩn hóa sau:</p>
-
-  <div class="step-card">
-    <div class="step-header">
-      <span class="step-num">1</span>
-      <span class="step-title">Phát hiện lỗi không có quyền trong giao dịch nghiệp vụ</span>
-    </div>
-    <p>
-      Khi bạn thực hiện thao tác (ví dụ chạy <code>FB01</code>, <code>ME21N</code>, <code>FS00</code>), hệ thống chặn lại và báo lỗi ở thanh trạng thái màu đỏ:
-      <br><span class="code-inline" style="color: #b91c1c;">&bull; You are not authorized to use transaction FB01</span> hoặc <span class="code-inline" style="color: #b91c1c;">&bull; No authorization for Company Code 1000 (Object F_BKPF_BUK)</span>.
-    </p>
-  </div>
-
-  <div class="step-card">
-    <div class="step-header">
-      <span class="step-num">2</span>
-      <span class="step-title">Mở nhanh tiện ích ZAT trên cửa sổ mới</span>
-    </div>
-    <p>
-      Không cần thoát màn hình đang làm việc dở, hãy mở một cửa sổ SAP mới bằng lệnh <span class="code-inline">/oZAT</span>. 
-      Kiểm tra User Name của bạn và nhấn phím <strong>F8</strong> để nạp lịch sử lỗi.
-    </p>
-  </div>
-
-  <div class="step-card">
-    <div class="step-header">
-      <span class="step-num">3</span>
-      <span class="step-title">Chọn Single Role mục tiêu ở Tầng 1 (Grid Trên)</span>
-    </div>
-    <p>
-      Nhấp vào biểu tượng hình tròn <code>Target Role</code> tương ứng với vai trò bạn đang kiểm thử (ví dụ: <span class="code-inline">Z_FI_GL_ACCOUNT</span>). 
-      Toàn bộ các dòng lỗi ở Tầng 2 bên dưới sẽ lập tức được so khớp xem quyền đó đã có hay chưa.
-    </p>
-  </div>
-
-  <div class="step-card">
-    <div class="step-header">
-      <span class="step-num">4</span>
-      <span class="step-title">Tích chọn các quyền còn thiếu ở Tầng 2 (Grid Dưới)</span>
-    </div>
-    <p>
-      Tích chọn vào các ô Checkbox ở cột <code>Select</code> đối với các dòng có đèn màu đỏ <span class="led-err">@0A@ [ERR]</span>. 
-      Bạn cũng có thể bấm nút <strong>[Select All]</strong> trên thanh công cụ để chọn nhanh toàn bộ lỗi hợp lệ.
-    </p>
-  </div>
-
-  <div class="step-card">
-    <div class="step-header">
-      <span class="step-num">5</span>
-      <span class="step-title">Bấm nút [Add to Role] để hoàn tất tự động</span>
-    </div>
-    <p>
-      Bấm nút <strong>[Add to Role]</strong> ở thanh công cụ Tầng 1. Hệ thống sẽ tự động thực thi các nghiệp vụ ngầm:
-    </p>
-    <ul>
-      <li><strong>Nạp Menu TCode:</strong> Nếu thiếu quyền TCode (<code>S_TCODE</code>), tự động chèn TCode vào Menu của Role.</li>
-      <li><strong>Nạp Authorization Objects:</strong> Tự động bổ sung Object và điền đầy đủ 100% các Field bắt buộc từ bảng từ điển chuẩn của SAP (<code>TOBJ</code>).</li>
-      <li><strong>Mở Org Level kiểm thử:</strong> Tự động gán giá trị <code>*</code> cho các cấp tổ chức còn trống để tránh bị chặn khi test.</li>
-      <li><strong>Biên dịch Profile ngầm:</strong> Tự động kích hoạt Profile phân quyền và cập nhật bộ nhớ người dùng (User Buffer).</li>
-    </ul>
-  </div>
-
-  <!-- THÔNG BÁO KẾT QUẢ THÀNH CÔNG -->
-  <h3>Mô Phỏng Trạng Thái Sau Khi Bổ Sung Quyền Thành Công</h3>
-  <div class="sap-window" style="margin-bottom: 6px;">
-    <div class="sap-statusbar" style="background: #f0fdf4; border-top: 1px solid #86efac; color: #166534; font-weight: 600; padding: 5px 10px;">
-      <span class="sap-status-icon green"></span>
-      <span>1 transaction(s) added to menu. 1 object(s) added/updated. Profile regenerated. Data refreshed.</span>
-    </div>
-  </div>
-
-  <div class="callout-success">
-    <strong>Kết quả:</strong> Ngay sau khi nhìn thấy thông báo màu xanh ở thanh trạng thái như trên, bạn chỉ cần quay lại cửa sổ giao dịch ban đầu (<code>FB01</code>) và bấm <code>Enter</code> hoặc thực hiện lại. Giao dịch sẽ chạy trơn tru mà không cần thoát ra đăng nhập lại!
-  </div>
-
-  <div class="page-footer">
-    <span>Dự án SAP S/4HANA &bull; Tài Liệu Hướng Dẫn Sử Dụng ZAT</span>
-    <span>Trang 3 / 4</span>
-  </div>
-</div>
-
-<!-- ==================== PAGE 4 ==================== -->
-<div class="page-container">
-  <h2>6. Ý Nghĩa Các Mã Trạng Thái &amp; Thao Tác Nâng Cao</h2>
-
-  <h3>Bảng Tra Cứu Mã Trạng Thái ALV</h3>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th style="width: 18%;">Mã Trạng Thái</th>
-        <th style="width: 14%;">Biểu Tượng</th>
-        <th style="width: 38%;">Ý Nghĩa Kỹ Thuật</th>
-        <th style="width: 30%;">Hành Động Khuyến Nghị</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><code>@08@ [OK]</code></td>
-        <td><span class="led-ok">&bull; XANH</span></td>
-        <td>Đối tượng và toàn bộ giá trị trường <strong>đã có đầy đủ</strong> trong Role đang chọn. Checkbox tự động bị khóa (Disabled).</td>
-        <td>Không cần xử lý thêm. Lỗi có thể do User thiếu ở một vai trò khác hoặc đã được cấp trước đó.</td>
-      </tr>
-      <tr>
-        <td><code>@0A@ [ERR]</code></td>
-        <td><span class="led-err">&bull; ĐỎ</span></td>
-        <td>Đối tượng hoặc giá trị trường <strong>hoàn toàn chưa có</strong> trong Role đang chọn. Đây là nguyên nhân trực tiếp gây chặn lỗi.</td>
-        <td>Tích chọn Checkbox và nhấn nút <strong>[Add to Role]</strong> để bổ sung ngay.</td>
-      </tr>
-      <tr>
-        <td><code>@09@ [WARN]</code></td>
-        <td><span class="led-warn">&bull; VÀNG</span></td>
-        <td>Trùng khớp một phần; hoặc bộ đệm SU53 hiện tại không ghi nhận lỗi nào phát sinh trong 3 giờ qua.</td>
-        <td>Thực hiện lại thao tác nghiệp vụ để sinh lỗi mới, sau đó bấm <strong>[Refresh from SU53]</strong>.</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <h3>Các Thao Tác Tiện Ích Bổ Sung</h3>
-  <ul>
-    <li>
-      <strong>Tra cứu chi tiết Authorization Object (SU03 Jump):</strong> Nhấp đúp chuột (Double-Click) vào bất kỳ ô nào ở cột <code>Auth Object</code> (ví dụ: <span class="code-inline">F_BKPF_BUK</span>). Hệ thống sẽ tự động mở giao dịch <code>SU03</code> hiển thị đầy đủ tài liệu giải thích chức năng của đối tượng phân quyền đó.
-    </li>
-    <li>
-      <strong>Xuất danh sách ra file Excel:</strong> Trên thanh công cụ ALV, bấm tổ hợp phím <code>Ctrl + Shift + F7</code> hoặc vào Menu <code>List &rarr; Export &rarr; Spreadsheet</code>. Vì các mã trạng thái đã được chuẩn hóa kèm text tag (<code>@08@ [OK]</code>, <code>@0A@ [ERR]</code>), người dùng có thể dùng chức năng Filter của Excel để phân loại báo cáo cực kỳ trực quan.
-    </li>
-  </ul>
-
-  <h2>7. Câu Hỏi Thường Gặp &amp; Xử Lý Sự Cố (FAQ)</h2>
-
-  <div class="callout-warning">
-    <strong>1. Bấm [Add to Role] bị báo lỗi: "Role is locked (Edit mode)"?</strong><br>
-    <em>Nguyên nhân:</em> Role đó đang được một tài khoản khác (hoặc chính bạn) mở ở chế độ Chỉnh sửa (Change Mode) trong giao dịch <code>PFCG</code>.<br>
-    <em>Cách khắc phục:</em> Thoát khỏi màn hình chỉnh sửa <code>PFCG</code> (nhập <code>/n</code>), sau đó quay lại <code>ZAT</code> và bấm lại nút [Add to Role].
-  </div>
-
-  <div class="callout-warning">
-    <strong>2. Tại sao tôi không thấy giao dịch mới nạp trong SAP Easy Access Menu?</strong><br>
-    <em>Giải thích:</em> Tiện ích <code>ZAT</code> đã nạp TCode vào Menu kỹ thuật của Role và sinh Profile phân quyền cấp mã giao dịch (<code>S_TCODE</code>). Để cây Menu ngoài màn hình chính cập nhật, Tester chỉ cần gõ lệnh <span class="code-inline">/n</span> để làm mới session hoặc chạy trực tiếp mã lệnh từ ô Command Field.
-  </div>
-
-  <div class="callout-success">
-    <strong>3. Sau khi bổ sung quyền, quyền có bị mất khi chạy lại kịch bản khác không?</strong><br>
-    <em>Trả lời:</em> Không. Dữ liệu đã được ghi vĩnh viễn vào các bảng chuẩn của SAP (<code>AGR_1250</code>, <code>AGR_1251</code>, <code>AGR_1252</code>) và biên dịch thành Profile của Role đó. Quyền sẽ duy trì cho đến khi Admin có đợt cập nhật lớn tiếp theo.
-  </div>
-
-  <div class="callout-info">
-    <strong>Thông tin hỗ trợ kỹ thuật:</strong><br>
-    Trong trường hợp gặp lỗi đặc biệt hoặc các đối tượng phân quyền phức tạp liên quan đến HR/Structural Authorization, vui lòng liên hệ Ban Quản trị Phân quyền Hệ thống (SAP Security Team) để được hỗ trợ chuyên sâu.
-  </div>
-
-  <div class="page-footer">
-    <span>Dự án SAP S/4HANA &bull; Tài Liệu Hướng Dẫn Sử Dụng ZAT</span>
-    <span>Trang 4 / 4</span>
-  </div>
-</div>
-
-</body>
-</html>
 """
 
-def generate_pdf():
-    print(f"[*] Writing HTML guide to: {HTML_OUT}")
-    HTML_OUT.write_text(HTML_CONTENT, encoding="utf-8")
-    print(f"[+] HTML written successfully ({len(HTML_CONTENT)} bytes).")
-
-    print(f"[*] Converting HTML to PDF using Chrome: {CHROME_PATH}")
-    if not os.path.exists(CHROME_PATH):
-        print(f"[!] Chrome not found at {CHROME_PATH}")
-        sys.exit(1)
-
+def build_pdf_from_html(html_file: Path, pdf_file: Path):
     cmd = [
         CHROME_PATH,
         "--headless=new",
         "--disable-gpu",
         "--no-pdf-header-footer",
-        f"--print-to-pdf={PDF_OUT.resolve()}",
-        f"file:///{HTML_OUT.resolve().as_posix()}"
+        f"--print-to-pdf={pdf_file.resolve()}",
+        f"file:///{html_file.resolve().as_posix()}"
     ]
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"[!] Chrome error: {result.stderr}")
-        sys.exit(1)
-
-    if PDF_OUT.exists():
-        size_kb = PDF_OUT.stat().st_size / 1024
-        print(f"[+] PDF generated successfully: {PDF_OUT} ({size_kb:.1f} KB)")
-        
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"[!] Error building {pdf_file.name}: {res.stderr}")
+        return False
+    if pdf_file.exists():
+        size_kb = pdf_file.stat().st_size / 1024
+        print(f"[+] Successfully generated: {pdf_file.name} ({size_kb:.1f} KB)")
         try:
             import pymupdf
-            doc = pymupdf.open(PDF_OUT)
-            page_count = len(doc)
-            print(f"[+] Verified PDF with PyMuPDF: {page_count} pages.")
+            doc = pymupdf.open(pdf_file)
+            print(f"    - Pages: {len(doc)}")
             doc.close()
-        except Exception as e:
-            print(f"[i] Could not verify with pymupdf: {e}")
-    else:
-        print("[!] PDF generation failed: File does not exist.")
-        sys.exit(1)
+        except Exception:
+            pass
+        return True
+    return False
+
+def main():
+    print("[*] Generating English and Vietnamese Guides...")
+    
+    # 1. English
+    en_html = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.html"
+    en_pdf = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf"
+    default_pdf = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE.pdf"
+    
+    if en_html.exists():
+        build_pdf_from_html(en_html, en_pdf)
+        shutil.copyfile(en_pdf, default_pdf)
+        print(f"[+] Synced {default_pdf.name} to English master.")
+
+    # 2. Vietnamese
+    vn_html = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.html"
+    vn_pdf = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.pdf"
+    old_vn_html = DOCS_DIR / "Z_AUTH_SU53_ANALYZER_USER_GUIDE.html"
+
+    if old_vn_html.exists() and not vn_html.exists():
+        shutil.copyfile(old_vn_html, vn_html)
+    
+    if vn_html.exists():
+        build_pdf_from_html(vn_html, vn_pdf)
+
+    # Clean up redundant temporary generator if present
+    temp_gen = BASE_DIR / "scripts" / "generate_user_guide_en.py"
+    if temp_gen.exists():
+        temp_gen.unlink()
+        print("[+] Cleaned up temporary generator script.")
+
+    print("[*] All guides generated successfully.")
 
 if __name__ == "__main__":
-    generate_pdf()
+    main()

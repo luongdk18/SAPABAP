@@ -1,43 +1,44 @@
-# 📘 Hướng Dẫn Sử Dụng ZAT (Z_AUTH_SU53_ANALYZER)
-## Dành Cho Đội Kiểm Thử Phân Quyền (Tester / Key User / UAT Team)
+# 📘 End-User Guide: ZAT (Z_AUTH_SU53_ANALYZER)
+## Self-Service Authorization Remediation Cockpit for Role Testers & UAT Teams
 
-> **Mã giao dịch (TCode)**: `ZAT`  
-> **Chương trình ABAP**: [`src/z_auth_su53_analyzer.prog.abap`](../src/z_auth_su53_analyzer.prog.abap)  
-> **Bản PDF in ấn / gửi qua email**: [📄 `docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE.pdf`](./Z_AUTH_SU53_ANALYZER_USER_GUIDE.pdf)  
-> **Phiên bản**: v2.0 (Dual-Grid ALV Cockpit)
+> **Transaction Code**: `ZAT`  
+> **ABAP Program**: [`src/z_auth_su53_analyzer.prog.abap`](../src/z_auth_su53_analyzer.prog.abap)  
+> **Print-Ready PDF Guide**: [📄 `docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf`](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_EN.pdf)  
+> **Vietnamese Version**: [🇻🇳 `docs/Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.md`](./Z_AUTH_SU53_ANALYZER_USER_GUIDE_VN.md)  
+> **Cockpit Version**: v2.0 (Dual-Grid ALV Architecture)
 
 ---
 
-## 1. Giới Thiệu & Mục Đích Sử Dụng
+## 1. Introduction & Business Purpose
 
-Trong các đợt kiểm thử hệ thống SAP S/4HANA (Unit Test, Integration Test, UAT), người dùng thường gặp lỗi phân quyền (bị chặn truy cập giao dịch hoặc không có thẩm quyền thao tác dữ liệu chứng từ). 
-Thông thường, Tester phải chụp ảnh màn hình giao dịch `SU53` gửi cho Quản trị viên (Security Admin) và mất thời gian chờ đợi xử lý thủ công qua `PFCG`.
+During SAP S/4HANA testing cycles (Unit Testing, Integration Testing, UAT), testers frequently encounter authorization failures (blocked transactions or missing business document authorizations). 
+Conventionally, testers capture screenshots of standard transaction `SU53`, send them to Security Administrators, and wait for manual profile adjustments in `PFCG`. This causes substantial test delays and project bottlenecks.
 
-Chương trình **`Z_AUTH_SU53_ANALYZER` (Mã giao dịch: `ZAT`)** là công cụ chuyên biệt giúp đội kiểm thử:
-- **Quét toàn diện bộ đệm lỗi**: Thu thập toàn bộ lịch sử lỗi phân quyền phát sinh trong vòng **3 giờ gần nhất** (khác với SU53 chỉ lưu 1 lỗi duy nhất).
-- **Đối chiếu vai trò (Role Coverage)**: Tự động kiểm tra đối tượng bị chặn đã có trong các Single Role của người dùng hay chưa (`@08@ [OK]` hoặc `@0A@ [ERR]`).
-- **Khắc phục tức thì (1-Click Remediation)**: Cho phép Tester tự chọn quyền thiếu và nạp trực tiếp vào Single Role kiểm thử. Hệ thống **tự động sinh Profile ngầm** để người dùng tiếp tục kịch bản kiểm thử ngay lập tức!
+The **`Z_AUTH_SU53_ANALYZER` (Transaction Code: `ZAT`)** utility is an automated cockpit designed to empower testers:
+- **Multi-Failure SU53 History**: Aggregates all failure records from the past **3 hours** directly from kernel buffers (unlike standard SU53 which displays only the single last failed check).
+- **Live Role Coverage Analysis**: Automatically cross-references missing checks against the tester's assigned Single Roles (`@08@ [OK]` or `@0A@ [ERR]`).
+- **1-Click Instant Remediation**: Enables testers to select missing permissions and inject them directly into their test Single Role. The program **regenerates authorization profiles in background**, enabling immediate test resumption!
 
-### 📊 So Sánh Giữa Giao Dịch SU53 Chuẩn Và Tiện Ích ZAT
+### 📊 Feature Comparison: Standard SU53 vs ZAT Cockpit
 
-| Tiêu chí | Giao dịch tiêu chuẩn `SU53` | Tiện ích nâng cao `ZAT` |
+| Comparison Criteria | Standard SAP `SU53` Transaction | Advanced `ZAT` Cockpit |
 | :--- | :--- | :--- |
-| **Lịch sử ghi nhận lỗi** | Chỉ hiển thị duy nhất **01 lỗi cuối cùng**. Nếu thực hiện thao tác khác, lỗi trước đó sẽ bị xóa mất. | **Lưu trữ 3 giờ qua**: Quét toàn bộ lỗi phân quyền trong bộ đệm hệ thống qua hàm `SUSR_USER_SU53_READ`. |
-| **Đối chiếu vai trò người dùng** | Không hiển thị thông tin Role. Người dùng không biết quyền đó thuộc Role nào. | Tự động phân tích các Single Role đang gán của User và hiển thị trực quan trạng thái tương ứng. |
-| **Khả năng khắc phục lỗi** | Chỉ xem được thông tin. Phải báo IT Security phân tích và cấu hình thủ công trong PFCG. | **Tích hợp nút `[Add to Role]`**: Tự nạp TCode vào Menu, nạp Object đầy đủ trường từ bảng `TOBJ` và sinh Profile tự động. |
+| **Failure Retention Scope** | Stores only the **very last authorization failure**. Executing any other action completely overwrites the buffer. | **3-Hour History**: Extracts and aggregates all failed authorization checks over 3 hours via `SUSR_USER_SU53_READ`. |
+| **Assigned Role Evaluation** | Displays no role information. Testers cannot identify which role is supposed to grant the missing permission. | Evaluates active Single Roles assigned to the user in real time, displaying status with intuitive visual indicators. |
+| **Remediation Capability** | Read-only display. Requires manual ticket submission to Security Admin for PFCG configuration. | **Integrated `[Add to Role]` action**: Automatically updates role menu, populates 100% mandatory fields from `TOBJ`, and compiles profiles. |
 
 ---
 
-## 2. Cách Khởi Động Chương Trình
+## 2. How to Launch the Program
 
-Người dùng có thể khởi chạy chương trình bằng 1 trong 2 cách sau trên SAP GUI:
+Testers can execute the cockpit via either of the following methods in SAP GUI:
 
-1. **Cách 1 (Nhanh nhất)**: Gõ trực tiếp mã lệnh `ZAT` hoặc `/nZAT` vào ô lệnh (Command Field) ở góc trái thanh công cụ rồi nhấn `Enter`.
-2. **Cách 2**: Vào giao dịch `SE38` hoặc `SA38`, nhập tên chương trình `Z_AUTH_SU53_ANALYZER` và nhấn **Execute (F8)**.
+1. **Option 1 (Recommended)**: Enter transaction code `ZAT` or `/nZAT` into the Command Field at the top-left corner and press `Enter`.
+2. **Option 2**: Open transaction `SE38` or `SA38`, enter program name `Z_AUTH_SU53_ANALYZER`, and click **Execute (F8)**.
 
 ---
 
-## 3. Màn Hình Chọn Dữ Liệu (Selection Screen)
+## 3. Selection Screen & Parameters
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -54,14 +55,14 @@ Người dùng có thể khởi chạy chương trình bằng 1 trong 2 cách sa
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **`User Name`**: Mặc định là tài khoản SAP của người đang đăng nhập. Có thể nhập user khác nếu bạn là Test Lead cần hỗ trợ tester khác.
-- **`Active Single Roles Only`**: Tự động lọc các Single Role còn hạn sử dụng, tự động loại trừ các Composite Role để tránh xung đột cấu trúc.
+- **`User Name`**: Target SAP user account; defaults to the currently logged-on user. Test Leads can enter another tester's account to diagnose issues collaboratively.
+- **`Active Single Roles Only`**: Restricts analysis to valid Single Roles, automatically filtering out expired roles and Composite Roles to ensure precision.
 
 ---
 
-## 4. Giao Diện Làm Việc Kép (Dual-Grid Cockpit)
+## 4. Dual-Grid Cockpit Architecture
 
-Sau khi nhấn **F8**, hệ thống hiển thị màn hình chia làm 2 khu vực trực quan:
+Upon executing (**F8**), the cockpit opens a dual-level operational workbench:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -70,11 +71,11 @@ Sau khi nhấn **F8**, hệ thống hiển thị màn hình chia làm 2 khu vự
 ├─────────┬──────────────────────┬──────────────────────────────────────────┬────────────┤
 │ Target  │ Single Role Name     │ Role Description                         │ Valid To   │
 ├─────────┼──────────────────────┼──────────────────────────────────────────┼────────────┤
-│ 🔘 (Chọn)│ Z_FI_GL_ACCOUNT      │ Kế toán Tổng hợp - Ghi sổ & Báo cáo GL   │ 31.12.9999 │
-│ ⚪      │ Z_MM_PURCHASER       │ Mua hàng - Quản lý Đơn mua & Nhập kho PO │ 31.12.9999 │
-│ ⚪      │ Z_PS_PROJECT_MGR     │ Quản lý Dự án - Điều phối WBS Element    │ 31.12.9999 │
+│ 🔘 (Sel)│ Z_FI_GL_ACCOUNT      │ General Ledger Accounting - Posting & GL │ 31.12.9999 │
+│ ⚪      │ Z_MM_PURCHASER       │ Purchasing Operations - PO & Goods Rec   │ 31.12.9999 │
+│ ⚪      │ Z_PS_PROJECT_MGR     │ Project Management - WBS Elements Coord  │ 31.12.9999 │
 └─────────┴──────────────────────┴──────────────────────────────────────────┴────────────┘
-                                            ▼ (So khớp thời gian thực)
+                                            ▼ (Real-time Cross Match)
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ 2. FAILED AUTHORIZATION CHECKS (SELECT ITEMS VIA CHECKBOX TO ADD TO TARGET ROLE)       │
 ├────┬───────────┬──────┬──────────┬──────────────────────┬──────────────────────────────┤
@@ -86,70 +87,70 @@ Sau khi nhấn **F8**, hệ thống hiển thị màn hình chia làm 2 khu vự
 └────┴───────────┴──────┴──────────┴──────────────────────┴──────────────────────────────┘
 ```
 
-### 🎛️ Chi Tiết Các Nút Chức Năng Trên Thanh Công Cụ
+### 🎛️ Toolbar Actions & Navigation Controls
 
-| Nút bấm / Thao tác | Phím tắt / Icon | Chức năng thực hiện |
+| Action / Button | Shortcut / Icon | Functional Description |
 | :--- | :--- | :--- |
-| **`[Add to Role]`** | `➕` | Nạp toàn bộ các quyền và TCode được tích chọn ở bảng dưới vào Role đang chọn ở bảng trên, tự sinh Profile ngay lập tức. |
-| **`[Select All]`** | `☑️` | Tự động tích chọn tất cả các dòng lỗi còn thiếu (`@0A@ [ERR]`). Các dòng đã có quyền (`@08@ [OK]`) sẽ tự động bị bỏ qua. |
-| **`[Deselect All]`** | `⬜` | Hủy bỏ toàn bộ lựa chọn trong cột Checkbox. |
-| **`[Refresh from SU53]`** | `🔄` (F8) | Đọc lại bộ nhớ đệm lỗi của hệ thống khi Tester vừa thử nghiệm một nghiệp vụ mới trên cửa sổ khác. |
-| **Click biểu tượng Radio** | Cột `Target Role` | Chuyển đổi Role kiểm thử mục tiêu. Khi chuyển, hệ thống tự động so khớp lại toàn bộ danh sách lỗi phía dưới theo Role mới. |
+| **`[Add to Role]`** | `➕` | Injects all checked authorizations and TCodes into the currently selected Single Role and triggers dark profile regeneration. |
+| **`[Select All]`** | `☑️` | Selects all missing authorization items (`@0A@ [ERR]`). Items already satisfied (`@08@ [OK]`) are automatically bypassed. |
+| **`[Deselect All]`** | `⬜` | Clears all selected checkboxes in the bottom grid. |
+| **`[Refresh from SU53]`** | `🔄` (F8) | Re-reads system failure buffers when the tester performs additional transaction actions in another session. |
+| **Click Radio Button** | `Target Role` column | Switches the active remediation role. The bottom grid immediately re-evaluates all failure rows against the newly chosen role. |
 
 ---
 
-## 5. Quy Trình 5 Bước Khắc Phục Lỗi Dành Cho Tester
+## 5. Standard 5-Step Remediation Workflow for Testers
 
-Khi gặp thông báo lỗi phân quyền trong lúc kiểm thử, Tester thực hiện theo trình tự 5 bước chuẩn hóa sau:
+Follow this standardized 5-step procedure when blocked by an authorization failure during business scenario execution:
 
-1. **Bước 1 - Phát hiện lỗi không có quyền trong giao dịch nghiệp vụ**:
-   - Khi bạn thực hiện thao tác (ví dụ chạy `FB01`, `ME21N`, `FS00`), hệ thống chặn lại và báo lỗi ở thanh trạng thái màu đỏ:  
-     `You are not authorized to use transaction FB01` hoặc `No authorization for Company Code 1000 (Object F_BKPF_BUK)`.
-2. **Bước 2 - Mở nhanh tiện ích ZAT trên cửa sổ mới**:
-   - Mở cửa sổ SAP mới bằng lệnh `/oZAT` (giữ nguyên màn hình làm việc hiện tại).
-   - Kiểm tra User Name và nhấn phím **F8** để nạp danh sách lỗi.
-3. **Bước 3 - Chọn Single Role mục tiêu ở Tầng 1 (Grid Trên)**:
-   - Nhấp vào biểu tượng hình tròn `Target Role` tương ứng với vai trò bạn đang kiểm thử (ví dụ: `Z_FI_GL_ACCOUNT`).
-   - Danh sách lỗi ở Tầng 2 bên dưới sẽ lập tức được so khớp xem quyền đó đã có hay chưa.
-4. **Bước 4 - Tích chọn các quyền còn thiếu ở Tầng 2 (Grid Dưới)**:
-   - Tích chọn vào các ô Checkbox ở cột `Select` đối với các dòng có đèn màu đỏ `@0A@ [ERR]`.
-   - Bạn cũng có thể bấm nút **`[Select All]`** để chọn nhanh toàn bộ lỗi hợp lệ.
-5. **Bước 5 - Bấm nút [Add to Role] để hoàn tất tự động**:
-   - Bấm nút **`[Add to Role]`** ở thanh công cụ Tầng 1. Hệ thống tự động:
-     - Nạp TCode vào Menu của Role (nếu là `S_TCODE`).
-     - Bổ sung Object và điền đầy đủ 100% các Field bắt buộc từ từ điển chuẩn SAP (`TOBJ`).
-     - Mở giá trị `*` cho các cấp tổ chức (Org Levels) còn trống phục vụ test.
-     - Tự động biên dịch lại Profile phân quyền ngầm (`SUPRN_DARK_MANIPULATE_PROFILE`).
-   - Thanh trạng thái báo thông báo xanh:  
+1. **Step 1 - Encounter authorization failure in business transaction**:
+   - While executing your scenario (e.g. `FB01`, `ME21N`, `FS00`), SAP halts execution and outputs a red status bar message:  
+     `You are not authorized to use transaction FB01` or `No authorization for Company Code 1000 (Object F_BKPF_BUK)`.
+2. **Step 2 - Launch ZAT in a new parallel session**:
+   - Open a new SAP GUI window by typing `/oZAT` in the Command Field (preserves your working transaction).
+   - Verify your User Name and press **F8** to retrieve failure buffer logs.
+3. **Step 3 - Select the target Single Role in Top Grid**:
+   - Click the circular radio button in the `Target Role` column corresponding to the functional role you are validating (e.g. `Z_FI_GL_ACCOUNT`).
+   - The failure rows in the bottom grid instantly recalculate their coverage status.
+4. **Step 4 - Select the missing authorizations in Bottom Grid**:
+   - Tick the checkboxes in the `Select` column for rows marked with red indicator `@0A@ [ERR]`.
+   - Alternatively, click the **`[Select All]`** toolbar button to select all valid remediation items at once.
+5. **Step 5 - Click [Add to Role] for automated remediation**:
+   - Click the **`[Add to Role]`** button on the Top Grid toolbar. The utility automatically executes in background:
+     - Injects the transaction into the role menu (for `S_TCODE`).
+     - Injects missing objects with 100% mandatory fields populated from `TOBJ`.
+     - Automatically sets unmaintained Org Levels to `*` (full test authorization).
+     - Compiles the authorization profile in background (`SUPRN_DARK_MANIPULATE_PROFILE`).
+   - The status bar displays a green confirmation message:  
      `1 transaction(s) added to menu. 1 object(s) added/updated. Profile regenerated. Data refreshed.`
-   - **Kết quả**: Tester quay lại giao dịch nghiệp vụ ban đầu (`FB01`) và bấm `Enter` để tiếp tục kịch bản ngay mà không cần liên hệ IT Security!
+   - **Outcome**: Return to your original transaction window (`FB01`) and press `Enter` to resume testing immediately without logging off!
 
 ---
 
-## 6. Ý Nghĩa Các Mã Trạng Thái & Thao Tác Nâng Cao
+## 6. Status Code Reference & Advanced Features
 
-### 🚦 Bảng Tra Cứu Mã Trạng Thái ALV
+### 🚦 ALV Grid Status Indicators
 
-| Mã Trạng Thái | Biểu Tượng | Ý Nghĩa Kỹ Thuật | Hành Động Khuyến Nghị |
+| Status Code | Indicator | Technical Meaning | Recommended Action |
 | :--- | :--- | :--- | :--- |
-| **`@08@ [OK]`** | 🟢 Xanh | Đối tượng và toàn bộ giá trị trường **đã có đầy đủ** trong Role đang chọn. Checkbox tự động bị khóa. | Không cần xử lý thêm. Lỗi có thể do User thiếu ở vai trò khác hoặc đã được cấp trước đó. |
-| **`@0A@ [ERR]`** | 🔴 Đỏ | Đối tượng hoặc giá trị trường **hoàn toàn chưa có** trong Role đang chọn. Đây là nguyên nhân trực tiếp gây chặn lỗi. | Tích chọn Checkbox và nhấn nút **`[Add to Role]`** để bổ sung ngay. |
-| **`@09@ [WARN]`** | 🟡 Vàng | Trùng khớp một phần; hoặc bộ đệm SU53 hiện tại không ghi nhận lỗi nào phát sinh trong 3 giờ qua. | Thực hiện lại thao tác nghiệp vụ để sinh lỗi mới, sau đó bấm **`[Refresh from SU53]`**. |
+| **`@08@ [OK]`** | 🟢 Green | The authorization object and checked values **already exist** in the selected role. Selection checkbox is disabled. | No action required. The failure is already satisfied by this role or granted previously. |
+| **`@0A@ [ERR]`** | 🔴 Red | The authorization object or field values are **missing** in the selected role. This is the direct cause of the block. | Tick the checkbox and click **`[Add to Role]`** to resolve the failure immediately. |
+| **`@09@ [WARN]`** | 🟡 Yellow | Partial match; or the SU53 buffer contains no failed authorization checks within the last 3 hours. | Re-perform the failing transaction step in your business window, then click **`[Refresh from SU53]`**. |
 
-### 🔍 Các Thao Tác Tiện Ích Bổ Sung
+### 🔍 Advanced Operational Features
 
-- **Tra cứu chi tiết Authorization Object (SU03 Jump)**: Nhấp đúp chuột (Double-Click) vào bất kỳ ô nào ở cột `Auth Object` (ví dụ: `F_BKPF_BUK`). Hệ thống sẽ tự động mở giao dịch `SU03` hiển thị đầy đủ tài liệu giải thích chức năng của đối tượng.
-- **Xuất danh sách ra file Excel**: Trên thanh công cụ ALV, bấm tổ hợp phím `Ctrl + Shift + F7` hoặc vào Menu `List ➔ Export ➔ Spreadsheet`. Các mã trạng thái đã được chuẩn hóa kèm text tag (`@08@ [OK]`, `@0A@ [ERR]`), giúp người dùng lọc báo cáo trên Excel dễ dàng.
+- **Authorization Object Jump (`SU03`)**: Double-click any entry in the `Auth Object` column (e.g. `F_BKPF_BUK`). The cockpit automatically opens transaction `SU03`, displaying official SAP documentation and technical field definitions for that object.
+- **Spreadsheet Export for Audit & Reporting**: Press `Ctrl + Shift + F7` or navigate to `List ➔ Export ➔ Spreadsheet`. Because status codes include explicit text tags (`@08@ [OK]`, `@0A@ [ERR]`), exported Excel files can be filtered cleanly by test leads or PMO teams.
 
 ---
 
-## 7. Câu Hỏi Thường Gặp (FAQ)
+## 7. Frequently Asked Questions & Troubleshooting (FAQ)
 
-> **Q1: Bấm [Add to Role] bị báo lỗi: "Role is locked (Edit mode)"?**  
-> **Trả lời:** Role đó đang được mở ở chế độ Chỉnh sửa (Change Mode) trong giao dịch `PFCG`. Hãy thoát khỏi màn hình `PFCG` (gõ `/n`), quay lại `ZAT` và bấm lại nút `[Add to Role]`.
+> **Q1: Why does [Add to Role] display "Role is locked (Edit mode)"?**  
+> **Answer:** The target role is currently opened in Change Mode in transaction `PFCG` by another administrator or your own user. Exit edit mode in `PFCG` (enter `/n`), return to `ZAT`, and re-click `[Add to Role]`.
 
-> **Q2: Tại sao tôi không thấy giao dịch mới nạp trong SAP Easy Access Menu?**  
-> **Trả lời:** Tiện ích `ZAT` đã nạp TCode vào Menu kỹ thuật của Role và sinh Profile phân quyền. Để cây Menu ngoài màn hình chính cập nhật, Tester chỉ cần gõ lệnh `/n` để làm mới session hoặc chạy trực tiếp mã lệnh từ ô Command Field.
+> **Q2: Why is the newly added transaction not visible in the SAP Easy Access tree?**  
+> **Answer:** ZAT successfully injects the TCode into the role menu and generates the technical `S_TCODE` authorization. To refresh the visual SAP Easy Access tree on the initial screen, simply type `/n` or start the transaction directly from the Command Field.
 
-> **Q3: Sau khi bổ sung quyền, quyền có bị mất khi chạy lại kịch bản khác không?**  
-> **Trả lời:** Không. Dữ liệu đã được ghi vĩnh viễn vào các bảng chuẩn của SAP (`AGR_1250`, `AGR_1251`, `AGR_1252`) và biên dịch thành Profile của Role đó. Quyền sẽ duy trì cho đến khi Admin có đợt cập nhật lớn tiếp theo.
+> **Q3: Are the injected authorizations permanent?**  
+> **Answer:** Yes. Authorizations are written directly into standard SAP tables (`AGR_1250`, `AGR_1251`, `AGR_1252`) and compiled into the generated profile. They persist permanently until the role is deliberately modified in a subsequent release cycle.
