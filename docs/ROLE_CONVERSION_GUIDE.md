@@ -80,22 +80,24 @@ Reads Sheet 2 of the consolidated role workbook (where Derived Roles and mixed O
 - **Purpose**: Batch maintenance of SAP Organizational Level variables in table `AGR_1252` via report `Z_ROLE_03_UPDATE_ORG`.
 - **Classification**: Matches against standard SAP 55 Org Level definitions in [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv) (e.g., Company Code ➔ `$BUKRS`, Plant ➔ `$WERKS`, Controlling Area ➔ `$KOKRS`, Purchasing Org ➔ `$EKORG`).
 - **Target ABAP**: `Z_ROLE_03_UPDATE_ORG`
-- **Output CSV Format**:
+- **Output CSV Format** (4 columns: `Role,Org_Level,value-low,value-high`):
   ```csv
-  Role,Org_Level,Value
-  Z_FI_DRV_GL_1000,$BUKRS,1000
-  Z_FI_DRV_GL_1000,$KOKRS,1000
+  Role,Org_Level,value-low,value-high
+  Z_FI_DRV_GL_1000,$BUKRS,1000,
+  Z_FI_DRV_GL_1000,$KOKRS,1000,
   ```
 
 ### 3b. Authorization Objects & Fields (`*_03b_Auth_Objects_converted.csv`)
 - **Purpose**: Batch maintenance of authorization objects & fields in table `AGR_1251` (e.g., Cost Center, Order Type, Asset Class, Segment, Business Place, Credit Segment, Costing Variant, Release Group/Code).
 - **Classification**: Resolves non-Org headers against [`excel-templates/Object_Levels.csv`](../excel-templates/Object_Levels.csv) (13,457 SAP standard object-field pairs). Supports multi-object expansion (e.g. Person Responsible in `C_PROJ_VNR` & `C_PRPS_VNR`).
 - **Strict Boundary**: If a field belongs to Org Levels (e.g. `BUKRS`), it is NEVER output here. TCode checks (`S_TCODE-TCD`) are excluded (maintained via Menu).
-- **Output CSV Format**:
+- **Value Parsing & Data Integrity**: Single values have empty `value-high`. Ranges (`LOW - HIGH`, `00000000-00000080`) and pairs (`00000000; 00000080`) are placed in `value-low` and `value-high` on a single row, strictly preserving leading zeros.
+- **Output CSV Format** (4 columns: `Role,object-field,value-low,value-high`):
   ```csv
-  Role,object-field,value
-  Z_FI_PERIOD_CONTROL_1000,F_FAGL_SEG-SEGMENT,1000_A
-  Z_FI_PERIOD_CONTROL_1000,K_CSKS-KOSTL,CC_1000
+  Role,object-field,value-low,value-high
+  Z_FI_PERIOD_CONTROL_1000,F_FAGL_SEG-SEGMENT,*,
+  Z_FI_PERIOD_CONTROL_1000,K_CSKS-KOSTL,1100*,
+  DRPS00_PRJ_STRUC_MAIN_1101_A,C_PROJ_VNR-PS_VERNR,00000000,00000080
   ```
 
 ---

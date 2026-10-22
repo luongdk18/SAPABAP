@@ -18,11 +18,13 @@ Output formats:
 1. Org CSV (03a_Org_Levels):
    Col 1: Role
    Col 2: Org_Level ($VARBL)
-   Col 3: Value
+   Col 3: value-low
+   Col 4: value-high
 2. Object CSV (03b_Auth_Objects):
    Col 1: Role
    Col 2: object-field (e.g., F_BKPF_BUK-BUKRS)
-   Col 3: value
+   Col 3: value-low
+   Col 4: value-high
 
 Outputs:
 - <parent_dir>/converted/<stem>_03a_Org_Levels_converted.csv
@@ -366,12 +368,99 @@ def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_p
     return None
 
 
+def parse_low_high_values(raw_val):
+    """
+    Parses cell content into pairs of (value-low, value-high).
+    Preserves leading zeros and guarantees data integrity.
+
+    Rules:
+    - 1 value (e.g. '*', '1100', '1101*') -> [(val, '')]
+    - 2 values separated by ';', ',', '\\n' (e.g. '00000000; 00000080') -> [('00000000', '00000080')]
+    - Ranges with ' - ', ':', or '-' (e.g. '1000 - 2000', '00000000-00000080') -> [(low, high)]
+    - Multiple ranges or values -> list of (low, high) pairs
+    """
+    if raw_val is None:
+        return []
+    s = str(raw_val).strip()
+    if not s or s.lower() in ('none', 'n/a', '-'):
+        return []
+
+    # Replace newlines with semicolon
+    normalized = s.replace('\r\n', ';').replace('\n', ';').replace('\r', ';')
+
+    # Split by semicolon
+    tokens = [t.strip() for t in normalized.split(';') if t.strip() and t.strip().lower() not in ('none', 'n/a', '-')]
+    if not tokens:
+        return []
+
+    # If 1 token, check comma, hyphen range, colon, or single
+    if len(tokens) == 1:
+        single = tokens[0]
+        # Check range with ' - '
+        if ' - ' in single:
+            parts = [p.strip() for p in single.split(' - ') if p.strip()]
+            if len(parts) == 2:
+                return [(parts[0], parts[1])]
+        elif ':' in single:
+            parts = [p.strip() for p in single.split(':') if p.strip()]
+            if len(parts) == 2:
+                return [(parts[0], parts[1])]
+
+        # Check comma separated (e.g. '00000000, 00000080')
+        if ',' in single:
+            comma_parts = [p.strip() for p in single.split(',') if p.strip()]
+            if len(comma_parts) == 2:
+                return [(comma_parts[0], comma_parts[1])]
+            elif len(comma_parts) > 2:
+                return [(p, '') for p in comma_parts]
+
+        # Check hyphen range without spaces: e.g. 00000000-00000080 or 1000-2000
+        m_rng = re.match(r'^([A-Za-z0-9_*]+)\s*-\s*([A-Za-z0-9_*]+)$', single)
+        if m_rng:
+            v1, v2 = m_rng.group(1), m_rng.group(2)
+            if v1.isdigit() and v2.isdigit():
+                return [(v1, v2)]
+            elif v1.isalpha() and v2.isalpha() and len(v1) == len(v2) and v1 < v2:
+                return [(v1, v2)]
+
+        return [(single, '')]
+
+    # If exactly 2 tokens (e.g. from '00000000; 00000080' or '00000000;\n00000030')
+    if len(tokens) == 2:
+        t1, t2 = tokens[0], tokens[1]
+        # If neither is already an explicit range, treat as (value-low, value-high)
+        if ' - ' not in t1 and ' - ' not in t2:
+            return [(t1, t2)]
+
+    # If multiple tokens, parse each token individually
+    results = []
+    for t in tokens:
+        if ' - ' in t:
+            parts = [p.strip() for p in t.split(' - ') if p.strip()]
+            if len(parts) == 2:
+                results.append((parts[0], parts[1]))
+                continue
+        elif ':' in t:
+            parts = [p.strip() for p in t.split(':') if p.strip()]
+            if len(parts) == 2:
+                results.append((parts[0], parts[1]))
+                continue
+        m_rng = re.match(r'^([A-Za-z0-9_*]+)\s*-\s*([A-Za-z0-9_*]+)$', t)
+        if m_rng:
+            v1, v2 = m_rng.group(1), m_rng.group(2)
+            if v1.isdigit() and v2.isdigit():
+                results.append((v1, v2))
+                continue
+        results.append((t, ''))
+    return results
+
+
 def convert_role_03_org_obj(input_path, output_dir=None):
     """
     Reads an Excel file and converts Organizational levels and Authorization Objects
     into two separate flat CSV files:
-      - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, Value) -> for AGR_1252
-      - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value) -> for AGR_1251
+      - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, value-low, value-high) -> for AGR_1252
+      - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value-low, value-high) -> for AGR_1251
     """
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -524,49 +613,26 @@ def convert_role_03_org_obj(input_path, output_dir=None):
                 continue
 
             # Multi-value & Range Parsing:
-            # 1. Distinct values separated by ';', ',', or newlines (\n) are split into separate items
-            # 2. Intervals/ranges (e.g. 00000000-00000080 or 1000 - 2000) are recognized as Low - High (single range row)
-            normalized = raw_val.replace('\r\n', ';').replace('\n', ';').replace('\r', ';').replace(',', ';')
-            raw_tokens = [t.strip() for t in normalized.split(';') if t.strip()]
-            val_tokens = []
-            for t in raw_tokens:
-                if t.lower() in ('none', 'n/a', '-', ''):
-                    continue
-                # Check for range pattern: v1-v2, v1 - v2, or v1:v2
-                m_rng = re.match(r'^([A-Za-z0-9_*]+)\s*[-:]\s*([A-Za-z0-9_*]+)$', t)
-                if m_rng:
-                    v1, v2 = m_rng.group(1), m_rng.group(2)
-                    is_range = False
-                    if ' - ' in t or ':' in t:
-                        is_range = True
-                    elif v1.isdigit() and v2.isdigit():
-                        is_range = True
-                    elif v1.isalpha() and v2.isalpha() and len(v1) == len(v2) and v1 < v2:
-                        is_range = True
-
-                    if is_range:
-                        val_tokens.append(f"{v1} - {v2}")
-                        continue
-                val_tokens.append(t)
-
-            if not val_tokens:
+            # Parses cell content into pairs of (value-low, value-high)
+            pairs = parse_low_high_values(raw_val)
+            if not pairs:
                 continue
 
             # Populate rows
             if kind == 'ORG':
                 for varbl in idents:
-                    for v in val_tokens:
-                        org_rows.append([role_name, varbl, v])
+                    for v_low, v_high in pairs:
+                        org_rows.append([role_name, varbl, v_low, v_high])
             elif kind == 'OBJECT':
                 for obj_field in idents:
-                    for v in val_tokens:
-                        obj_rows.append([role_name, obj_field, v])
+                    for v_low, v_high in pairs:
+                        obj_rows.append([role_name, obj_field, v_low, v_high])
 
     # Write Org CSV
     try:
         with open(out_org_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
-            writer.writerow(["Role", "Org_Level", "Value"])
+            writer.writerow(["Role", "Org_Level", "value-low", "value-high"])
             writer.writerows(org_rows)
         print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {roles_processed} roles)")
     except Exception as e:
@@ -577,7 +643,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     try:
         with open(out_obj_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
-            writer.writerow(["Role", "object-field", "value"])
+            writer.writerow(["Role", "object-field", "value-low", "value-high"])
             writer.writerows(obj_rows)
         print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {roles_processed} roles)")
     except Exception as e:

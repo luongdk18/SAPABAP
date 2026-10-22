@@ -12,7 +12,8 @@
 *& File format (CSV .csv):
 *&   Col 1: Role Name             (e.g., Z_FI_PERIOD_CONTROL_1000)
 *&   Col 2: Org Level Variable    (e.g., $ERKRS or $BUKRS or BUKRS)
-*&   Col 3: Org Value             (e.g., 1000, 1000*, *)
+*&   Col 3: Org Value-Low         (e.g., 1000, 1000*, *)
+*&   Col 4: Org Value-High        (e.g., 2000, optional)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP (Local Object) or Custom Package
@@ -28,6 +29,7 @@ TYPES: BEGIN OF ty_raw_row,
          col1 TYPE string,
          col2 TYPE string,
          col3 TYPE string,
+         col4 TYPE string,
        END OF ty_raw_row.
 
 TYPES: BEGIN OF ty_role_entry,
@@ -204,7 +206,7 @@ FORM read_csv_file USING iv_file TYPE localfile.
     lv_line_idx = lv_line_idx + 1.
     CLEAR ls_raw.
     PERFORM parse_csv_line USING lv_line
-                           CHANGING ls_raw-col1 ls_raw-col2 ls_raw-col3.
+                           CHANGING ls_raw-col1 ls_raw-col2 ls_raw-col3 ls_raw-col4.
 
     " Skip header row
     DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
@@ -229,14 +231,15 @@ ENDFORM.
 FORM parse_csv_line USING    iv_line TYPE string
                     CHANGING ev_col1 TYPE string
                              ev_col2 TYPE string
-                             ev_col3 TYPE string.
+                             ev_col3 TYPE string
+                             ev_col4 TYPE string.
   DATA: lt_tokens TYPE STANDARD TABLE OF string,
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
         lv_cur    TYPE string,
         lv_char   TYPE string.
 
-  CLEAR: ev_col1, ev_col2, ev_col3.
+  CLEAR: ev_col1, ev_col2, ev_col3, ev_col4.
 
   lv_len = strlen( iv_line ).
   DO lv_len TIMES.
@@ -270,6 +273,10 @@ FORM parse_csv_line USING    iv_line TYPE string
     ev_col3 = lt_tokens[ 3 ].
     ev_col3 = condense( ev_col3 ).
   ENDIF.
+  IF lines( lt_tokens ) >= 4.
+    ev_col4 = lt_tokens[ 4 ].
+    ev_col4 = condense( ev_col4 ).
+  ENDIF.
 ENDFORM.
 
 
@@ -279,7 +286,6 @@ ENDFORM.
 FORM aggregate_input_data.
   DATA: lv_role     TYPE agr_name,
         lv_var      TYPE agval,
-        lv_val      TYPE agval,
         lv_low      TYPE agval,
         lv_high     TYPE agval,
         ls_role_ent TYPE ty_role_entry.
@@ -289,7 +295,8 @@ FORM aggregate_input_data.
   LOOP AT gt_raw_rows INTO DATA(ls_raw).
     lv_role = to_upper( condense( ls_raw-col1 ) ).
     lv_var  = to_upper( condense( ls_raw-col2 ) ).
-    lv_val  = condense( ls_raw-col3 ).
+    lv_low  = condense( ls_raw-col3 ).
+    lv_high = condense( ls_raw-col4 ).
 
     IF lv_role IS INITIAL OR lv_var IS INITIAL.
       CONTINUE.
@@ -300,18 +307,31 @@ FORM aggregate_input_data.
       lv_var = '$' && lv_var.
     ENDIF.
 
-    " Handle potential ranges (LOW - HIGH or LOW:HIGH)
-    CLEAR: lv_low, lv_high.
-    IF lv_val CS ' - '.
-      SPLIT lv_val AT ' - ' INTO lv_low lv_high.
-      lv_low  = condense( lv_low ).
-      lv_high = condense( lv_high ).
-    ELSEIF lv_val CS ':'.
-      SPLIT lv_val AT ':' INTO lv_low lv_high.
-      lv_low  = condense( lv_low ).
-      lv_high = condense( lv_high ).
-    ELSE.
-      lv_low = lv_val.
+    " Strip surrounding quotes or Excel formula wrapping (e.g. ="00000000" -> 00000000)
+    IF lv_low CP '="*"' OR lv_low CP '=*'.
+      SHIFT lv_low BY 2 PLACES.
+      IF lv_low IS NOT INITIAL AND lv_low+strlen( lv_low )-1(1) = '"'.
+        lv_low = lv_low(strlen( lv_low ) - 1).
+      ENDIF.
+    ENDIF.
+    IF lv_high CP '="*"' OR lv_high CP '=*'.
+      SHIFT lv_high BY 2 PLACES.
+      IF lv_high IS NOT INITIAL AND lv_high+strlen( lv_high )-1(1) = '"'.
+        lv_high = lv_high(strlen( lv_high ) - 1).
+      ENDIF.
+    ENDIF.
+
+    " Handle potential ranges (LOW - HIGH or LOW:HIGH) if col4 is initial (backwards compatibility)
+    IF lv_high IS INITIAL.
+      IF lv_low CS ' - '.
+        SPLIT lv_low AT ' - ' INTO lv_low lv_high.
+        lv_low  = condense( lv_low ).
+        lv_high = condense( lv_high ).
+      ELSEIF lv_low CS ':'.
+        SPLIT lv_low AT ':' INTO lv_low lv_high.
+        lv_low  = condense( lv_low ).
+        lv_high = condense( lv_high ).
+      ENDIF.
     ENDIF.
 
     " Maintain Role Header count

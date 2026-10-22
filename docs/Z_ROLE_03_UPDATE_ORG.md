@@ -76,6 +76,22 @@ Automates the mass maintenance and update of **Organizational Levels** (`AGR_125
 
 ---
 
+## 📊 CSV File Format
+
+```csv
+Role,Org_Level,value-low,value-high
+Z_FI_PERIOD_CONTROL_1000,$CEERKRS,1000,
+Z_FI_PERIOD_CONTROL_1000,$KOKRS,1000,
+Z_FI_PERIOD_CONTROL_1000,$BUKRS,1000,
+Z_FI_PERIOD_CONTROL_1000,$WERKS,1000,
+Z_FI_PERIOD_CONTROL_1000,$PRCTR,1000*,
+DRPS00_PRJ_STRUC_MAIN_1101_A,$KOKRS,KG00,
+DRPS00_PRJ_STRUC_MAIN_1101_A,$BUKRS,1101,
+DRPS00_PRJ_STRUC_MAIN_1101_A,$WERKS,*,
+```
+
+---
+
 ## 🚀 Deployment
 
 ```bash
