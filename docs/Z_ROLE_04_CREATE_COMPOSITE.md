@@ -1,6 +1,6 @@
-# 📦 Z_ROLE_04_COMPOSITE: Batch Composite Role Creation
+# 📦 Z_ROLE_04_CREATE_COMPOSITE: Batch Composite Role Creation
 
-> **Source Code**: [`src/z_role_04_composite.prog.abap`](../src/z_role_04_composite.prog.abap)  
+> **Source Code**: [`src/z_role_04_create_composite.prog.abap`](../src/z_role_04_create_composite.prog.abap)  
 > **Companion Script**: [`scripts/convert_role_04_composite.py`](../scripts/convert_role_04_composite.py)  
 > **Sample CSV**: [`excel-templates/converted/Template_Role_04_Composite_converted.csv`](../excel-templates/converted/Template_Role_04_Composite_converted.csv)
 

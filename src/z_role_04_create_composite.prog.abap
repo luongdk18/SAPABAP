@@ -1,11 +1,11 @@
 *&---------------------------------------------------------------------*
-*& Report Z_ROLE_04_COMPOSITE
+*& Report Z_ROLE_04_CREATE_COMPOSITE
 *&---------------------------------------------------------------------*
 *& Purpose: Batch PFCG Composite Role Creation & Single Role Assignment
 *& Description:
 *&   Reads a CSV (.csv) file containing composite role definitions and
-*&   single/derived role assignments (Composite Role Name, Composite Role
-*&   Description, Single/Derived Role), validates single roles in SAP,
+*&   single role assignments (Composite Role Name, Composite Role
+*&   Description, Single Role), validates single roles in SAP,
 *&   creates or updates the Composite Roles (attributes = 'COLLECTIVE',
 *&   flag COLL_AGR = 'X'), assigns member single roles via standard BAPIs
 *&   (PRGN_RFC_ADD_AGRS_TO_COLL_AGR), synchronizes assignments, removes
@@ -16,12 +16,12 @@
 *& File format (CSV .csv):
 *&   Col 1: Composite Role Name        (e.g., Z_FI_COMP_CFO_1000)
 *&   Col 2: Composite Role Description (e.g., Chief Financial Officer - Entity 1000)
-*&   Col 3: Single / Derived Role      (e.g., Z_FI_PERIOD_CONTROL_1000 or N/A)
+*&   Col 3: Single Role                (e.g., Z_FI_PERIOD_CONTROL_1000 or N/A)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP (Local Object) or Custom Package
 *&---------------------------------------------------------------------*
-REPORT z_role_04_composite.
+REPORT z_role_04_create_composite.
 
 TABLES: agr_define, agr_texts, agr_flags, agr_agrs.
 

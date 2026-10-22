@@ -181,7 +181,7 @@ def create_consolidated_role_template():
 
     all_singles = sorted(list({s for cr in comp_roles for s in cr["singles"]}))
 
-    c_hdr3 = ws3.cell(1, 1, value="Derived / Composite")
+    c_hdr3 = ws3.cell(1, 1, value="Single Role / Composite")
     c_hdr3.font = header_font
     c_hdr3.fill = header_fill
     c_hdr3.border = thin_border

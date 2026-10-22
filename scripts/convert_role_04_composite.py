@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Convert Composite Roles Matrix Excel file to flat row format for SAP upload.
-Filters Derived Roles where cell value is marked with an indicator ('Y', 'y', 'X', 'x').
-If a composite role (column) has no indicator values, generates 1 row with Derived Role = 'N/A'.
+Filters member Single Roles where cell value is marked with an indicator ('Y', 'y', 'X', 'x').
+If a composite role (column) has no indicator values, generates 1 row with Single Role = 'N/A'.
 
 Output columns:
 1. Composite Role Name
 2. Composite Role Description
-3. Derived Role
+3. Single Role
 
 Output:
 - <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
@@ -142,7 +142,7 @@ def convert_role_04_composite(input_path, output_dir=None):
     try:
         with open(out_csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
-            writer.writerow(["Composite Role Name", "Composite Role Description", "Derived Role"])
+            writer.writerow(["Composite Role Name", "Composite Role Description", "Single Role"])
             for item in roles_flat:
                 writer.writerow([item['role_name'], item['role_desc'], item['derived_role']])
     except PermissionError:

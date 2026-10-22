@@ -10,7 +10,7 @@
     "deploy:role:03": "npm run deploy:role:03a && npm run deploy:role:03b",
     "deploy:role:03a": "node scripts/deploy.js src/z_role_03a_update_org.prog.abap Z_ROLE_03A_UPDATE_ORG",
     "deploy:role:03b": "node scripts/deploy.js src/z_role_03b_update_object.prog.abap Z_ROLE_03B_UPDATE_OBJECT",
-    "deploy:role:04": "node scripts/deploy.js src/z_role_04_composite.prog.abap Z_ROLE_04_COMPOSITE",
+    "deploy:role:04": "node scripts/deploy.js src/z_role_04_create_composite.prog.abap Z_ROLE_04_CREATE_COMPOSITE",
     "deploy:role:all": "npm run deploy:role:01 && npm run deploy:role:02 && npm run deploy:role:03 && npm run deploy:role:04",
     "deploy:user:01": "node scripts/deploy.js src/z_user_01_create.prog.abap Z_USER_01_CREATE",
     "deploy:user:02": "node scripts/deploy.js src/z_user_02_assign_role.prog.abap Z_USER_02_ASSIGN_ROLE",

@@ -106,11 +106,11 @@ Reads Sheet 2 of the consolidated role workbook (where Derived Roles and mixed O
 ## 4. Composite Roles (`convert_role_04_composite.py`)
 
 - **Input**: Matrix with Composite Roles in columns (Row 1: Description, Row 2: Composite Role ID) and Member Single Roles in Column 1.
-- **Empty Composite Roles**: Roles with no assigned members produce a row with `Derived Role = 'N/A'`.
-- **Target ABAP**: `Z_ROLE_04_COMPOSITE`
+- **Empty Composite Roles**: Roles with no assigned members produce a row with `Single Role = 'N/A'`.
+- **Target ABAP**: `Z_ROLE_04_CREATE_COMPOSITE`
 - **Output CSV Columns**:
   ```csv
-  Composite Role Name,Composite Role Description,Derived Role
+  Composite Role Name,Composite Role Description,Single Role
   CR_FI_ACCOUNTANT_1000,Chief Accountant - Entity 1000,Z_FI_DRV_GL_1000
   CR_FI_EMPTY_ROLE,Placeholder Role Without Members,N/A
   ```
