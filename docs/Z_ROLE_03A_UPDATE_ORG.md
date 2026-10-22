@@ -39,7 +39,7 @@ Automates the mass maintenance and update of **Organizational Levels** (`AGR_125
 ## ⚙️ Key Technical Features
 
 1. **Automatic Variable Normalization**: Supports variable formats like `$BUKRS`, `$WERKS`, or auto-prefixes missing `$` signs.
-2. **Variable Binding Restoration (`p_fix51 = 'X'`)**: Restores corrupted literal strings (such as `'-1'`) in table `AGR_1251` back to their dynamic Org Variable pointers (e.g. `$BUKRS`) using table `USORG`.
+2. **Variable Binding Restoration (`p_fix51 = 'X'`)**: Restores corrupted literal strings (such as `'-1'`) in `AGR_1251` back to their dynamic Org Variable pointers (e.g. `$BUKRS`) using standard FMs `PRGN_1251_READ_FIELD_VALUES` and `PRGN_1251_SAVE_FIELD_VALUES` with table `USORG`.
 3. **Guaranteed Green Status (`p_astnon = 'X'`)**: Defaults secondary unmaintained Org Levels to `'*'` so profiles compile cleanly without yellow/red authorization warnings.
 4. **Standard Database Persistence**: Utilizes standard SAP function `PRGN_1252_SAVE_ORG_LEVELS` to guarantee data integrity across cluster tables.
 5. **Dark Profile Compilation**: Compiles profiles in the background and verifies the resulting traffic light status using `PRGN_CHECK_PROFILE_STATUS`.
@@ -89,6 +89,18 @@ DRPS00_PRJ_STRUC_MAIN_1101_A,$KOKRS,KG00,
 DRPS00_PRJ_STRUC_MAIN_1101_A,$BUKRS,1101,
 DRPS00_PRJ_STRUC_MAIN_1101_A,$WERKS,*,
 ```
+
+---
+
+## 🔧 SAP Function Modules Used
+
+- `PRGN_1252_READ_ORG_LEVELS`: Reads active organizational levels into buffer.
+- `PRGN_1252_SAVE_ORG_LEVELS`: Saves maintained Org Levels via standard PFCG engine.
+- `PRGN_1251_READ_FIELD_VALUES` & `PRGN_1251_SAVE_FIELD_VALUES`: Restores corrupted Org variable references in authorization fields (`p_fix51`).
+- `PRGN_UPDATE_DATABASE`: Flushes PFCG buffers to database with audit change documents.
+- `PRGN_SET_ACTGROUP_TIMESTAMP`: Updates role modification timestamp.
+- `SUPRN_DARK_MANIPULATE_PROFILE`: Recompiles authorization profile in dark mode.
+- `PRGN_CHECK_PROFILE_STATUS`: Verifies resulting profile LED indicator.
 
 ---
 

@@ -25,8 +25,8 @@ Automates the mass maintenance and update of **Authorization Objects & Fields** 
     ├─► If FIELD does NOT exist in Object ─► SKIP
     │
     └─► If OBJECT & FIELD Exist in Role:
-          ├─► Compare current value in AGR_1251
-          ├─► If different, update LOW / HIGH in AGR_1251 (modified = 'G')
+          ├─► Compare current value via PRGN_1251_READ_FIELD_VALUES
+          ├─► Save updated LOW / HIGH via PRGN_1251_SAVE_FIELD_VALUES & PRGN_UPDATE_DATABASE
           ├─► Set Role Timestamp (PRGN_SET_ACTGROUP_TIMESTAMP)
           ├─► Dark Profile Generation (SUPRN_DARK_MANIPULATE_PROFILE)
           └─► Status Verification (PRGN_CHECK_PROFILE_STATUS)
@@ -87,6 +87,17 @@ DRFI01_PERIOD_CONTROL_1100,F_UKM_SGMT-UKM_SGMNT,*,
 DRFI01_PERIOD_CONTROL_1100,K_KEKO-KLVAR,*,
 DRPS00_PRJ_STRUC_MAIN_1101_A,C_PROJ_VNR-PS_VERNR,00000000,00000080
 ```
+
+---
+
+## 🔧 SAP Function Modules Used
+
+- `PRGN_1251_READ_FIELD_VALUES`: Reads active authorization fields into internal buffer.
+- `PRGN_1251_SAVE_FIELD_VALUES`: Updates modified fields via standard PFCG engine.
+- `PRGN_UPDATE_DATABASE`: Flushes PFCG buffers to database with audit change documents.
+- `PRGN_SET_ACTGROUP_TIMESTAMP`: Updates role modification timestamp.
+- `SUPRN_DARK_MANIPULATE_PROFILE`: Recompiles authorization profile in dark mode.
+- `PRGN_CHECK_PROFILE_STATUS`: Verifies resulting profile LED indicator.
 
 ---
 

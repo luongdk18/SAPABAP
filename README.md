@@ -222,10 +222,11 @@ All utilities feature:
 
 ## 7. Security & Best Practices
 
-1. **Credentials Safety**: Never commit `.sap.env` to Git (enforced via `.gitignore`).
-2. **Business Data Isolation**: Keep actual corporate matrices in `excel-working/` (Git-ignored). Only commit anonymized templates in `excel-templates/`.
-3. **Transport Requests**: Target `$TMP` during development; set `SAP_PACKAGE` and `SAP_TRANSPORT_REQUEST` for transportable packages.
-4. **Principle of Least Privilege**: Use a dedicated service account for ADT with appropriate authorizations (`S_DEVELOP`, `S_RFC`, `S_TABU_DIS`).
+1. **100% SAP Standard API & BAPI Architecture**: All utilities strictly adhere to SAP enterprise architecture guidelines by prohibiting direct database modifications (`UPDATE`, `MODIFY`, `DELETE FROM` on standard SAP tables). All operations are executed through certified BAPIs and PFCG Function Modules. See the comprehensive [**SAP Standard APIs & Function Modules Catalog**](docs/SAP_STANDARD_APIS_CATALOG.md) and project [**Architecture Rules**](AGENTS.md).
+2. **Credentials Safety**: Never commit `.sap.env` to Git (enforced via `.gitignore`).
+3. **Business Data Isolation**: Keep actual corporate matrices in `excel-working/` (Git-ignored). Only commit anonymized templates in `excel-templates/`.
+4. **Transport Requests**: Target `$TMP` during development; set `SAP_PACKAGE` and `SAP_TRANSPORT_REQUEST` for transportable packages.
+5. **Principle of Least Privilege**: Use a dedicated service account for ADT with appropriate authorizations (`S_DEVELOP`, `S_RFC`, `S_TABU_DIS`).
 
 ---
 

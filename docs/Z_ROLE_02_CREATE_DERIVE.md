@@ -71,7 +71,11 @@ Automates the batch creation of **Derived Single Roles** from parent **Master Ro
 ## 🔧 SAP Function Modules Used
 
 - `PRGN_RFC_CREATE_AGR_MULTIPLE`: Creates derived role definition with `PARENT_AGR`.
-- `PRGN_RFC_CREATE_DERIVATION`: Inherits menu and authorization data from master.
+- `PRGN_RFC_CREATE_DERIVATION`: Inherits menu and authorization data from master role.
+- `PRGN_STRU_SAVE_DEFINITION`: Updates role definition relationships (`PARENT_AGR` reparenting).
+- `PRGN_RFC_CHANGE_TEXTS`: Synchronizes role descriptions and removes boilerplate comments.
+- `PRGN_1252_READ_ORG_LEVELS` & `PRGN_1252_SAVE_ORG_LEVELS`: Initializes inherited Org Levels to `'-1'`.
+- `PRGN_UPDATE_DATABASE`: Commits PFCG buffers to database with audit change logs.
 - `SUPRN_DARK_MANIPULATE_PROFILE`: Generates runtime authorization profile.
 - `PRGN_SET_ACTGROUP_TIMESTAMP`: Updates role modification timestamp.
 

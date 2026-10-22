@@ -65,9 +65,12 @@ Automates the mass creation and updating of **Master Single Roles** directly fro
 
 ## 🔧 SAP Function Modules Used
 
-- `PRGN_RFC_CREATE_ACTIVITY_GROUP`: Creates role with menu nodes.
-- `PRGN_RFC_CREATE_AGR_MULTIPLE`: Creates empty role definition.
-- `SUPRN_DARK_MANIPULATE_PROFILE`: Compiles authorization profile in background.
+- `PRGN_RFC_CREATE_ACTIVITY_GROUP`: Creates role structure and menu folder with transactions.
+- `PRGN_RFC_CREATE_AGR_MULTIPLE`: Creates empty role shell definition.
+- `PRGN_RFC_CHANGE_TEXTS`: Standard FM to maintain role description and strip automatic comment lines.
+- `PRGN_1252_READ_ORG_LEVELS` & `PRGN_1252_SAVE_ORG_LEVELS`: Maintains Org Levels with template default `'-1'`.
+- `PRGN_UPDATE_DATABASE`: Commits PFCG authorization buffers with full change documents.
+- `SUPRN_DARK_MANIPULATE_PROFILE`: Compiles authorization profile in dark mode.
 
 ---
 

@@ -72,7 +72,8 @@ Automates the mass creation and updating of **Composite Roles** (Collective Role
 ## 🔧 SAP Function Modules Used
 
 - `PRGN_RFC_CREATE_AGR_MULTIPLE`: Creates collective role shell definition.
-- `PRGN_RFC_ADD_AGRS_TO_COLL_AGR`: Bundles member single roles into composite role.
+- `PRGN_RFC_CHANGE_TEXTS`: Standard FM to maintain role description and strip comment lines.
+- `PRGN_RFC_ADD_ACTGROUPS`: Bundles member single roles into composite role.
 - `PRGN_SET_ACTGROUP_TIMESTAMP`: Updates role modification timestamp.
 
 ---
