@@ -50,6 +50,7 @@ TYPES: BEGIN OF ty_alv_result,
          parent_agr    TYPE agr_name,  " Parent Master Role (Hotspot to PFCG)
          orgs_file_cnt TYPE i,         " Number of Org Levels in input file
          orgs_upd_cnt  TYPE i,         " Number of Org Levels updated in AGR_1252
+         orgs_skip_cnt TYPE i,         " Number of Org Levels in file skipped (not in role)
          orgs_detail   TYPE string,    " Detail summary of updated Org Levels
          profile       TYPE xuprofile, " Generated Profile Name
          message       TYPE string,    " Status Message / Execution Log
@@ -435,19 +436,20 @@ FORM process_org_update.
     " -----------------------------------------------------------------
     " 6. Assemble Full Set of Required Org Variables for Role
     " -----------------------------------------------------------------
-    " a) Variables in Input File
-    LOOP AT gt_role_orgs INTO DATA(ls_fo) WHERE agr_name = ls_role-agr_name.
-      APPEND ls_fo-varbl TO lt_all_vars.
-    ENDLOOP.
-    " b) Variables currently in role's AGR_1252
+    " Rule: Only maintain Org Variables that legitimately belong to role:
+    "  - Variables currently in role's AGR_1252
+    "  - Variables in parent master role's AGR_1252
+    "  - Variables in AGR_1251 authorizations ($...)
+    " Do NOT blindly add unassigned Org Levels from input file!
+    " a) Variables currently in role's AGR_1252
     LOOP AT lt_curr_1252 INTO DATA(ls_c1252).
       APPEND ls_c1252-varbl TO lt_all_vars.
     ENDLOOP.
-    " c) Variables in parent role's AGR_1252
+    " b) Variables in parent role's AGR_1252
     LOOP AT lt_parent_1252 INTO DATA(ls_p1252).
       APPEND ls_p1252-varbl TO lt_all_vars.
     ENDLOOP.
-    " d) Variables in AGR_1251 authorizations
+    " c) Variables in AGR_1251 authorizations
     LOOP AT lt_auth_vars INTO DATA(lv_av).
       APPEND lv_av TO lt_all_vars.
     ENDLOOP.
@@ -456,12 +458,27 @@ FORM process_org_update.
     DELETE ADJACENT DUPLICATES FROM lt_all_vars.
     DELETE lt_all_vars WHERE table_line IS INITIAL.
 
+    " Count Org Levels in file that do NOT belong to this role
+    DATA: lv_skip_file_cnt TYPE i.
+    CLEAR lv_skip_file_cnt.
+    LOOP AT gt_role_orgs INTO DATA(ls_chk_file) WHERE agr_name = ls_role-agr_name.
+      READ TABLE lt_all_vars WITH KEY table_line = ls_chk_file-varbl TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        lv_skip_file_cnt = lv_skip_file_cnt + 1.
+      ENDIF.
+    ENDLOOP.
+    ls_res-orgs_skip_cnt = lv_skip_file_cnt.
+
     " If role has NO Org Levels at all (e.g. only S_TCODE / non-org objects)
     IF lt_all_vars IS INITIAL.
       ls_res-status       = gc_status_ok.
       ls_res-action       = 'UP-TO-DATE'.
       ls_res-orgs_upd_cnt = 0.
-      ls_res-message      = 'Role contains no Org Levels in authorizations.'.
+      IF lv_skip_file_cnt > 0.
+        ls_res-message = |Role contains no Org Levels in authorizations. { lv_skip_file_cnt } Org Level(s) in CSV skipped (not in role).|.
+      ELSE.
+        ls_res-message = 'Role contains no Org Levels in authorizations.'.
+      ENDIF.
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
         WHERE agr_name = @ls_role-agr_name.
       APPEND ls_res TO gt_results.
@@ -545,6 +562,9 @@ FORM process_org_update.
         ls_res-action  = 'SIMULATE'.
         ls_res-message = |[Simulated] All { lines( lt_pt1252 ) } Org Levels in role are already up-to-date.|.
       ENDIF.
+      IF lv_skip_file_cnt > 0.
+        ls_res-message = |{ ls_res-message } { lv_skip_file_cnt } Org Level(s) in CSV skipped (not in role).|.
+      ENDIF.
 
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
         WHERE agr_name = @ls_role-agr_name.
@@ -618,6 +638,9 @@ FORM process_org_update.
         ls_res-action  = 'WARNING'.
         ls_res-message = |Profile Red: { lv_chk_msg }|.
       ENDIF.
+      IF lv_skip_file_cnt > 0.
+        ls_res-message = |{ ls_res-message } { lv_skip_file_cnt } Org Level(s) in CSV skipped (not in role).|.
+      ENDIF.
 
     ELSE.
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
@@ -626,6 +649,9 @@ FORM process_org_update.
       ls_res-status  = gc_status_ok.
       ls_res-action  = 'UP-TO-DATE'.
       ls_res-message = |All { lines( lt_pt1252 ) } Org Levels in role are already up-to-date.|.
+      IF lv_skip_file_cnt > 0.
+        ls_res-message = |{ ls_res-message } { lv_skip_file_cnt } Org Level(s) in CSV skipped (not in role).|.
+      ENDIF.
     ENDIF.
 
     APPEND ls_res TO gt_results.
@@ -730,6 +756,13 @@ FORM display_alv_results.
       lo_col->set_short_text( 'Upd Orgs' ).
       lo_col->set_medium_text( 'Updated Orgs' ).
       lo_col->set_long_text( 'Org Levels Updated' ).
+      lo_col->set_alignment( if_salv_c_alignment=>right ).
+
+      " Format Column: ORGS_SKIP_CNT
+      lo_col ?= lo_cols->get_column( 'ORGS_SKIP_CNT' ).
+      lo_col->set_short_text( 'Skip Orgs' ).
+      lo_col->set_medium_text( 'Skipped Orgs' ).
+      lo_col->set_long_text( 'Org Levels Skipped (Not in Role)' ).
       lo_col->set_alignment( if_salv_c_alignment=>right ).
 
       " Format Column: ORGS_DETAIL

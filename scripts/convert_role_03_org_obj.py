@@ -516,20 +516,31 @@ def convert_role_03_org_obj(input_path, output_dir=None):
                 continue
 
             if isinstance(val_cell, float) and val_cell.is_integer():
-                val_str = str(int(val_cell))
+                raw_val = str(int(val_cell))
             else:
-                val_str = str(val_cell).strip()
+                raw_val = str(val_cell).strip()
 
-            if not val_str or val_str.lower() in ('none', 'n/a', '-'):
+            if not raw_val or raw_val.lower() in ('none', 'n/a', '-'):
+                continue
+
+            # Split multi-value cells (separated by ';' or newlines Alt+Enter) into individual values
+            # Ensures 1 value per CSV row, preventing multiline quote issues in SAP gui_upload
+            normalized = raw_val.replace('\r\n', ';').replace('\n', ';').replace('\r', ';')
+            val_tokens = [t.strip() for t in normalized.split(';') if t.strip()]
+            val_tokens = [t for t in val_tokens if t.lower() not in ('none', 'n/a', '-', '')]
+
+            if not val_tokens:
                 continue
 
             # Populate rows
             if kind == 'ORG':
                 for varbl in idents:
-                    org_rows.append([role_name, varbl, val_str])
+                    for v in val_tokens:
+                        org_rows.append([role_name, varbl, v])
             elif kind == 'OBJECT':
                 for obj_field in idents:
-                    obj_rows.append([role_name, obj_field, val_str])
+                    for v in val_tokens:
+                        obj_rows.append([role_name, obj_field, v])
 
     # Write Org CSV
     try:
