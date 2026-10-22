@@ -5,21 +5,21 @@ Prepares input file for ABAP batch user creation program Z_USER_01_CREATE (via B
 
 Key transformations:
 1. Column 1: 'Username' - extracted from prefix before '@' in Email (or raw value if not an email), uppercased.
-2. Column 2: 'Initial Password' - generated cryptographically secure 12-character password compliant with SAP S/4HANA.
-3. Column 3: 'Full Name' - trimmed and normalized.
-4. Column 4: 'Email' - trimmed.
-5. Column 5: 'Phone No.' - standardized to unified format (<CountryCode>)<Number> without '+' sign for SAP compatibility.
-6. Column 6: 'Department' - typo and casing corrections.
-7. Column 7: 'Function' - typo, casing, and title-case corrections.
+2. Column 2: 'Full Name' - trimmed and normalized.
+3. Column 3: 'Email' - trimmed.
+4. Column 4: 'Phone No.' - standardized to unified format (<CountryCode>)<Number> without '+' sign for SAP compatibility.
+5. Column 5: 'Department' - typo and casing corrections.
+6. Column 6: 'Function' - typo, casing, and title-case corrections.
+
+Note: Initial passwords are now generated directly by the ABAP program Z_USER_01_CREATE upon user creation.
 
 Output columns:
 1. Username
-2. Initial Password
-3. Full Name
-4. Email
-5. Phone No.
-6. Department
-7. Function
+2. Full Name
+3. Email
+4. Phone No.
+5. Department
+6. Function
 
 Output:
 - <filename>_converted.csv (UTF-8 with BOM for SAP GUI import)
@@ -348,7 +348,6 @@ def convert_user_01_create(input_path, output_dir=None):
 
         records.append({
             'username': username,
-            'password': password,
             'fullname': full_name,
             'email': email,
             'phone': phone,
@@ -362,7 +361,6 @@ def convert_user_01_create(input_path, output_dir=None):
             writer = csv.writer(f)
             writer.writerow([
                 "Username",
-                "Initial Password",
                 "Full Name",
                 "Email",
                 "Phone No.",
@@ -372,7 +370,6 @@ def convert_user_01_create(input_path, output_dir=None):
             for r in records:
                 writer.writerow([
                     r['username'],
-                    r['password'],
                     r['fullname'],
                     r['email'],
                     r['phone'],

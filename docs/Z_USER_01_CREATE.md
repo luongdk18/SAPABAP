@@ -11,7 +11,7 @@ Automates mass SAP user onboarding and master data updates directly from normali
 ## 📌 Workflow
 
 ```
-[ Input CSV: Username, Password, Full Name, Email, Phone, Dept, Func ]
+[ Input CSV: Username, Full Name, Email, Phone, Dept, Func ]
             │
             ▼  Upload via GUI_UPLOAD (filetype = 'BIN' / UTF-8)
 [ Strip BOM (U+FEFF) & Validate Records ]
@@ -25,24 +25,26 @@ Automates mass SAP user onboarding and master data updates directly from normali
                                        │
                 ┌──────────────────────┴──────────────────────┐
                 ▼ (New User)                                  ▼ (Existing User)
-        [ BAPI_USER_CREATE1 ]                         [ BAPI_USER_CHANGE ]
-          - Initial Password & Defaults                 - Update Name, Email, Phone
-          - Status: @08@ [OK]                           - Optional Password Reset
-                                                        - Status: @08@ [OK] / @09@ [WARN]
+        [ Generate Password & CREATE ]                [ BAPI_USER_CHANGE ]
+          - SUSR_GENERATE_PASSWORD                      - Update Name, Email, Phone
+          - Initial Password & Defaults                 - Optional Password Reset
+          - BAPI_USER_CREATE1                           - Status: @08@ [OK] / @09@ [WARN]
+          - Status: @08@ [OK]                           
             │
             ▼
-[ Interactive ALV Cockpit with One-Click SU01 Hotspot Jump ]
+[ Interactive ALV Cockpit with Generated Initial Passwords & SU01 Hotspot Jump ]
 ```
 
 ---
 
 ## ⚙️ Key Technical Features
 
-1. **Full Name Mapping to `LASTNAME`**: Maps the complete full name directly into `BAPIADDR3-LASTNAME` (max 40 chars) without arbitrary splitting, satisfying SAP mandatory constraints while preserving full names intact.
-2. **Vietnamese Diacritics Preservation**: Uploads via binary mode (`BIN`) and decodes via UTF-8 code page `4110` with BOM removal to prevent accent corruption (`Đào`, `Lê`, `Phạm`).
-3. **Password Compliance & Auditing**: Displays initial generated passwords directly on the ALV grid for audit trails and secure distribution.
-4. **Phone Formatting**: Standardized format `(<CountryCode>)<Number>` **without `+` sign** for native SAP BAPI compatibility.
-5. **Safe In-Place Updates (`p_upd = 'X'`)**: Updates address, department, and function for existing users; optional password reset flag (`p_pwd`).
+1. **Automatic Initial Password Generation**: Eliminates the need to maintain passwords in CSV files. The ABAP program automatically generates a cryptographically secure, 12-character initial password compliant with SAP policy (at least 1 uppercase, 1 lowercase, 1 digit, 1 special character via `SUSR_GENERATE_PASSWORD` with high-entropy fallback).
+2. **Full Name Mapping to `LASTNAME`**: Maps the complete full name directly into `BAPIADDR3-LASTNAME` (max 40 chars) without arbitrary splitting, satisfying SAP mandatory constraints while preserving full names intact.
+3. **Vietnamese Diacritics Preservation**: Uploads via binary mode (`BIN`) and decodes via UTF-8 code page `4110` with BOM removal to prevent accent corruption (`Đào`, `Lê`, `Phạm`).
+4. **Password Compliance & Auditing**: Displays initial generated passwords directly on the ALV grid for audit trails and secure distribution to users.
+5. **Phone Formatting**: Standardized format `(<CountryCode>)<Number>` **without `+` sign** for native SAP BAPI compatibility.
+6. **Safe In-Place Updates (`p_upd = 'X'`)**: Updates address, department, and function for existing users; optional password reset flag (`p_pwd`).
 
 ---
 
@@ -78,6 +80,17 @@ Automates mass SAP user onboarding and master data updates directly from normali
 - `BAPI_USER_CHANGE`: Updates master data of existing users.
 - `BAPI_TRANSACTION_COMMIT`: Commits database transactions.
 - `SX_INTERNET_ADDRESS_TO_NORMAL`: Validates email syntax.
+- `SUSR_GENERATE_PASSWORD`: Generates secure initial passwords compliant with SAP policy.
+
+---
+
+## 📊 CSV File Format (6 Columns)
+
+```csv
+Username,Full Name,Email,Phone No.,Department,Function
+JOHND,John Doe,johnd@company.com,(84)981234567,Finance & Accounting,Finance Controller
+JANES,Jane Smith,janes@company.com,(84)971888999,Finance & Accounting,Senior Accountant
+```
 
 ---
 

@@ -3,23 +3,25 @@
 *&---------------------------------------------------------------------*
 *& Purpose: Batch SAP User Creation & Update from CSV file
 *& Description:
-*&   Reads a CSV (.csv) file containing user records (Username, Initial
-*&   Password, Full Name, Email, Phone No., Department, Function),
+*&   Reads a CSV (.csv) file containing user records (Username,
+*&   Full Name, Email, Phone No., Department, Function),
 *&   validates input fields, handles UTF-8 encoding (supporting Vietnamese
 *&   and accented characters), maps 'Full Name' into SAP 'Last Name'
-*&   (BAPIADDR3-LASTNAME), checks existing users in USR02, creates new
-*&   users via BAPI_USER_CREATE1 or updates existing ones via
-*&   BAPI_USER_CHANGE, executes BAPI_TRANSACTION_COMMIT, and presents an
-*&   interactive ALV cockpit with one-click navigation to transaction SU01.
+*&   (BAPIADDR3-LASTNAME), automatically generates secure initial passwords
+*&   for new users (via SUSR_GENERATE_PASSWORD / SAP compliant generator),
+*&   checks existing users in USR02, creates new users via BAPI_USER_CREATE1
+*&   or updates existing ones via BAPI_USER_CHANGE, executes
+*&   BAPI_TRANSACTION_COMMIT, and presents an interactive ALV cockpit with
+*&   generated passwords and one-click navigation to transaction SU01.
 *&
 *& File format (CSV .csv):
 *&   Col 1: Username         (e.g., JOHND, max 12 chars, uppercase)
-*&   Col 2: Initial Password (e.g., N8l0%GO_UVkK, SAP-compliant password)
-*&   Col 3: Full Name        (e.g., John Doe - mapped to LASTNAME)
-*&   Col 4: Email            (e.g., johnd@company.com)
-*&   Col 5: Phone No.        (e.g., (+84)981234567)
-*&   Col 6: Department       (e.g., Finance & Accounting)
-*&   Col 7: Function         (e.g., Finance Controller)
+*&   Col 2: Full Name        (e.g., John Doe - mapped to LASTNAME)
+*&   Col 3: Email            (e.g., johnd@company.com)
+*&   Col 4: Phone No.        (e.g., (84)981234567)
+*&   Col 5: Department       (e.g., Finance & Accounting)
+*&   Col 6: Function         (e.g., Finance Controller)
+*&   (Note: Also backwards compatible with legacy 7-col format with password)
 *&
 *& Author: Antigravity AI (SAP Basis Engineering)
 *& Package: $TMP (Local Object) or Custom Package
@@ -181,7 +183,9 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
         lv_c4           TYPE string,
         lv_c5           TYPE string,
         lv_c6           TYPE string,
-        lv_c7           TYPE string.
+        lv_c7           TYPE string,
+        lv_tok_cnt      TYPE i,
+        lv_has_pwd_col  TYPE abap_bool.
 
   lv_filepath = iv_file.
 
@@ -250,7 +254,8 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
     SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
   ENDIF.
 
-  CLEAR lv_line_idx.
+  CLEAR: lv_line_idx, lv_has_pwd_col.
+
   LOOP AT lt_lines INTO lv_line.
     lv_line_idx = lv_line_idx + 1.
     IF lv_line IS INITIAL.
@@ -262,31 +267,51 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
       lv_line = lv_line+1.
     ENDIF.
 
-    CLEAR: lv_c1, lv_c2, lv_c3, lv_c4, lv_c5, lv_c6, lv_c7.
+    CLEAR: lv_c1, lv_c2, lv_c3, lv_c4, lv_c5, lv_c6, lv_c7, lv_tok_cnt.
     PERFORM parse_csv_line USING lv_line
-                           CHANGING lv_c1 lv_c2 lv_c3 lv_c4 lv_c5 lv_c6 lv_c7.
+                           CHANGING lv_c1 lv_c2 lv_c3 lv_c4 lv_c5 lv_c6 lv_c7 lv_tok_cnt.
 
     " Check and skip header row
-    DATA(lv_c1_up) = to_upper( lv_c1 ).
-    DATA(lv_c3_up) = to_upper( lv_c3 ).
-    IF lv_line_idx = 1 AND ( lv_c1_up CS 'USER' OR lv_c1_up CS 'NAME' OR lv_c3_up CS 'FULL' ).
+    DATA(lv_c1_up)   = to_upper( lv_c1 ).
+    DATA(lv_c2_up)   = to_upper( lv_c2 ).
+    DATA(lv_line_up) = to_upper( lv_line ).
+
+    IF lv_line_idx = 1 AND ( lv_c1_up CS 'USER' OR lv_c1_up CS 'NAME' ).
+      IF lv_line_up CS 'PASS' OR lv_c2_up CS 'PASS' OR lv_c2_up CS 'PWD'.
+        lv_has_pwd_col = abap_true.
+      ELSE.
+        lv_has_pwd_col = abap_false.
+      ENDIF.
       CONTINUE.
     ENDIF.
-    IF lv_c1_up = 'USERNAME' OR lv_c1_up = 'USER' OR lv_c1_up = 'BNAME'
-       OR lv_c3_up = 'FULL NAME' OR lv_c3_up = 'FULLNAME'.
+    IF lv_c1_up = 'USERNAME' OR lv_c1_up = 'USER' OR lv_c1_up = 'BNAME'.
       CONTINUE.
     ENDIF.
 
     IF lv_c1 IS NOT INITIAL.
       CLEAR ls_user.
-      ls_user-username   = to_upper( lv_c1 ).
+      ls_user-username = to_upper( lv_c1 ).
       CONDENSE ls_user-username NO-GAPS.
-      ls_user-password   = lv_c2.
-      ls_user-fullname   = lv_c3. " Full Name -> will be mapped to LASTNAME
-      ls_user-email      = lv_c4.
-      ls_user-phone      = lv_c5.
-      ls_user-department = lv_c6.
-      ls_user-function   = lv_c7.
+
+      " Determine column mapping: 6-column (standard, no password) vs 7-column (legacy with password)
+      IF lv_has_pwd_col = abap_true OR ( lv_tok_cnt >= 7 AND lv_c4 CS '@' ).
+        " 7-column format: Username, Initial Password, Full Name, Email, Phone, Dept, Function
+        ls_user-password   = lv_c2.
+        ls_user-fullname   = lv_c3.
+        ls_user-email      = lv_c4.
+        ls_user-phone      = lv_c5.
+        ls_user-department = lv_c6.
+        ls_user-function   = lv_c7.
+      ELSE.
+        " 6-column format (Standard): Username, Full Name, Email, Phone, Dept, Function
+        CLEAR ls_user-password. " Will be generated dynamically upon user creation
+        ls_user-fullname   = lv_c2.
+        ls_user-email      = lv_c3.
+        ls_user-phone      = lv_c4.
+        ls_user-department = lv_c5.
+        ls_user-function   = lv_c6.
+      ENDIF.
+
       APPEND ls_user TO gt_users.
     ENDIF.
   ENDLOOP.
@@ -299,21 +324,22 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *& Form parse_csv_line
 *&---------------------------------------------------------------------*
-FORM parse_csv_line USING    iv_line TYPE string
-                    CHANGING ev_col1 TYPE string
-                             ev_col2 TYPE string
-                             ev_col3 TYPE string
-                             ev_col4 TYPE string
-                             ev_col5 TYPE string
-                             ev_col6 TYPE string
-                             ev_col7 TYPE string.
+FORM parse_csv_line USING    iv_line    TYPE string
+                    CHANGING ev_col1    TYPE string
+                             ev_col2    TYPE string
+                             ev_col3    TYPE string
+                             ev_col4    TYPE string
+                             ev_col5    TYPE string
+                             ev_col6    TYPE string
+                             ev_col7    TYPE string
+                             ev_tok_cnt TYPE i.
   DATA: lt_tokens TYPE STANDARD TABLE OF string,
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
         lv_cur    TYPE string,
         lv_char   TYPE string.
 
-  CLEAR: ev_col1, ev_col2, ev_col3, ev_col4, ev_col5, ev_col6, ev_col7.
+  CLEAR: ev_col1, ev_col2, ev_col3, ev_col4, ev_col5, ev_col6, ev_col7, ev_tok_cnt.
 
   lv_len = strlen( iv_line ).
   DO lv_len TIMES.
@@ -334,6 +360,7 @@ FORM parse_csv_line USING    iv_line TYPE string
     ENDIF.
   ENDDO.
   APPEND lv_cur TO lt_tokens.
+  ev_tok_cnt = lines( lt_tokens ).
 
   " Extract tokens into corresponding columns
   READ TABLE lt_tokens INTO ev_col1 INDEX 1.
@@ -359,12 +386,16 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM clean_cell CHANGING cv_val TYPE string.
   CONDENSE cv_val.
-  IF strlen( cv_val ) >= 2 AND cv_val(1) = '"' AND cv_val+sy-fdpos(1) = '"'.
-    DATA(lv_inner_len) = strlen( cv_val ) - 2.
-    IF lv_inner_len > 0.
-      cv_val = cv_val+1(lv_inner_len).
-    ELSE.
-      CLEAR cv_val.
+  DATA(lv_len) = strlen( cv_val ).
+  IF lv_len >= 2.
+    DATA(lv_last_off) = lv_len - 1.
+    IF cv_val(1) = '"' AND substring( val = cv_val off = lv_last_off len = 1 ) = '"'.
+      DATA(lv_inner_len) = lv_len - 2.
+      IF lv_inner_len > 0.
+        cv_val = substring( val = cv_val off = 1 len = lv_inner_len ).
+      ELSE.
+        CLEAR cv_val.
+      ENDIF.
     ENDIF.
   ENDIF.
   CONDENSE cv_val.
@@ -399,8 +430,33 @@ FORM process_users.
       ENDIF.
     ENDIF.
 
+    " Check user existence in USR02
+    SELECT SINGLE bname FROM usr02 INTO @DATA(lv_usr02_bname)
+      WHERE bname = @ls_user-username.
+    IF sy-subrc = 0.
+      lv_exists = abap_true.
+    ELSE.
+      lv_exists = abap_false.
+    ENDIF.
+
+    " Generate Initial Password if empty (for new user or when password reset is requested)
+    IF lv_exists = abap_false.
+      IF ls_user-password IS INITIAL.
+        PERFORM generate_initial_password CHANGING ls_user-password.
+      ENDIF.
+      ls_res-password = ls_user-password.
+    ELSE.
+      IF p_pwd = abap_true.
+        IF ls_user-password IS INITIAL.
+          PERFORM generate_initial_password CHANGING ls_user-password.
+        ENDIF.
+        ls_res-password = ls_user-password.
+      ELSE.
+        ls_res-password = '(Unchanged)'.
+      ENDIF.
+    ENDIF.
+
     ls_res-username   = ls_user-username.
-    ls_res-password   = ls_user-password.
     ls_res-fullname   = ls_user-fullname.
     ls_res-email      = ls_user-email.
     ls_res-phone      = ls_user-phone.
@@ -434,31 +490,13 @@ FORM process_users.
       CONTINUE.
     ENDIF.
 
-    " Check user existence in USR02
-    SELECT SINGLE bname FROM usr02 INTO @DATA(lv_usr02_bname)
-      WHERE bname = @ls_user-username.
-    IF sy-subrc = 0.
-      lv_exists = abap_true.
-    ELSE.
-      lv_exists = abap_false.
-    ENDIF.
-
     " Case A: User does NOT exist in SAP
     IF lv_exists = abap_false.
-      " Initial password check for new user creation
-      IF ls_user-password IS INITIAL.
-        ls_res-status  = gc_status_err.
-        ls_res-action  = 'ERROR'.
-        ls_res-message = 'Initial Password is required for new user creation.'.
-        APPEND ls_res TO gt_results.
-        CONTINUE.
-      ENDIF.
-
       IF p_test = abap_true.
         " Simulation Mode: New user creation
         ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIM_NEW'.
-        ls_res-message = 'Simulated: User will be created (' &&
+        ls_res-message = 'Simulated: User will be created with generated initial password (' &&
                          'Type: ' && p_ustyp && ', Valid: ' && p_gltgv && ' to ' && p_gltgb && ').'.
         APPEND ls_res TO gt_results.
       ELSE.
@@ -483,7 +521,7 @@ FORM process_users.
           IF lv_errmsg IS NOT INITIAL.
             ls_res-message = 'User created successfully: ' && lv_errmsg.
           ELSE.
-            ls_res-message = 'User created successfully with initial password and address details.'.
+            ls_res-message = 'User created successfully with generated initial password & details.'.
           ENDIF.
         ENDIF.
         APPEND ls_res TO gt_results.
@@ -843,4 +881,118 @@ FORM display_alv_results.
     CATCH cx_salv_msg cx_salv_not_found.
       MESSAGE 'Error rendering ALV report display.' TYPE 'E'.
   ENDTRY.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form generate_initial_password
+*&---------------------------------------------------------------------*
+FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
+  DATA: lv_gen_pwd TYPE xubcode.
+
+  CLEAR cv_password.
+
+  " Attempt 1: Standard SAP password generation function
+  CALL FUNCTION 'SUSR_GENERATE_PASSWORD'
+    IMPORTING
+      password        = lv_gen_pwd
+    EXCEPTIONS
+      generator_error = 1
+      OTHERS          = 2.
+
+  IF sy-subrc = 0 AND lv_gen_pwd IS NOT INITIAL AND strlen( lv_gen_pwd ) >= 8.
+    cv_password = lv_gen_pwd.
+    RETURN.
+  ENDIF.
+
+  " Attempt 2: High-entropy SAP-compliant fallback generator (12 characters)
+  DATA: lv_uppers   TYPE string VALUE 'ABCDEFGHJKLMNPQRSTUVWXYZ',
+        lv_lowers   TYPE string VALUE 'abcdefghijkmnpqrstuvwxyz',
+        lv_digits   TYPE string VALUE '23456789',
+        lv_spec     TYPE string VALUE '!@#$%*-_=+',
+        lv_all      TYPE string,
+        lv_res      TYPE string,
+        lv_char     TYPE c LENGTH 1,
+        lo_rnd      TYPE REF TO cl_abap_random_int,
+        lv_shuffled TYPE string,
+        lv_rem_len  TYPE i,
+        lv_pick_pos TYPE i.
+
+  lv_all = lv_uppers && lv_lowers && lv_digits && lv_spec.
+
+  TRY.
+      lo_rnd = cl_abap_random_int=>create(
+                 seed = cl_abap_random=>seed( )
+                 min  = 0
+                 max  = 999999 ).
+    CATCH cx_root.
+  ENDTRY.
+
+  " Ensure at least 1 of each required character category
+  PERFORM pick_random_char USING lv_uppers lo_rnd CHANGING lv_char.
+  lv_res = lv_res && lv_char.
+
+  PERFORM pick_random_char USING lv_lowers lo_rnd CHANGING lv_char.
+  lv_res = lv_res && lv_char.
+
+  PERFORM pick_random_char USING lv_digits lo_rnd CHANGING lv_char.
+  lv_res = lv_res && lv_char.
+
+  PERFORM pick_random_char USING lv_spec lo_rnd CHANGING lv_char.
+  lv_res = lv_res && lv_char.
+
+  " Fill remaining 8 characters
+  DO 8 TIMES.
+    PERFORM pick_random_char USING lv_all lo_rnd CHANGING lv_char.
+    lv_res = lv_res && lv_char.
+  ENDDO.
+
+  " Shuffle characters for randomness
+  DO 12 TIMES.
+    lv_rem_len = strlen( lv_res ).
+    IF lv_rem_len <= 1.
+      lv_shuffled = lv_shuffled && lv_res.
+      EXIT.
+    ENDIF.
+    IF lo_rnd IS BOUND.
+      lv_pick_pos = lo_rnd->get_next( ) MOD lv_rem_len.
+    ELSE.
+      lv_pick_pos = ( sy-uzeit+4(2) + sy-index ) MOD lv_rem_len.
+    ENDIF.
+    lv_char = substring( val = lv_res off = lv_pick_pos len = 1 ).
+    lv_shuffled = lv_shuffled && lv_char.
+    IF lv_pick_pos = 0.
+      lv_res = substring( val = lv_res off = 1 ).
+    ELSEIF lv_pick_pos = lv_rem_len - 1.
+      lv_res = substring( val = lv_res off = 0 len = lv_pick_pos ).
+    ELSE.
+      lv_res = substring( val = lv_res off = 0 len = lv_pick_pos ) &&
+               substring( val = lv_res off = lv_pick_pos + 1 ).
+    ENDIF.
+  ENDDO.
+
+  cv_password = lv_shuffled.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form pick_random_char
+*&---------------------------------------------------------------------*
+FORM pick_random_char USING    iv_pool TYPE string
+                               io_rnd  TYPE REF TO cl_abap_random_int
+                      CHANGING cv_char TYPE c.
+  DATA: lv_pool_len TYPE i,
+        lv_off      TYPE i.
+
+  lv_pool_len = strlen( iv_pool ).
+  IF lv_pool_len = 0.
+    cv_char = 'A'.
+    RETURN.
+  ENDIF.
+
+  IF io_rnd IS BOUND.
+    lv_off = io_rnd->get_next( ) MOD lv_pool_len.
+  ELSE.
+    lv_off = ( sy-uzeit+4(2) + sy-index * 7 ) MOD lv_pool_len.
+  ENDIF.
+
+  cv_char = substring( val = iv_pool off = lv_off len = 1 ).
 ENDFORM.

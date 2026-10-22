@@ -209,7 +209,7 @@ All utilities feature:
 
 | Program | Documentation | Key Highlights |
 | :--- | :--- | :--- |
-| **`Z_USER_01_CREATE`** | [`docs/Z_USER_01_CREATE.md`](docs/Z_USER_01_CREATE.md) | Batch creates/updates users via `BAPI_USER_CREATE1` / `BAPI_USER_CHANGE`; maps Full Name to `LASTNAME`; UTF-8 safe (Vietnamese accents); displays initial passwords in ALV. |
+| **`Z_USER_01_CREATE`** | [`docs/Z_USER_01_CREATE.md`](docs/Z_USER_01_CREATE.md) | Batch creates/updates users via `BAPI_USER_CREATE1` / `BAPI_USER_CHANGE`; maps Full Name to `LASTNAME`; UTF-8 safe (Vietnamese accents); dynamically generates initial passwords and displays them in ALV. |
 | **`Z_USER_02_ASSIGN_ROLE`** | [`docs/Z_USER_02_ASSIGN_ROLE.md`](docs/Z_USER_02_ASSIGN_ROLE.md) | Mass assigns Single & Composite Roles via `BAPI_USER_ACTGROUPS_ASSIGN`; safe Append Mode (`p_append = 'X'`); validates `USR02` and `AGR_DEFINE`. |
 
 ### 6.3. Diagnostics (`Z_AUTH_*`)
