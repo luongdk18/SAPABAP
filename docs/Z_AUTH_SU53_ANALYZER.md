@@ -12,15 +12,16 @@ Interactive dual-grid operational cockpit for SAP Security Administrators. Autom
 ## 📌 Dual-Grid Cockpit Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│ TOP DOCKING CONTAINER (cl_gui_docking_container): SINGLE ROLES LIST     │
-│ [Add to Role]  [Select All]  [Deselect All]  [Refresh from SU53]       │
-├────┬──────────────────┬────────────────────────────────────────────────┤
-│Radio│ Role Name        │ Role Description                               │
-├────┼──────────────────┼────────────────────────────────────────────────┤
-│🔘  │ Z_FI_GL_ACCOUNT  │ General Ledger Accounting Role                 │
-│⚪  │ Z_MM_PURCHASER   │ Purchasing Operations                          │
-└────┴──────────────────┴────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ TOP DOCKING CONTAINER (cl_gui_docking_container): SINGLE ROLES & LEADING ROLES LIST    │
+│ [Add to Role]  [Select All]  [Deselect All]  [Refresh from SU53]                       │
+├────┬──────────────────┬──────────────────────────┬─────────────────────────────────────┤
+│Opt │ Assigned Role    │ Leading Role             │ Role Description                    │
+├────┼──────────────────┼──────────────────────────┼─────────────────────────────────────┤
+│🔘  │ DRFI01_PERIOD_110│ LRFI01_PERIOD_CONTROL    │ GL Period Control - CC 1100         │
+│⚪  │ DRMM01_PO_MAIN   │ LRMM01_PO_MAIN           │ Purchasing Operations               │
+│⚪  │ CR_COMMON        │                          │ Common End User Baseline Role       │
+└────┴──────────────────┴──────────────────────────┴─────────────────────────────────────┘
                                   ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ BOTTOM FULLSCREEN GRID: MISSING AUTHORIZATIONS & TCODES (SU53 BUFFER)   │
@@ -38,9 +39,10 @@ Interactive dual-grid operational cockpit for SAP Security Administrators. Autom
 
 1. **Multi-Failure SU53 History**: Aggregates all failure records from the past 3 hours via `SUSR_USER_SU53_READ`, unlike standard `SU53` which shows only the single last failed check.
 2. **Real-Time Role Coverage Check**: Dynamically cross-references missing checks against active user single roles (`AGR_USERS` ➔ `AGR_1251`), marking satisfied objects with `@08@ [OK]` and missing objects with `@0A@ [ERR]`.
-3. **100% Default Field Pass from `TOBJ`**: When adding an authorization object, all mandatory default fields defined in table `TOBJ` are populated. This eliminates unmaintained authorization fields (no Yellow Triangles in PFCG).
-4. **Deactivated Object Reactivation**: Detects and reactivates deactivated objects (`DELETED = 'X'`) in `AGR_1251` rather than generating duplicate conflicting authorizations.
-5. **Forced Profile Regeneration**: Automatically compiles the authorization profile in dark mode (`SUPRN_DARK_MANIPULATE_PROFILE`) and defaults open Org Levels (`AGR_1252`) to `'*'`, allowing immediate re-testing without opening `PFCG`.
+3. **Leading Role Target & Selective Derivation**: If the selected role is a **Derived Role** (`PARENT_AGR` is present), ZAT automatically updates the **Leading Role (Master Role)** and propagates **ONLY the newly added object(s)** down to its child derived roles. All existing authorizations, custom field values, and organizational levels (`AGR_1252`) in the derived roles remain completely untouched!
+4. **100% Default Field Pass from `TOBJ`**: When adding an authorization object, all mandatory default fields defined in table `TOBJ` are populated. This eliminates unmaintained authorization fields (no Yellow Triangles in PFCG).
+5. **Deactivated Object Reactivation**: Detects and reactivates deactivated objects (`DELETED = 'X'`) in `AGR_1251` rather than generating duplicate conflicting authorizations.
+6. **Forced Profile Regeneration**: Automatically compiles the authorization profile in dark mode (`SUPRN_DARK_MANIPULATE_PROFILE`) and defaults open Org Levels (`AGR_1252`) to `'*'`, allowing immediate re-testing without opening `PFCG`.
 
 ---
 

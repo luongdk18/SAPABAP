@@ -64,16 +64,16 @@ Testers can execute the cockpit via either of the following methods in SAP GUI:
 Upon executing (**F8**), the cockpit opens a dual-level operational workbench:
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1. ASSIGNED SINGLE ROLES OF USER (CLICK RADIO ICON TO SELECT TARGET ROLE)              │
-│ [➕ Add to Role]   [☑️ Select All]   [⬜ Deselect All]   [🔄 Refresh from SU53]        │
-├─────────┬──────────────────────┬──────────────────────────────────────────┬────────────┤
-│ Target  │ Single Role Name     │ Role Description                         │ Valid To   │
-├─────────┼──────────────────────┼──────────────────────────────────────────┼────────────┤
-│ 🔘 (Sel)│ Z_FI_GL_ACCOUNT      │ General Ledger Accounting - Posting & GL │ 31.12.9999 │
-│ ⚪      │ Z_MM_PURCHASER       │ Purchasing Operations - PO & Goods Rec   │ 31.12.9999 │
-│ ⚪      │ Z_PS_PROJECT_MGR     │ Project Management - WBS Elements Coord  │ 31.12.9999 │
-└─────────┴──────────────────────┴──────────────────────────────────────────┴────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. ASSIGNED SINGLE ROLES OF USER (CLICK RADIO ICON TO SELECT TARGET ROLE)                              │
+│ [➕ Add to Role]   [☑️ Select All]   [⬜ Deselect All]   [🔄 Refresh from SU53]                        │
+├─────────┬──────────────────────┬──────────────────────────┬────────────────────────────────┬───────────┤
+│ Target  │ Assigned Role        │ Leading Role (Hotspot)   │ Role Description               │ Valid To  │
+├─────────┼──────────────────────┼──────────────────────────┼────────────────────────────────┼───────────┤
+│ 🔘 (Sel)│ DRFI01_PERIOD_1100   │ LRFI01_PERIOD_CONTROL    │ GL Period Control - CC 1100    │ 31.12.9999│
+│ ⚪      │ DRMM01_PO_MAIN_1100  │ LRMM01_PO_MAIN           │ Purchasing Operations - CC 1100│ 31.12.9999│
+│ ⚪      │ CR_COMMON            │                          │ Common End User Baseline Role  │ 31.12.9999│
+└─────────┴──────────────────────┴──────────────────────────┴────────────────────────────────┴───────────┘
                                             ▼ (Real-time Cross Match)
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ 2. FAILED AUTHORIZATION CHECKS (SELECT ITEMS VIA CHECKBOX TO ADD TO TARGET ROLE)       │
@@ -90,11 +90,12 @@ Upon executing (**F8**), the cockpit opens a dual-level operational workbench:
 
 | Action / Button | Shortcut / Icon | Functional Description |
 | :--- | :--- | :--- |
-| **`[Add to Role]`** | `➕` | Injects all checked authorizations and TCodes into the currently selected Single Role and triggers dark profile regeneration. |
+| **`[Add to Role]`** | `➕` | Injects all checked authorizations and TCodes into the target Leading Role, selectively derives only the newly added objects down to child derived roles, and triggers background profile regeneration. |
 | **`[Select All]`** | `☑️` | Selects all missing authorization items (`@0A@ [ERR]`). Items already satisfied (`@08@ [OK]`) are automatically bypassed. |
 | **`[Deselect All]`** | `⬜` | Clears all selected checkboxes in the bottom grid. |
 | **`[Refresh from SU53]`** | `🔄` (F8) | Re-reads system failure buffers when the tester performs additional transaction actions in another session. |
-| **Click Radio Button** | `Target Role` column | Switches the active remediation role. The bottom grid immediately re-evaluates all failure rows against the newly chosen role. |
+| **Click Radio Button** | `Target` column | Switches the active assigned role. ZAT automatically identifies its Leading Role and re-evaluates failure coverage in the bottom grid. |
+| **Click Leading Role** | `Leading Role` column | Hotspot link that opens transaction `PFCG` directly for the Leading Role (Master Role). |
 
 ---
 
@@ -108,20 +109,21 @@ Follow this standardized 5-step procedure when blocked by an authorization failu
 2. **Step 2 - Launch ZAT in a new parallel session**:
    - Open a new SAP GUI window by typing `/oZAT` in the Command Field (preserves your working transaction).
    - Verify your User Name and press **F8** to retrieve failure buffer logs.
-3. **Step 3 - Select the target Single Role in Top Grid**:
-   - Click the circular radio button in the `Target Role` column corresponding to the functional role you are validating (e.g. `Z_FI_GL_ACCOUNT`).
+3. **Step 3 - Select the target Assigned Role in Top Grid**:
+   - Click the circular radio button in the `Target` column corresponding to the functional role you are validating (e.g. `DRFI01_PERIOD_1100`).
+   - The Top Grid displays the role's **Leading Role** (Master Role, e.g. `LRFI01_PERIOD_CONTROL`).
    - The failure rows in the bottom grid instantly recalculate their coverage status.
 4. **Step 4 - Select the missing authorizations in Bottom Grid**:
    - Tick the checkboxes in the `Select` column for rows marked with red indicator `@0A@ [ERR]`.
    - Alternatively, click the **`[Select All]`** toolbar button to select all valid remediation items at once.
-5. **Step 5 - Click [Add to Role] for automated remediation**:
+5. **Step 5 - Click [Add to Role] for automated Leading Role remediation & selective derivation**:
    - Click the **`[Add to Role]`** button on the Top Grid toolbar. The utility automatically executes in background:
-     - Injects the transaction into the role menu (for `S_TCODE`).
-     - Injects missing objects with 100% mandatory fields populated from `TOBJ`.
-     - Automatically sets unmaintained Org Levels to `*` (full test authorization).
-     - Compiles the authorization profile in background (`SUPRN_DARK_MANIPULATE_PROFILE`).
+     - **Leading Role Injection**: Adds the TCode to menu (for `S_TCODE`) or injects the missing object into the **Leading Role** (`LRFI01_PERIOD_CONTROL`).
+     - **Selective Child Derivation**: Propagates **ONLY the newly added object(s) / TCodes** down to all child derived roles of that Leading Role.
+     - **Zero Unwanted Impact**: All existing authorizations, custom fields, and Organizational Levels (`AGR_1252`) in derived roles remain **100% untouched**!
+     - **Profile Compilation**: Automatically regenerates runtime authorization profiles for both the Leading Role and all its child derived roles.
    - The status bar displays a green confirmation message:  
-     `1 transaction(s) added to menu. 1 object(s) added/updated. Profile regenerated. Data refreshed.`
+     `Leading Role LRFI01_PERIOD_CONTROL updated & derived to X child role(s): 1 object(s) / 2 value(s) added.`
    - **Outcome**: Return to your original transaction window (`FB01`) and press `Enter` to resume testing immediately without logging off!
 
 ---

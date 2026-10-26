@@ -14,11 +14,12 @@ TABLES: usr02, agr_define.
 * 1. TYPES & DATA DEFINITIONS
 *----------------------------------------------------------------------*
 TYPES: BEGIN OF ty_user_role,
-         radio    TYPE c LENGTH 4,         " Radio indicator: @06@ (Selected) / @07@ (Unselected)
-         agr_name TYPE agr_name,           " Single Role Name
-         text     TYPE c LENGTH 80,        " Role Description
-         from_dat TYPE agr_fdate,          " Valid From Date
-         to_dat   TYPE agr_tdate,          " Valid To Date
+         radio      TYPE c LENGTH 4,         " Radio indicator: @06@ (Selected) / @07@ (Unselected)
+         agr_name   TYPE agr_name,           " Single Role Name
+         parent_agr TYPE agr_name,           " Leading Role (Master Role)
+         text       TYPE c LENGTH 80,        " Role Description
+         from_dat   TYPE agr_fdate,          " Valid From Date
+         to_dat     TYPE agr_tdate,          " Valid To Date
        END OF ty_user_role.
 
 TYPES: tt_user_role TYPE STANDARD TABLE OF ty_user_role.
@@ -109,10 +110,12 @@ TYPES: BEGIN OF ty_role_obj,
 TYPES: tt_role_obj TYPE STANDARD TABLE OF ty_role_obj WITH DEFAULT KEY.
 
 TYPES: tt_tcode TYPE SORTED TABLE OF sytcode WITH UNIQUE KEY table_line.
+TYPES: tt_agr_name TYPE STANDARD TABLE OF agr_name WITH DEFAULT KEY.
 
 DATA: gt_missing_auth  TYPE tt_missing_auth,
       gt_user_roles    TYPE tt_user_role,
       gv_selected_role TYPE agr_name,
+      gv_leading_role  TYPE agr_name,
       gv_in_refresh    TYPE abap_bool,
       go_docking       TYPE REF TO cl_gui_docking_container,
       go_grid_roles    TYPE REF TO cl_gui_alv_grid,
@@ -183,9 +186,14 @@ START-OF-SELECTION.
     ASSIGN gt_user_roles[ 1 ] TO FIELD-SYMBOL(<ls_r_init>).
     IF sy-subrc = 0.
       gv_selected_role = <ls_r_init>-agr_name.
+      IF <ls_r_init>-parent_agr IS NOT INITIAL.
+        gv_leading_role = <ls_r_init>-parent_agr.
+      ELSE.
+        gv_leading_role = <ls_r_init>-agr_name.
+      ENDIF.
     ENDIF.
   ELSE.
-    CLEAR gv_selected_role.
+    CLEAR: gv_selected_role, gv_leading_role.
   ENDIF.
 
   " Set initial radio state
@@ -466,22 +474,26 @@ FORM get_user_roles USING pv_uname  TYPE usr02-bname
                           pv_active TYPE abap_bool.
   CLEAR: gt_user_roles.
 
-  SELECT u~agr_name, t~text, u~from_dat, u~to_dat
+  SELECT u~agr_name, t~text, u~from_dat, u~to_dat, d~parent_agr
     FROM agr_users AS u
     LEFT OUTER JOIN agr_texts AS t
       ON u~agr_name = t~agr_name
      AND t~spras = 'E'
      AND t~line  = '00000'
+    LEFT OUTER JOIN agr_define AS d
+      ON u~agr_name = d~agr_name
     WHERE u~uname = @pv_uname
     INTO TABLE @DATA(lt_roles).
 
   IF lt_roles IS INITIAL.
-    SELECT u~agr_name, t~text, u~from_dat, u~to_dat
+    SELECT u~agr_name, t~text, u~from_dat, u~to_dat, d~parent_agr
       FROM agr_users AS u
       LEFT OUTER JOIN agr_texts AS t
         ON u~agr_name = t~agr_name
        AND t~spras = @sy-langu
        AND t~line  = '00000'
+      LEFT OUTER JOIN agr_define AS d
+        ON u~agr_name = d~agr_name
       WHERE u~uname = @pv_uname
       INTO TABLE @lt_roles.
   ENDIF.
@@ -508,11 +520,12 @@ FORM get_user_roles USING pv_uname  TYPE usr02-bname
     ENDIF.
 
     APPEND VALUE #(
-      radio    = gc_radio_off
-      agr_name = ls_r-agr_name
-      text     = ls_r-text
-      from_dat = ls_r-from_dat
-      to_dat   = ls_r-to_dat
+      radio      = gc_radio_off
+      agr_name   = ls_r-agr_name
+      parent_agr = ls_r-parent_agr
+      text       = ls_r-text
+      from_dat   = ls_r-from_dat
+      to_dat     = ls_r-to_dat
     ) TO gt_user_roles.
   ENDLOOP.
 
@@ -793,16 +806,17 @@ FORM set_pf_status USING rt_extab TYPE slis_t_extab.
       SET HANDLER go_event_handler->on_double_click_roles FOR go_grid_roles.
 
       DATA: lt_fcat_roles TYPE lvc_t_fcat.
-      APPEND VALUE #( fieldname = 'RADIO'    coltext = 'Target Role' icon = 'X' hotspot = 'X' outputlen = 12 ) TO lt_fcat_roles.
-      APPEND VALUE #( fieldname = 'AGR_NAME' coltext = 'Single Role Name' outputlen = 25 emphasize = 'C400' ) TO lt_fcat_roles.
-      APPEND VALUE #( fieldname = 'TEXT'     coltext = 'Role Description' outputlen = 40 ) TO lt_fcat_roles.
-      APPEND VALUE #( fieldname = 'FROM_DAT' coltext = 'Valid From' outputlen = 12 ) TO lt_fcat_roles.
-      APPEND VALUE #( fieldname = 'TO_DAT'   coltext = 'Valid To' outputlen = 12 ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'RADIO'      coltext = 'Target'        icon = 'X' hotspot = 'X' outputlen = 8 ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'AGR_NAME'   coltext = 'Assigned Role' outputlen = 25 emphasize = 'C400' ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'PARENT_AGR' coltext = 'Leading Role'  outputlen = 25 emphasize = 'C500' hotspot = 'X' ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'TEXT'       coltext = 'Role Description' outputlen = 35 ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'FROM_DAT'   coltext = 'Valid From'    outputlen = 12 ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'TO_DAT'     coltext = 'Valid To'      outputlen = 12 ) TO lt_fcat_roles.
 
       DATA: ls_layo_roles TYPE lvc_s_layo.
       ls_layo_roles-zebra      = 'X'.
       ls_layo_roles-cwidth_opt = 'X'.
-      ls_layo_roles-grid_title = '1. Assigned Single Roles of User (Click Radio Icon to Select Target Single Role)'.
+      ls_layo_roles-grid_title = '1. Assigned Roles of User (Leading Role is targeted for TCode/Auth additions)'.
 
       DATA: lt_excl TYPE ui_functions.
       APPEND cl_gui_alv_grid=>mc_fc_print TO lt_excl.
@@ -883,6 +897,21 @@ FORM add_selected_auths_to_role.
     RETURN.
   ENDIF.
 
+  " Determine target Leading Role (Master Role).
+  " If selected role is a Derived Role, all TCode/Auth additions MUST be made
+  " to the Leading Role first, then selectively derived down to child roles.
+  DATA: lv_target_role TYPE agr_name,
+        lv_is_derived  TYPE abap_bool.
+
+  READ TABLE gt_user_roles INTO DATA(ls_target_r) WITH KEY agr_name = gv_selected_role.
+  IF sy-subrc = 0 AND ls_target_r-parent_agr IS NOT INITIAL.
+    lv_target_role = ls_target_r-parent_agr.
+    lv_is_derived  = abap_true.
+  ELSE.
+    lv_target_role = gv_selected_role.
+    lv_is_derived  = abap_false.
+  ENDIF.
+
   " Collect selected items that are not yet in the role
   DATA: lt_selected TYPE tt_missing_auth.
   CLEAR lt_selected.
@@ -898,22 +927,26 @@ FORM add_selected_auths_to_role.
   " S_TCODE is granted by adding the transaction to the role menu.
   " Profile merge then creates the standard S_TCODE value from that menu.
   " Inserting S_TCODE directly into AGR_1250/AGR_1251 leaves a manual object.
-  DATA: lt_menu_tcodes TYPE tt_tcode,
-        lt_object_auth TYPE tt_missing_auth,
-        lt_agg_objs    TYPE tt_agg_obj,
-        lv_menu_added  TYPE i,
-        lv_menu_failed TYPE i,
-        lv_menu_abort  TYPE abap_bool,
-        lv_failed_txt  TYPE string,
-        lv_gen_subrc   TYPE sy-subrc,
-        lv_gen_failed  TYPE abap_bool,
-        lv_total_added TYPE i,
-        lv_obj_count   TYPE i,
-        lv_org_added   TYPE i,
-        lv_tcode_val   TYPE xuval,
-        lt_usorg       TYPE tt_usorg,
-        lt_org_vals    TYPE tt_org_val,
-        lt_sel_objects TYPE tt_obj_name.
+  DATA: lt_menu_tcodes    TYPE tt_tcode,
+        lt_object_auth    TYPE tt_missing_auth,
+        lt_agg_objs       TYPE tt_agg_obj,
+        lt_auth_data      TYPE tt_pt1250,
+        lt_field_values   TYPE tt_pt1251,
+        lt_child_roles    TYPE tt_agr_name,
+        lt_child_roles_tc TYPE tt_agr_name,
+        lv_menu_added     TYPE i,
+        lv_menu_failed    TYPE i,
+        lv_menu_abort     TYPE abap_bool,
+        lv_failed_txt     TYPE string,
+        lv_gen_subrc      TYPE sy-subrc,
+        lv_gen_failed     TYPE abap_bool,
+        lv_total_added    TYPE i,
+        lv_obj_count      TYPE i,
+        lv_org_added      TYPE i,
+        lv_tcode_val      TYPE xuval,
+        lt_usorg          TYPE tt_usorg,
+        lt_org_vals       TYPE tt_org_val,
+        lt_sel_objects    TYPE tt_obj_name.
 
   CLEAR: lt_menu_tcodes, lt_object_auth, lt_agg_objs, lt_org_vals, lt_sel_objects,
          lv_menu_added, lv_menu_failed, lv_menu_abort, lv_failed_txt,
@@ -961,7 +994,7 @@ FORM add_selected_auths_to_role.
   ENDIF.
 
   IF lt_menu_tcodes IS NOT INITIAL.
-    PERFORM add_tcodes_to_role_menu USING gv_selected_role
+    PERFORM add_tcodes_to_role_menu USING lv_target_role
                                     CHANGING lt_menu_tcodes
                                              lv_menu_added
                                              lv_menu_failed
@@ -975,21 +1008,39 @@ FORM add_selected_auths_to_role.
       COMMIT WORK AND WAIT.
       " All maintained: star open fields brought in by the menu merge.
       " Organizational levels stay as maintained in AGR_1252.
-      PERFORM generate_role_profile USING gv_selected_role 'M' abap_true abap_false CHANGING lv_gen_subrc.
+      PERFORM generate_role_profile USING lv_target_role 'M' abap_true abap_false CHANGING lv_gen_subrc.
       IF lv_gen_subrc <> 0.
         lv_gen_failed = abap_true.
       ELSE.
         COMMIT WORK AND WAIT.
       ENDIF.
     ELSEIF lv_menu_failed > 0 AND lt_object_auth IS INITIAL.
-      MESSAGE |No transaction was added to the menu of role { gv_selected_role }:{ lv_failed_txt }| TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE |No transaction was added to the menu of role { lv_target_role }:{ lv_failed_txt }| TYPE 'S' DISPLAY LIKE 'E'.
       RETURN.
     ENDIF.
   ENDIF.
 
   IF lt_object_auth IS INITIAL.
     CLEAR lv_obj_count.
-    PERFORM recheck_auths_after_add USING lv_menu_added
+    " Propagate newly added TCodes down to derived roles if applicable
+    DATA: lv_der_tc_count TYPE i VALUE 0.
+    CLEAR lt_child_roles_tc.
+    SELECT agr_name FROM agr_define WHERE parent_agr = @lv_target_role INTO TABLE @lt_child_roles_tc.
+    IF lt_child_roles_tc IS NOT INITIAL AND lt_menu_tcodes IS NOT INITIAL.
+      PERFORM derive_specific_objects
+        USING lv_target_role
+              lt_child_roles_tc
+              lt_sel_objects
+              lt_agg_objs
+              lt_menu_tcodes
+              lt_auth_data
+              lt_field_values
+        CHANGING lv_der_tc_count.
+    ENDIF.
+
+    PERFORM recheck_auths_after_add USING lv_target_role
+                                          lv_der_tc_count
+                                          lv_menu_added
                                           lv_menu_failed
                                           lv_failed_txt
                                           lv_gen_failed
@@ -1052,7 +1103,9 @@ FORM add_selected_auths_to_role.
       MESSAGE 'No authorization value left to add after cleanup.' TYPE 'S' DISPLAY LIKE 'E'.
     ENDIF.
     CLEAR lv_obj_count.
-    PERFORM recheck_auths_after_add USING lv_menu_added
+    PERFORM recheck_auths_after_add USING lv_target_role
+                                          0
+                                          lv_menu_added
                                           lv_menu_failed
                                           lv_failed_txt
                                           lv_gen_failed
@@ -1064,7 +1117,7 @@ FORM add_selected_auths_to_role.
   " 2. Lock the Role (Enqueue) - check if role is being edited
   CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
     EXPORTING
-      activity_group = gv_selected_role
+      activity_group = lv_target_role
     EXCEPTIONS
       foreign_lock   = 1
       system_failure = 2
@@ -1079,20 +1132,19 @@ FORM add_selected_auths_to_role.
     ENDIF.
 
     IF lv_lock_user IS NOT INITIAL.
-      MESSAGE |Role { gv_selected_role } is locked by user { lv_lock_user }. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE |Role { lv_target_role } is locked by user { lv_lock_user }. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
     ELSE.
-      MESSAGE |Role { gv_selected_role } is locked. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE |Role { lv_target_role } is locked. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
     ENDIF.
     RETURN.
   ENDIF.
 
   " 3. Read Current Role Authorization Structures via FMs
-  DATA: lt_auth_data    TYPE tt_pt1250,
-        lt_field_values TYPE tt_pt1251.
+  CLEAR: lt_auth_data, lt_field_values.
 
   CALL FUNCTION 'PRGN_1250_READ_AUTH_DATA'
     EXPORTING
-      activity_group    = gv_selected_role
+      activity_group    = lv_target_role
     TABLES
       auth_data         = lt_auth_data
     EXCEPTIONS
@@ -1101,7 +1153,7 @@ FORM add_selected_auths_to_role.
 
   CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
     EXPORTING
-      activity_group    = gv_selected_role
+      activity_group    = lv_target_role
     TABLES
       field_values      = lt_field_values
     EXCEPTIONS
@@ -1225,7 +1277,7 @@ FORM add_selected_auths_to_role.
   " every authorization of objects that use that field.
   IF lt_org_vals IS NOT INITIAL.
     DATA lt_org_all TYPE tt_pt1252.
-    PERFORM save_org_levels USING gv_selected_role lt_org_vals
+    PERFORM save_org_levels USING lv_target_role lt_org_vals
                             CHANGING lt_org_all lv_org_added.
     PERFORM distribute_org_levels USING lt_usorg lt_org_vals lt_org_all
                                   CHANGING lt_auth_data lt_field_values.
@@ -1237,13 +1289,13 @@ FORM add_selected_auths_to_role.
   " 5. Save Changes via Standard PFCG Function Modules
   CALL FUNCTION 'PRGN_1250_SAVE_AUTH_DATA'
     EXPORTING
-      activity_group = gv_selected_role
+      activity_group = lv_target_role
     TABLES
       auth_data      = lt_auth_data.
 
   CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
     EXPORTING
-      activity_group = gv_selected_role
+      activity_group = lv_target_role
     TABLES
       field_values   = lt_field_values.
 
@@ -1254,16 +1306,39 @@ FORM add_selected_auths_to_role.
   " The generation FM needs to manage its own lock lifecycle.
   CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
     EXPORTING
-      activity_group = gv_selected_role.
+      activity_group = lv_target_role.
 
   " 7. Regenerate profile. The FM will enqueue/dequeue on its own.
-  PERFORM generate_role_profile USING gv_selected_role ' ' abap_true abap_false CHANGING lv_gen_subrc.
+  PERFORM generate_role_profile USING lv_target_role ' ' abap_true abap_false CHANGING lv_gen_subrc.
   IF lv_gen_subrc <> 0.
     lv_gen_failed = abap_true.
   ENDIF.
   COMMIT WORK AND WAIT.
 
-  PERFORM recheck_auths_after_add USING lv_menu_added
+  " 8. Selectively propagate ONLY the newly added object(s) / TCodes down to all derived child roles.
+  " Strictly leaves all other objects and existing authorizations in child roles untouched!
+  DATA: lv_der_count TYPE i VALUE 0.
+  CLEAR lt_child_roles.
+
+  SELECT agr_name FROM agr_define
+    WHERE parent_agr = @lv_target_role
+    INTO TABLE @lt_child_roles.
+
+  IF lt_child_roles IS NOT INITIAL.
+    PERFORM derive_specific_objects
+      USING lv_target_role
+            lt_child_roles
+            lt_sel_objects
+            lt_agg_objs
+            lt_menu_tcodes
+            lt_auth_data
+            lt_field_values
+      CHANGING lv_der_count.
+  ENDIF.
+
+  PERFORM recheck_auths_after_add USING lv_target_role
+                                        lv_der_count
+                                        lv_menu_added
                                         lv_menu_failed
                                         lv_failed_txt
                                         lv_gen_failed
@@ -1718,7 +1793,245 @@ FORM field_value_covered USING pt_flds   TYPE tt_role_fld
   ENDLOOP.
 ENDFORM.
 
-FORM recheck_auths_after_add USING pv_menu_added TYPE i
+*&---------------------------------------------------------------------*
+*& Form derive_specific_objects
+*&---------------------------------------------------------------------*
+*& Purpose: Selectively propagate ONLY the newly added object(s) and
+*&          T-Codes down to all derived child roles of the Leading Role.
+*&          Strictly preserves all existing authorizations, org levels,
+*&          and custom settings in each derived role without re-deriving
+*&          or overwriting the rest of the role.
+*&---------------------------------------------------------------------*
+FORM derive_specific_objects
+  USING pv_leading_role TYPE agr_name
+        pt_child_roles  TYPE tt_agr_name
+        pt_sel_objects  TYPE tt_obj_name
+        pt_agg_objs     TYPE tt_agg_obj
+        pt_menu_tcodes  TYPE tt_tcode
+        pt_lead_1250    TYPE tt_pt1250
+        pt_lead_1251    TYPE tt_pt1251
+  CHANGING cv_der_count TYPE i.
+
+  DATA: lt_child_1250 TYPE tt_pt1250,
+        lt_child_1251 TYPE tt_pt1251,
+        lt_child_1252 TYPE tt_pt1252,
+        lt_usorg      TYPE tt_usorg,
+        lv_child_auth TYPE xuauth,
+        lv_counter    TYPE i,
+        lv_gen_subrc  TYPE sy-subrc.
+
+  CLEAR cv_der_count.
+
+  IF pt_child_roles IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  IF pt_sel_objects IS INITIAL AND pt_menu_tcodes IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT field, varbl FROM usorg INTO TABLE @lt_usorg.
+
+  LOOP AT pt_child_roles INTO DATA(lv_child_role).
+    CLEAR: lt_child_1250, lt_child_1251, lt_child_1252, lv_counter.
+
+    " 1. Enqueue derived role
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+      EXPORTING
+        activity_group = lv_child_role
+      EXCEPTIONS
+        foreign_lock   = 1
+        system_failure = 2
+        OTHERS         = 3.
+    IF sy-subrc <> 0.
+      CONTINUE.
+    ENDIF.
+
+    " 2. Read existing authorization data of derived role
+    CALL FUNCTION 'PRGN_1250_READ_AUTH_DATA'
+      EXPORTING
+        activity_group    = lv_child_role
+      TABLES
+        auth_data         = lt_child_1250
+      EXCEPTIONS
+        no_data_available = 1
+        OTHERS            = 2.
+
+    CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
+      EXPORTING
+        activity_group    = lv_child_role
+      TABLES
+        field_values      = lt_child_1251
+      EXCEPTIONS
+        no_data_available = 1
+        OTHERS            = 2.
+
+    CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
+      EXPORTING
+        activity_group    = lv_child_role
+      TABLES
+        org_levels        = lt_child_1252
+      EXCEPTIONS
+        no_data_available = 1
+        OTHERS            = 2.
+
+    " 3. Selectively add ONLY the newly added authorization objects
+    DATA(lv_has_changes) = abap_false.
+
+    LOOP AT pt_sel_objects INTO DATA(lv_new_obj).
+      CLEAR lv_child_auth.
+
+      " Ensure object exists in child 1250
+      READ TABLE lt_child_1250 ASSIGNING FIELD-SYMBOL(<ls_cad>)
+        WITH KEY object = lv_new_obj.
+      IF sy-subrc = 0.
+        lv_child_auth     = <ls_cad>-auth.
+        <ls_cad>-modified = 'U'.
+        <ls_cad>-deleted  = ' '.
+      ELSE.
+        PERFORM ensure_role_auth USING lv_new_obj
+                                 CHANGING lt_child_1250 lv_counter.
+        READ TABLE lt_child_1250 ASSIGNING <ls_cad>
+          WITH KEY object = lv_new_obj.
+        IF sy-subrc = 0.
+          lv_child_auth = <ls_cad>-auth.
+        ENDIF.
+      ENDIF.
+
+      IF lv_child_auth IS INITIAL.
+        CONTINUE.
+      ENDIF.
+
+      lv_has_changes = abap_true.
+
+      " Copy field values from Leading Role for THIS specific object only
+      LOOP AT pt_lead_1251 INTO DATA(ls_lead_fv) WHERE object = lv_new_obj.
+        " Check if field is an Org Level (AGR_1252)
+        DATA: lv_val_to_use TYPE xuval.
+        lv_val_to_use = ls_lead_fv-low.
+
+        READ TABLE lt_usorg INTO DATA(ls_uo) WITH KEY field = ls_lead_fv-field.
+        IF sy-subrc = 0.
+          " It's an org level field. If child role has an org level value in AGR_1252, use child's org level!
+          READ TABLE lt_child_1252 INTO DATA(ls_child_org) WITH KEY varbl = ls_uo-varbl.
+          IF sy-subrc = 0 AND ls_child_org-low IS NOT INITIAL.
+            lv_val_to_use = ls_child_org-low.
+          ENDIF.
+        ENDIF.
+
+        READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_cfv>)
+          WITH KEY object = lv_new_obj auth = lv_child_auth field = ls_lead_fv-field low = lv_val_to_use.
+        IF sy-subrc = 0.
+          <ls_cfv>-deleted  = ' '.
+          <ls_cfv>-modified = 'U'.
+        ELSE.
+          READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_empty_cfv>)
+            WITH KEY object = lv_new_obj auth = lv_child_auth field = ls_lead_fv-field low = space.
+          IF sy-subrc = 0.
+            <ls_empty_cfv>-low      = lv_val_to_use.
+            <ls_empty_cfv>-high     = ls_lead_fv-high.
+            <ls_empty_cfv>-modified = 'U'.
+            <ls_empty_cfv>-deleted  = ' '.
+            <ls_empty_cfv>-neu      = 'X'.
+          ELSE.
+            APPEND VALUE pt1251(
+              object   = lv_new_obj
+              auth     = lv_child_auth
+              variant  = ' '
+              field    = ls_lead_fv-field
+              low      = lv_val_to_use
+              high     = ls_lead_fv-high
+              modified = 'U'
+              neu      = 'X'
+              deleted  = ' '
+            ) TO lt_child_1251.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+    ENDLOOP.
+
+    " 4. If TCodes were added to Leading Role, propagate to child role's S_TCODE object
+    IF pt_menu_tcodes IS NOT INITIAL.
+      DATA: lv_child_tcd_auth TYPE xuauth.
+      CLEAR lv_child_tcd_auth.
+
+      READ TABLE lt_child_1250 ASSIGNING FIELD-SYMBOL(<ls_tcd_ad>)
+        WITH KEY object = 'S_TCODE'.
+      IF sy-subrc = 0.
+        lv_child_tcd_auth = <ls_tcd_ad>-auth.
+        <ls_tcd_ad>-modified = 'U'.
+        <ls_tcd_ad>-deleted  = ' '.
+      ELSE.
+        PERFORM ensure_role_auth USING 'S_TCODE'
+                                 CHANGING lt_child_1250 lv_counter.
+        READ TABLE lt_child_1250 ASSIGNING <ls_tcd_ad>
+          WITH KEY object = 'S_TCODE'.
+        IF sy-subrc = 0.
+          lv_child_tcd_auth = <ls_tcd_ad>-auth.
+        ENDIF.
+      ENDIF.
+
+      IF lv_child_tcd_auth IS NOT INITIAL.
+        LOOP AT pt_menu_tcodes INTO DATA(lv_menu_tc).
+          READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_tcd_fv>)
+            WITH KEY object = 'S_TCODE' auth = lv_child_tcd_auth field = 'TCD' low = lv_menu_tc.
+          IF sy-subrc = 0.
+            <ls_tcd_fv>-deleted  = ' '.
+            <ls_tcd_fv>-modified = 'U'.
+          ELSE.
+            APPEND VALUE pt1251(
+              object   = 'S_TCODE'
+              auth     = lv_child_tcd_auth
+              variant  = ' '
+              field    = 'TCD'
+              low      = lv_menu_tc
+              modified = 'U'
+              neu      = 'X'
+              deleted  = ' '
+            ) TO lt_child_1251.
+            lv_has_changes = abap_true.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+
+    " 5. Save derived child role via standard FMs if changes made
+    IF lv_has_changes = abap_true.
+      CALL FUNCTION 'PRGN_1250_SAVE_AUTH_DATA'
+        EXPORTING activity_group = lv_child_role
+        TABLES auth_data = lt_child_1250.
+
+      CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
+        EXPORTING activity_group = lv_child_role
+        TABLES field_values = lt_child_1251.
+
+      CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+
+    " 6. Unlock child role
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+      EXPORTING
+        activity_group = lv_child_role.
+
+    " 7. Regenerate profile for derived role
+    IF lv_has_changes = abap_true.
+      CLEAR lv_gen_subrc.
+      PERFORM generate_role_profile USING lv_child_role ' ' abap_true abap_false
+                                    CHANGING lv_gen_subrc.
+      COMMIT WORK AND WAIT.
+      cv_der_count = cv_der_count + 1.
+    ENDIF.
+
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form recheck_auths_after_add
+*&---------------------------------------------------------------------*
+FORM recheck_auths_after_add USING pv_target_role TYPE agr_name
+                                   pv_der_count   TYPE i
+                                   pv_menu_added  TYPE i
                                    pv_menu_failed TYPE i
                                    pv_failed_txt  TYPE string
                                    pv_gen_failed  TYPE abap_bool
@@ -1735,7 +2048,11 @@ FORM recheck_auths_after_add USING pv_menu_added TYPE i
     go_grid_roles->refresh_table_display( is_stable = VALUE #( row = 'X' col = 'X' ) ).
   ENDIF.
 
-  lv_msg = |Role { gv_selected_role }:|.
+  IF pv_der_count > 0.
+    lv_msg = |Leading Role { pv_target_role } updated & derived to { pv_der_count } child role(s):|.
+  ELSE.
+    lv_msg = |Role { pv_target_role }:|.
+  ENDIF.
 
   IF pv_menu_added > 0.
     lv_msg = |{ lv_msg } { pv_menu_added } TCode(s) added to menu.|.
@@ -1779,6 +2096,17 @@ FORM refresh_all_data.
     ELSE.
       CLEAR gv_selected_role.
     ENDIF.
+  ENDIF.
+
+  IF gv_selected_role IS NOT INITIAL.
+    READ TABLE gt_user_roles INTO DATA(ls_rf_init) WITH KEY agr_name = gv_selected_role.
+    IF sy-subrc = 0 AND ls_rf_init-parent_agr IS NOT INITIAL.
+      gv_leading_role = ls_rf_init-parent_agr.
+    ELSE.
+      gv_leading_role = gv_selected_role.
+    ENDIF.
+  ELSE.
+    CLEAR gv_leading_role.
   ENDIF.
   LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_rf>).
     IF <ls_rf>-agr_name = gv_selected_role.
@@ -1862,7 +2190,18 @@ CLASS lcl_event_handler IMPLEMENTATION.
 
     READ TABLE gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_clicked_role>) INDEX lv_idx.
     IF sy-subrc = 0.
+      IF e_column_id-fieldname = 'PARENT_AGR' AND <ls_clicked_role>-parent_agr IS NOT INITIAL.
+        SET PARAMETER ID 'AGR' FIELD <ls_clicked_role>-parent_agr.
+        CALL TRANSACTION 'PFCG' AND SKIP FIRST SCREEN.
+        RETURN.
+      ENDIF.
+
       gv_selected_role = <ls_clicked_role>-agr_name.
+      IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
+        gv_leading_role = <ls_clicked_role>-parent_agr.
+      ELSE.
+        gv_leading_role = <ls_clicked_role>-agr_name.
+      ENDIF.
 
       LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_r>).
         IF <ls_r>-agr_name = gv_selected_role.
@@ -1881,7 +2220,11 @@ CLASS lcl_event_handler IMPLEMENTATION.
         go_grid_auths->refresh_table_display( is_stable = VALUE #( row = 'X' col = 'X' ) ).
       ENDIF.
 
-      MESSAGE |Target Single Role switched to: { gv_selected_role }.| TYPE 'S'.
+      IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
+        MESSAGE |Target Role: { gv_selected_role } -> Leading Role: { gv_leading_role }.| TYPE 'S'.
+      ELSE.
+        MESSAGE |Target Role: { gv_selected_role } (Standalone / Master Role).| TYPE 'S'.
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 
@@ -1891,7 +2234,18 @@ CLASS lcl_event_handler IMPLEMENTATION.
 
     READ TABLE gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_clicked_role>) INDEX lv_idx.
     IF sy-subrc = 0.
+      IF e_column-fieldname = 'PARENT_AGR' AND <ls_clicked_role>-parent_agr IS NOT INITIAL.
+        SET PARAMETER ID 'AGR' FIELD <ls_clicked_role>-parent_agr.
+        CALL TRANSACTION 'PFCG' AND SKIP FIRST SCREEN.
+        RETURN.
+      ENDIF.
+
       gv_selected_role = <ls_clicked_role>-agr_name.
+      IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
+        gv_leading_role = <ls_clicked_role>-parent_agr.
+      ELSE.
+        gv_leading_role = <ls_clicked_role>-agr_name.
+      ENDIF.
 
       LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_r>).
         IF <ls_r>-agr_name = gv_selected_role.
@@ -1910,7 +2264,11 @@ CLASS lcl_event_handler IMPLEMENTATION.
         go_grid_auths->refresh_table_display( is_stable = VALUE #( row = 'X' col = 'X' ) ).
       ENDIF.
 
-      MESSAGE |Target Single Role switched to: { gv_selected_role }.| TYPE 'S'.
+      IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
+        MESSAGE |Target Role: { gv_selected_role } -> Leading Role: { gv_leading_role }.| TYPE 'S'.
+      ELSE.
+        MESSAGE |Target Role: { gv_selected_role } (Standalone / Master Role).| TYPE 'S'.
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 
