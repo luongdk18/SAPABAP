@@ -927,28 +927,30 @@ FORM add_selected_auths_to_role.
   " S_TCODE is granted by adding the transaction to the role menu.
   " Profile merge then creates the standard S_TCODE value from that menu.
   " Inserting S_TCODE directly into AGR_1250/AGR_1251 leaves a manual object.
-  DATA: lt_menu_tcodes    TYPE tt_tcode,
-        lt_object_auth    TYPE tt_missing_auth,
-        lt_agg_objs       TYPE tt_agg_obj,
-        lt_auth_data      TYPE tt_pt1250,
-        lt_field_values   TYPE tt_pt1251,
-        lt_child_roles    TYPE tt_agr_name,
-        lt_child_roles_tc TYPE tt_agr_name,
-        lv_menu_added     TYPE i,
-        lv_menu_failed    TYPE i,
-        lv_menu_abort     TYPE abap_bool,
-        lv_failed_txt     TYPE string,
-        lv_gen_subrc      TYPE sy-subrc,
-        lv_gen_failed     TYPE abap_bool,
-        lv_total_added    TYPE i,
-        lv_obj_count      TYPE i,
-        lv_org_added      TYPE i,
-        lv_tcode_val      TYPE xuval,
-        lt_usorg          TYPE tt_usorg,
-        lt_org_vals       TYPE tt_org_val,
-        lt_sel_objects    TYPE tt_obj_name.
+  DATA: lt_menu_tcodes     TYPE tt_tcode,
+        lt_object_auth     TYPE tt_missing_auth,
+        lt_agg_objs        TYPE tt_agg_obj,
+        lt_auth_data       TYPE tt_pt1250,
+        lt_field_values    TYPE tt_pt1251,
+        lt_child_roles     TYPE tt_agr_name,
+        lt_lead_objs_prior TYPE SORTED TABLE OF tobj-objct WITH UNIQUE KEY table_line,
+        lt_su24_objs       TYPE SORTED TABLE OF tobj-objct WITH UNIQUE KEY table_line,
+        lv_menu_added      TYPE i,
+        lv_menu_failed     TYPE i,
+        lv_menu_abort      TYPE abap_bool,
+        lv_failed_txt      TYPE string,
+        lv_gen_subrc       TYPE sy-subrc,
+        lv_gen_failed      TYPE abap_bool,
+        lv_total_added     TYPE i,
+        lv_obj_count       TYPE i,
+        lv_org_added       TYPE i,
+        lv_tcode_val       TYPE xuval,
+        lt_usorg           TYPE tt_usorg,
+        lt_org_vals        TYPE tt_org_val,
+        lt_sel_objects     TYPE tt_obj_name.
 
   CLEAR: lt_menu_tcodes, lt_object_auth, lt_agg_objs, lt_org_vals, lt_sel_objects,
+         lt_lead_objs_prior, lt_su24_objs,
          lv_menu_added, lv_menu_failed, lv_menu_abort, lv_failed_txt,
          lv_gen_subrc, lv_gen_failed, lv_total_added, lv_obj_count, lv_org_added.
 
@@ -993,6 +995,12 @@ FORM add_selected_auths_to_role.
     RETURN.
   ENDIF.
 
+  " Take snapshot of active objects in Master Role before any menu / auth additions
+  SELECT DISTINCT object FROM agr_1250
+    WHERE agr_name = @lv_target_role AND deleted = ' '
+    INTO TABLE @lt_lead_objs_prior.
+
+  " 1. Add TCodes to Master role menu hierarchy (under first folder or home)
   IF lt_menu_tcodes IS NOT INITIAL.
     PERFORM add_tcodes_to_role_menu USING lv_target_role
                                     CHANGING lt_menu_tcodes
@@ -1006,8 +1014,7 @@ FORM add_selected_auths_to_role.
     ENDIF.
     IF lv_menu_added > 0.
       COMMIT WORK AND WAIT.
-      " All maintained: star open fields brought in by the menu merge.
-      " Organizational levels stay as maintained in AGR_1252.
+      " Profile merge 'M': brings in SU24 default authorization objects for the new TCodes
       PERFORM generate_role_profile USING lv_target_role 'M' abap_true abap_false CHANGING lv_gen_subrc.
       IF lv_gen_subrc <> 0.
         lv_gen_failed = abap_true.
@@ -1020,126 +1027,249 @@ FORM add_selected_auths_to_role.
     ENDIF.
   ENDIF.
 
-  IF lt_object_auth IS INITIAL.
-    CLEAR lv_obj_count.
-    " Propagate newly added TCodes down to derived roles if applicable
-    DATA: lv_der_tc_count TYPE i VALUE 0.
-    CLEAR lt_child_roles_tc.
-    SELECT agr_name FROM agr_define WHERE parent_agr = @lv_target_role INTO TABLE @lt_child_roles_tc.
-    IF lt_child_roles_tc IS NOT INITIAL AND lt_menu_tcodes IS NOT INITIAL.
-      PERFORM derive_specific_objects
-        USING lv_target_role
-              lt_child_roles_tc
-              lt_sel_objects
-              lt_agg_objs
-              lt_menu_tcodes
-              lt_auth_data
-              lt_field_values
-        CHANGING lv_der_tc_count.
-    ENDIF.
+  " 2. If explicit authorization objects were selected (non-TCode), add them to Master Role
+  IF lt_object_auth IS NOT INITIAL.
+    SELECT field, varbl FROM usorg INTO TABLE @lt_usorg.
 
-    PERFORM recheck_auths_after_add USING lv_target_role
-                                          lv_der_tc_count
-                                          lv_menu_added
-                                          lv_menu_failed
-                                          lv_failed_txt
-                                          lv_gen_failed
-                                          lv_obj_count
-                                          lv_total_added.
-    RETURN.
-  ENDIF.
+    LOOP AT lt_object_auth INTO ls_item.
+      DATA: lt_def_fields TYPE STANDARD TABLE OF xufield,
+            ls_tobj_def   TYPE tobj.
+      CLEAR: lt_def_fields, ls_tobj_def.
 
-  " Only the selected field values are kept. They are trimmed and grouped
-  " so the same object never receives the same field value twice.
-  " Organizational levels are stored separately for AGR_1252.
-  SELECT field, varbl FROM usorg INTO TABLE @lt_usorg.
+      SELECT SINGLE fiel1, fiel2, fiel3, fiel4, fiel5, fiel6, fiel7, fiel8, fiel9, fiel0
+        FROM tobj
+        WHERE objct = @ls_item-object
+        INTO CORRESPONDING FIELDS OF @ls_tobj_def.
+      IF sy-subrc = 0.
+        IF ls_tobj_def-fiel1 IS NOT INITIAL. APPEND ls_tobj_def-fiel1 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel2 IS NOT INITIAL. APPEND ls_tobj_def-fiel2 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel3 IS NOT INITIAL. APPEND ls_tobj_def-fiel3 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel4 IS NOT INITIAL. APPEND ls_tobj_def-fiel4 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel5 IS NOT INITIAL. APPEND ls_tobj_def-fiel5 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel6 IS NOT INITIAL. APPEND ls_tobj_def-fiel6 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel7 IS NOT INITIAL. APPEND ls_tobj_def-fiel7 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel8 IS NOT INITIAL. APPEND ls_tobj_def-fiel8 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel9 IS NOT INITIAL. APPEND ls_tobj_def-fiel9 TO lt_def_fields. ENDIF.
+        IF ls_tobj_def-fiel0 IS NOT INITIAL. APPEND ls_tobj_def-fiel0 TO lt_def_fields. ENDIF.
+      ENDIF.
 
-  LOOP AT lt_object_auth INTO ls_item.
-    DATA: lt_def_fields TYPE STANDARD TABLE OF xufield,
-          ls_tobj_def   TYPE tobj.
-    CLEAR: lt_def_fields, ls_tobj_def.
+      IF lt_def_fields IS NOT INITIAL.
+        LOOP AT lt_def_fields INTO DATA(lv_df).
+          DATA lv_df_val TYPE xuval.
+          CLEAR lv_df_val.
+          READ TABLE ls_item-check_values INTO DATA(ls_scv) WITH KEY field = lv_df.
+          IF sy-subrc = 0 AND ls_scv-value IS NOT INITIAL.
+            lv_df_val = ls_scv-value.
+          ELSE.
+            lv_df_val = '*'.
+          ENDIF.
+          PERFORM collect_selected_value USING ls_item-object lv_df lv_df_val lt_usorg
+                                         CHANGING lt_agg_objs lt_org_vals lt_sel_objects.
+        ENDLOOP.
+      ELSE.
+        LOOP AT ls_item-check_values INTO DATA(ls_sel_val).
+          PERFORM collect_selected_value USING ls_item-object ls_sel_val-field ls_sel_val-value lt_usorg
+                                         CHANGING lt_agg_objs lt_org_vals lt_sel_objects.
+        ENDLOOP.
+      ENDIF.
+      INSERT ls_item-object INTO TABLE lt_sel_objects.
+    ENDLOOP.
 
-    SELECT SINGLE fiel1, fiel2, fiel3, fiel4, fiel5, fiel6, fiel7, fiel8, fiel9, fiel0
-      FROM tobj
-      WHERE objct = @ls_item-object
-      INTO CORRESPONDING FIELDS OF @ls_tobj_def.
-    IF sy-subrc = 0.
-      IF ls_tobj_def-fiel1 IS NOT INITIAL. APPEND ls_tobj_def-fiel1 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel2 IS NOT INITIAL. APPEND ls_tobj_def-fiel2 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel3 IS NOT INITIAL. APPEND ls_tobj_def-fiel3 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel4 IS NOT INITIAL. APPEND ls_tobj_def-fiel4 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel5 IS NOT INITIAL. APPEND ls_tobj_def-fiel5 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel6 IS NOT INITIAL. APPEND ls_tobj_def-fiel6 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel7 IS NOT INITIAL. APPEND ls_tobj_def-fiel7 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel8 IS NOT INITIAL. APPEND ls_tobj_def-fiel8 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel9 IS NOT INITIAL. APPEND ls_tobj_def-fiel9 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel0 IS NOT INITIAL. APPEND ls_tobj_def-fiel0 TO lt_def_fields. ENDIF.
-    ENDIF.
-
-    IF lt_def_fields IS NOT INITIAL.
-      LOOP AT lt_def_fields INTO DATA(lv_df).
-        DATA lv_df_val TYPE xuval.
-        CLEAR lv_df_val.
-        READ TABLE ls_item-check_values INTO DATA(ls_scv) WITH KEY field = lv_df.
-        IF sy-subrc = 0 AND ls_scv-value IS NOT INITIAL.
-          lv_df_val = ls_scv-value.
-        ELSE.
-          lv_df_val = '*'.
+    IF lt_agg_objs IS NOT INITIAL OR lt_org_vals IS NOT INITIAL.
+      " Lock Master Role (Enqueue)
+      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+        EXPORTING
+          activity_group = lv_target_role
+        EXCEPTIONS
+          foreign_lock   = 1
+          system_failure = 2
+          OTHERS         = 3.
+      IF sy-subrc <> 0.
+        DATA(lv_lock_user) = sy-msgv1.
+        PERFORM eval_auths_for_role USING gv_selected_role.
+        IF go_grid_auths IS BOUND.
+          go_grid_auths->refresh_table_display( is_stable = VALUE #( row = 'X' col = 'X' ) ).
         ENDIF.
-        PERFORM collect_selected_value USING ls_item-object lv_df lv_df_val lt_usorg
-                                       CHANGING lt_agg_objs lt_org_vals lt_sel_objects.
-      ENDLOOP.
-    ELSE.
-      LOOP AT ls_item-check_values INTO DATA(ls_sel_val).
-        PERFORM collect_selected_value USING ls_item-object ls_sel_val-field ls_sel_val-value lt_usorg
-                                       CHANGING lt_agg_objs lt_org_vals lt_sel_objects.
-      ENDLOOP.
-    ENDIF.
-    INSERT ls_item-object INTO TABLE lt_sel_objects.
-  ENDLOOP.
+        IF lv_lock_user IS NOT INITIAL.
+          MESSAGE |Role { lv_target_role } is locked by user { lv_lock_user }. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
+        ELSE.
+          MESSAGE |Role { lv_target_role } is locked. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
+        ENDIF.
+        RETURN.
+      ENDIF.
 
-  IF lt_agg_objs IS INITIAL AND lt_org_vals IS INITIAL.
-    IF lv_menu_added = 0.
-      MESSAGE 'No authorization value left to add after cleanup.' TYPE 'S' DISPLAY LIKE 'E'.
+      " Read Current Role Authorization Structures via standard FMs
+      CLEAR: lt_auth_data, lt_field_values.
+      CALL FUNCTION 'PRGN_1250_READ_AUTH_DATA'
+        EXPORTING
+          activity_group    = lv_target_role
+        TABLES
+          auth_data         = lt_auth_data
+        EXCEPTIONS
+          no_data_available = 1
+          OTHERS            = 2.
+
+      CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
+        EXPORTING
+          activity_group    = lv_target_role
+        TABLES
+          field_values      = lt_field_values
+        EXCEPTIONS
+          no_data_available = 1
+          OTHERS            = 2.
+
+      DATA: lv_auth_counter TYPE i.
+      CLEAR: lv_auth_counter.
+
+      LOOP AT lt_sel_objects INTO DATA(lv_sel_obj).
+        PERFORM ensure_role_auth USING lv_sel_obj
+                                 CHANGING lt_auth_data lv_auth_counter.
+      ENDLOOP.
+
+      LOOP AT lt_agg_objs INTO DATA(ls_agg_obj).
+        DATA: lv_auth TYPE xuauth.
+        CLEAR lv_auth.
+        READ TABLE lt_auth_data ASSIGNING FIELD-SYMBOL(<ls_ad>)
+          WITH KEY object = ls_agg_obj-object.
+        IF sy-subrc <> 0.
+          CONTINUE.
+        ENDIF.
+        lv_auth = <ls_ad>-auth.
+        <ls_ad>-modified = 'U'.
+        <ls_ad>-deleted  = ' '.
+
+        LOOP AT ls_agg_obj-values INTO DATA(ls_val).
+          READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_fv>)
+            WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = ls_val-low.
+          IF sy-subrc = 0.
+            <ls_fv>-deleted  = ' '.
+            <ls_fv>-modified = 'U'.
+          ELSE.
+            READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_empty_fv>)
+              WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = space.
+            IF sy-subrc = 0.
+              <ls_empty_fv>-low      = ls_val-low.
+              <ls_empty_fv>-modified = 'U'.
+              <ls_empty_fv>-deleted  = ' '.
+              <ls_empty_fv>-neu      = 'X'.
+            ELSE.
+              READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_star_fv>)
+                WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = '*'.
+              IF sy-subrc = 0.
+                <ls_star_fv>-deleted  = ' '.
+                <ls_star_fv>-modified = 'U'.
+              ELSE.
+                APPEND VALUE pt1251(
+                  object   = ls_agg_obj-object
+                  auth     = lv_auth
+                  variant  = ' '
+                  field    = ls_val-field
+                  low      = ls_val-low
+                  modified = 'U'
+                  neu      = 'X'
+                  deleted  = ' '
+                ) TO lt_field_values.
+              ENDIF.
+            ENDIF.
+            lv_total_added = lv_total_added + 1.
+          ENDIF.
+        ENDLOOP.
+
+        " Ensure 100% completeness: every single field defined in TOBJ must be present!
+        SELECT SINGLE fiel1, fiel2, fiel3, fiel4, fiel5, fiel6, fiel7, fiel8, fiel9, fiel0
+          FROM tobj
+          WHERE objct = @ls_agg_obj-object
+          INTO CORRESPONDING FIELDS OF @ls_tobj_def.
+        IF sy-subrc = 0.
+          CLEAR lt_def_fields.
+          IF ls_tobj_def-fiel1 IS NOT INITIAL. APPEND ls_tobj_def-fiel1 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel2 IS NOT INITIAL. APPEND ls_tobj_def-fiel2 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel3 IS NOT INITIAL. APPEND ls_tobj_def-fiel3 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel4 IS NOT INITIAL. APPEND ls_tobj_def-fiel4 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel5 IS NOT INITIAL. APPEND ls_tobj_def-fiel5 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel6 IS NOT INITIAL. APPEND ls_tobj_def-fiel6 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel7 IS NOT INITIAL. APPEND ls_tobj_def-fiel7 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel8 IS NOT INITIAL. APPEND ls_tobj_def-fiel8 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel9 IS NOT INITIAL. APPEND ls_tobj_def-fiel9 TO lt_def_fields. ENDIF.
+          IF ls_tobj_def-fiel0 IS NOT INITIAL. APPEND ls_tobj_def-fiel0 TO lt_def_fields. ENDIF.
+
+          LOOP AT lt_def_fields INTO DATA(lv_check_fld).
+            READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_any_fv>)
+              WITH KEY object = ls_agg_obj-object auth = lv_auth field = lv_check_fld.
+            IF sy-subrc <> 0.
+              APPEND VALUE pt1251(
+                object   = ls_agg_obj-object
+                auth     = lv_auth
+                variant  = ' '
+                field    = lv_check_fld
+                low      = '*'
+                modified = 'U'
+                neu      = 'X'
+                deleted  = ' '
+              ) TO lt_field_values.
+              lv_total_added = lv_total_added + 1.
+            ELSE.
+              IF <ls_any_fv>-low IS INITIAL OR <ls_any_fv>-low = space.
+                <ls_any_fv>-low      = '*'.
+                <ls_any_fv>-modified = 'U'.
+                <ls_any_fv>-neu      = 'X'.
+              ENDIF.
+              <ls_any_fv>-deleted  = ' '.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDLOOP.
+
+      " Global sweep: ensure NO field in lt_field_values for target role has low = space
+      LOOP AT lt_field_values ASSIGNING FIELD-SYMBOL(<ls_sweep_fv>).
+        IF <ls_sweep_fv>-low IS INITIAL OR <ls_sweep_fv>-low = space.
+          <ls_sweep_fv>-low      = '*'.
+          <ls_sweep_fv>-modified = 'U'.
+          <ls_sweep_fv>-neu      = 'X'.
+        ENDIF.
+        <ls_sweep_fv>-deleted  = ' '.
+      ENDLOOP.
+
+      IF lt_org_vals IS NOT INITIAL.
+        DATA lt_org_all TYPE tt_pt1252.
+        PERFORM save_org_levels USING lv_target_role lt_org_vals
+                                CHANGING lt_org_all lv_org_added.
+        PERFORM distribute_org_levels USING lt_usorg lt_org_vals lt_org_all
+                                      CHANGING lt_auth_data lt_field_values.
+        lv_total_added = lv_total_added + lv_org_added.
+      ENDIF.
+
+      " Save Master Role auth data
+      CALL FUNCTION 'PRGN_1250_SAVE_AUTH_DATA'
+        EXPORTING
+          activity_group = lv_target_role
+        TABLES
+          auth_data      = lt_auth_data.
+
+      CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
+        EXPORTING
+          activity_group = lv_target_role
+        TABLES
+          field_values   = lt_field_values.
+
+      CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+      COMMIT WORK AND WAIT.
+
+      " Unlock Master Role BEFORE profile generation
+      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+        EXPORTING
+          activity_group = lv_target_role.
+
+      " Regenerate profile for Master role
+      PERFORM generate_role_profile USING lv_target_role ' ' abap_true abap_false CHANGING lv_gen_subrc.
+      IF lv_gen_subrc <> 0.
+        lv_gen_failed = abap_true.
+      ENDIF.
+      COMMIT WORK AND WAIT.
     ENDIF.
-    CLEAR lv_obj_count.
-    PERFORM recheck_auths_after_add USING lv_target_role
-                                          0
-                                          lv_menu_added
-                                          lv_menu_failed
-                                          lv_failed_txt
-                                          lv_gen_failed
-                                          lv_obj_count
-                                          lv_total_added.
-    RETURN.
   ENDIF.
 
-  " 2. Lock the Role (Enqueue) - check if role is being edited
-  CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
-    EXPORTING
-      activity_group = lv_target_role
-    EXCEPTIONS
-      foreign_lock   = 1
-      system_failure = 2
-      OTHERS         = 3.
-  IF sy-subrc <> 0.
-    " sy-msgv1 contains the lock holder's username on foreign_lock
-    DATA(lv_lock_user) = sy-msgv1.
-
-    PERFORM eval_auths_for_role USING gv_selected_role.
-    IF go_grid_auths IS BOUND.
-      go_grid_auths->refresh_table_display( is_stable = VALUE #( row = 'X' col = 'X' ) ).
-    ENDIF.
-
-    IF lv_lock_user IS NOT INITIAL.
-      MESSAGE |Role { lv_target_role } is locked by user { lv_lock_user }. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
-    ELSE.
-      MESSAGE |Role { lv_target_role } is locked. Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
-    ENDIF.
-    RETURN.
-  ENDIF.
-
-  " 3. Read Current Role Authorization Structures via FMs
+  " 3. Read fully updated authorization structures of Master Role
   CLEAR: lt_auth_data, lt_field_values.
 
   CALL FUNCTION 'PRGN_1250_READ_AUTH_DATA'
@@ -1160,163 +1290,47 @@ FORM add_selected_auths_to_role.
       no_data_available = 1
       OTHERS            = 2.
 
-  " 4. Add only the cleaned values. Open fields are left as they are.
-  DATA: lv_auth_counter TYPE i.
-  CLEAR: lv_auth_counter, lv_total_added, lv_org_added.
+  " 4. Detect SU24 accompanying objects for all added TCodes
+  CLEAR lt_su24_objs.
+  IF lt_menu_tcodes IS NOT INITIAL.
+    DATA: lt_tcd_sel TYPE RANGE OF sytcode.
+    lt_tcd_sel = VALUE #( FOR tc IN lt_menu_tcodes ( sign = 'I' option = 'EQ' low = tc ) ).
 
-  LOOP AT lt_sel_objects INTO DATA(lv_sel_obj).
-    PERFORM ensure_role_auth USING lv_sel_obj
-                             CHANGING lt_auth_data lv_auth_counter.
-  ENDLOOP.
-
-  LOOP AT lt_agg_objs INTO DATA(ls_agg_obj).
-    DATA: lv_auth TYPE xuauth.
-    CLEAR lv_auth.
-    READ TABLE lt_auth_data ASSIGNING FIELD-SYMBOL(<ls_ad>)
-      WITH KEY object = ls_agg_obj-object.
-    IF sy-subrc <> 0.
-      CONTINUE.
-    ENDIF.
-    lv_auth = <ls_ad>-auth.
-    <ls_ad>-modified = 'U'.
-    <ls_ad>-deleted  = ' '.  " Reactivate if was deactivated
-
-    LOOP AT ls_agg_obj-values INTO DATA(ls_val).
-      READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_fv>)
-        WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = ls_val-low.
-      IF sy-subrc = 0.
-        <ls_fv>-deleted  = ' '.
-        <ls_fv>-modified = 'U'.
-      ELSE.
-        READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_empty_fv>)
-          WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = space.
-        IF sy-subrc = 0.
-          <ls_empty_fv>-low      = ls_val-low.
-          <ls_empty_fv>-modified = 'U'.
-          <ls_empty_fv>-deleted  = ' '.
-          <ls_empty_fv>-neu      = 'X'.
-        ELSE.
-          READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_star_fv>)
-            WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = '*'.
-          IF sy-subrc = 0.
-            <ls_star_fv>-deleted  = ' '.
-            <ls_star_fv>-modified = 'U'.
-          ELSE.
-            APPEND VALUE pt1251(
-              object   = ls_agg_obj-object
-              auth     = lv_auth
-              variant  = ' '
-              field    = ls_val-field
-              low      = ls_val-low
-              modified = 'U'
-              neu      = 'X'
-              deleted  = ' '
-            ) TO lt_field_values.
-          ENDIF.
-        ENDIF.
-        lv_total_added = lv_total_added + 1.
+    SELECT DISTINCT object FROM usobx_c
+      WHERE name IN @lt_tcd_sel AND okflag = 'Y'
+      INTO TABLE @DATA(lt_su24_c).
+    LOOP AT lt_su24_c INTO DATA(ls_c).
+      IF ls_c-object <> 'S_TCODE'.
+        INSERT ls_c-object INTO TABLE lt_su24_objs.
       ENDIF.
     ENDLOOP.
 
-    " Ensure 100% completeness: every single field defined in TOBJ must be present!
-    SELECT SINGLE fiel1, fiel2, fiel3, fiel4, fiel5, fiel6, fiel7, fiel8, fiel9, fiel0
-      FROM tobj
-      WHERE objct = @ls_agg_obj-object
-      INTO CORRESPONDING FIELDS OF @ls_tobj_def.
-    IF sy-subrc = 0.
-      CLEAR lt_def_fields.
-      IF ls_tobj_def-fiel1 IS NOT INITIAL. APPEND ls_tobj_def-fiel1 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel2 IS NOT INITIAL. APPEND ls_tobj_def-fiel2 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel3 IS NOT INITIAL. APPEND ls_tobj_def-fiel3 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel4 IS NOT INITIAL. APPEND ls_tobj_def-fiel4 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel5 IS NOT INITIAL. APPEND ls_tobj_def-fiel5 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel6 IS NOT INITIAL. APPEND ls_tobj_def-fiel6 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel7 IS NOT INITIAL. APPEND ls_tobj_def-fiel7 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel8 IS NOT INITIAL. APPEND ls_tobj_def-fiel8 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel9 IS NOT INITIAL. APPEND ls_tobj_def-fiel9 TO lt_def_fields. ENDIF.
-      IF ls_tobj_def-fiel0 IS NOT INITIAL. APPEND ls_tobj_def-fiel0 TO lt_def_fields. ENDIF.
-
-      LOOP AT lt_def_fields INTO DATA(lv_check_fld).
-        READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_any_fv>)
-          WITH KEY object = ls_agg_obj-object auth = lv_auth field = lv_check_fld.
-        IF sy-subrc <> 0.
-          APPEND VALUE pt1251(
-            object   = ls_agg_obj-object
-            auth     = lv_auth
-            variant  = ' '
-            field    = lv_check_fld
-            low      = '*'
-            modified = 'U'
-            neu      = 'X'
-            deleted  = ' '
-          ) TO lt_field_values.
-          lv_total_added = lv_total_added + 1.
-        ELSE.
-          IF <ls_any_fv>-low IS INITIAL OR <ls_any_fv>-low = space.
-            <ls_any_fv>-low      = '*'.
-            <ls_any_fv>-modified = 'U'.
-            <ls_any_fv>-neu      = 'X'.
-          ENDIF.
-          <ls_any_fv>-deleted  = ' '.
-        ENDIF.
-      ENDLOOP.
-    ENDIF.
-  ENDLOOP.
-
-  " Global sweep: ensure NO field in lt_field_values for target role has low = space
-  LOOP AT lt_field_values ASSIGNING FIELD-SYMBOL(<ls_sweep_fv>).
-    IF <ls_sweep_fv>-low IS INITIAL OR <ls_sweep_fv>-low = space.
-      <ls_sweep_fv>-low      = '*'.
-      <ls_sweep_fv>-modified = 'U'.
-      <ls_sweep_fv>-neu      = 'X'.
-    ENDIF.
-    <ls_sweep_fv>-deleted  = ' '.
-  ENDLOOP.
-
-  " Organizational levels are maintained in AGR_1252, then copied onto
-  " every authorization of objects that use that field.
-  IF lt_org_vals IS NOT INITIAL.
-    DATA lt_org_all TYPE tt_pt1252.
-    PERFORM save_org_levels USING lv_target_role lt_org_vals
-                            CHANGING lt_org_all lv_org_added.
-    PERFORM distribute_org_levels USING lt_usorg lt_org_vals lt_org_all
-                                  CHANGING lt_auth_data lt_field_values.
-    lv_total_added = lv_total_added + lv_org_added.
+    SELECT DISTINCT object FROM usobx
+      WHERE name IN @lt_tcd_sel AND okflag = 'Y'
+      INTO TABLE @DATA(lt_su24_s).
+    LOOP AT lt_su24_s INTO DATA(ls_s).
+      IF ls_s-object <> 'S_TCODE'.
+        INSERT ls_s-object INTO TABLE lt_su24_objs.
+      ENDIF.
+    ENDLOOP.
   ENDIF.
+
+  " Add newly introduced Master Role objects AND SU24 accompanying objects into lt_sel_objects
+  LOOP AT lt_auth_data INTO DATA(ls_ad_chk) WHERE deleted = ' ' AND object <> 'S_TCODE'.
+    READ TABLE lt_lead_objs_prior TRANSPORTING NO FIELDS WITH TABLE KEY table_line = ls_ad_chk-object.
+    IF sy-subrc <> 0.
+      INSERT ls_ad_chk-object INTO TABLE lt_sel_objects.
+    ELSE.
+      READ TABLE lt_su24_objs TRANSPORTING NO FIELDS WITH TABLE KEY table_line = ls_ad_chk-object.
+      IF sy-subrc = 0.
+        INSERT ls_ad_chk-object INTO TABLE lt_sel_objects.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
 
   lv_obj_count = lines( lt_sel_objects ).
 
-  " 5. Save Changes via Standard PFCG Function Modules
-  CALL FUNCTION 'PRGN_1250_SAVE_AUTH_DATA'
-    EXPORTING
-      activity_group = lv_target_role
-    TABLES
-      auth_data      = lt_auth_data.
-
-  CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
-    EXPORTING
-      activity_group = lv_target_role
-    TABLES
-      field_values   = lt_field_values.
-
-  CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
-  COMMIT WORK AND WAIT.
-
-  " 6. Unlock the Role (Dequeue) BEFORE profile generation.
-  " The generation FM needs to manage its own lock lifecycle.
-  CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
-    EXPORTING
-      activity_group = lv_target_role.
-
-  " 7. Regenerate profile. The FM will enqueue/dequeue on its own.
-  PERFORM generate_role_profile USING lv_target_role ' ' abap_true abap_false CHANGING lv_gen_subrc.
-  IF lv_gen_subrc <> 0.
-    lv_gen_failed = abap_true.
-  ENDIF.
-  COMMIT WORK AND WAIT.
-
-  " 8. Selectively propagate ONLY the newly added object(s) / TCodes down to all derived child roles.
-  " Strictly leaves all other objects and existing authorizations in child roles untouched!
+  " 5. Selectively propagate ONLY the newly added object(s) / TCodes down to all derived child roles
   DATA: lv_der_count TYPE i VALUE 0.
   CLEAR lt_child_roles.
 
@@ -1324,7 +1338,7 @@ FORM add_selected_auths_to_role.
     WHERE parent_agr = @lv_target_role
     INTO TABLE @lt_child_roles.
 
-  IF lt_child_roles IS NOT INITIAL.
+  IF lt_child_roles IS NOT INITIAL AND ( lt_sel_objects IS NOT INITIAL OR lt_menu_tcodes IS NOT INITIAL ).
     PERFORM derive_specific_objects
       USING lv_target_role
             lt_child_roles
@@ -1982,13 +1996,17 @@ FORM derive_specific_objects
         pt_lead_1251    TYPE tt_pt1251
   CHANGING cv_der_count TYPE i.
 
-  DATA: lt_child_1250 TYPE tt_pt1250,
-        lt_child_1251 TYPE tt_pt1251,
-        lt_child_1252 TYPE tt_pt1252,
-        lt_usorg      TYPE tt_usorg,
-        lv_child_auth TYPE xuauth,
-        lv_counter    TYPE i,
-        lv_gen_subrc  TYPE sy-subrc.
+  DATA: lt_child_1250        TYPE tt_pt1250,
+        lt_child_1251        TYPE tt_pt1251,
+        lt_child_1252        TYPE tt_pt1252,
+        lt_lead_1252         TYPE tt_pt1252,
+        lt_usorg             TYPE tt_usorg,
+        lt_def_child_flds    TYPE STANDARD TABLE OF xufield,
+        ls_child_tobj        TYPE tobj,
+        lv_child_auth        TYPE xuauth,
+        lv_counter           TYPE i,
+        lv_gen_subrc         TYPE sy-subrc,
+        lv_child_org_changed TYPE abap_bool.
 
   CLEAR cv_der_count.
 
@@ -2002,8 +2020,17 @@ FORM derive_specific_objects
 
   SELECT field, varbl FROM usorg INTO TABLE @lt_usorg.
 
+  " Read Master Role's Org Levels from AGR_1252
+  CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
+    EXPORTING
+      activity_group    = pv_leading_role
+    TABLES
+      org_levels        = lt_lead_1252
+    EXCEPTIONS
+      OTHERS            = 1.
+
   LOOP AT pt_child_roles INTO DATA(lv_child_role).
-    CLEAR: lt_child_1250, lt_child_1251, lt_child_1252, lv_counter.
+    CLEAR: lt_child_1250, lt_child_1251, lt_child_1252, lv_counter, lv_child_org_changed.
 
     " 1. Enqueue derived role
     CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
@@ -2045,7 +2072,7 @@ FORM derive_specific_objects
         no_data_available = 1
         OTHERS            = 2.
 
-    " 3. Selectively add ONLY the newly added authorization objects
+    " 3. Selectively add ONLY the newly added authorization objects (including SU24 accompanying objects)
     DATA(lv_has_changes) = abap_false.
 
     LOOP AT pt_sel_objects INTO DATA(lv_new_obj).
@@ -2074,8 +2101,10 @@ FORM derive_specific_objects
 
       lv_has_changes = abap_true.
 
-      " Copy field values from Leading Role for THIS specific object only
-      LOOP AT pt_lead_1251 INTO DATA(ls_lead_fv) WHERE object = lv_new_obj.
+      " Copy active field values from Leading Role for THIS specific object only
+      LOOP AT pt_lead_1251 INTO DATA(ls_lead_fv)
+        WHERE object = lv_new_obj AND deleted = ' '.
+
         " Check if field is an Org Level (AGR_1252)
         DATA: lv_val_to_use TYPE xuval.
         lv_val_to_use = ls_lead_fv-low.
@@ -2086,6 +2115,14 @@ FORM derive_specific_objects
           READ TABLE lt_child_1252 INTO DATA(ls_child_org) WITH KEY varbl = ls_uo-varbl.
           IF sy-subrc = 0 AND ls_child_org-low IS NOT INITIAL.
             lv_val_to_use = ls_child_org-low.
+          ELSE.
+            " If child role doesn't have this org level yet, inherit from Master Role's AGR_1252
+            READ TABLE lt_lead_1252 INTO DATA(ls_lead_org) WITH KEY varbl = ls_uo-varbl.
+            IF sy-subrc = 0 AND ls_lead_org-low IS NOT INITIAL.
+              APPEND ls_lead_org TO lt_child_1252.
+              lv_val_to_use = ls_lead_org-low.
+              lv_child_org_changed = abap_true.
+            ENDIF.
           ENDIF.
         ENDIF.
 
@@ -2118,6 +2155,48 @@ FORM derive_specific_objects
           ENDIF.
         ENDIF.
       ENDLOOP.
+
+      " Ensure TOBJ completeness for child role: no field left unassigned
+      CLEAR: lt_def_child_flds, ls_child_tobj.
+      SELECT SINGLE fiel1, fiel2, fiel3, fiel4, fiel5, fiel6, fiel7, fiel8, fiel9, fiel0
+        FROM tobj WHERE objct = @lv_new_obj
+        INTO CORRESPONDING FIELDS OF @ls_child_tobj.
+      IF sy-subrc = 0.
+        IF ls_child_tobj-fiel1 IS NOT INITIAL. APPEND ls_child_tobj-fiel1 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel2 IS NOT INITIAL. APPEND ls_child_tobj-fiel2 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel3 IS NOT INITIAL. APPEND ls_child_tobj-fiel3 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel4 IS NOT INITIAL. APPEND ls_child_tobj-fiel4 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel5 IS NOT INITIAL. APPEND ls_child_tobj-fiel5 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel6 IS NOT INITIAL. APPEND ls_child_tobj-fiel6 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel7 IS NOT INITIAL. APPEND ls_child_tobj-fiel7 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel8 IS NOT INITIAL. APPEND ls_child_tobj-fiel8 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel9 IS NOT INITIAL. APPEND ls_child_tobj-fiel9 TO lt_def_child_flds. ENDIF.
+        IF ls_child_tobj-fiel0 IS NOT INITIAL. APPEND ls_child_tobj-fiel0 TO lt_def_child_flds. ENDIF.
+
+        LOOP AT lt_def_child_flds INTO DATA(lv_cfld).
+          READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_cfv_chk>)
+            WITH KEY object = lv_new_obj auth = lv_child_auth field = lv_cfld.
+          IF sy-subrc <> 0.
+            APPEND VALUE pt1251(
+              object   = lv_new_obj
+              auth     = lv_child_auth
+              variant  = ' '
+              field    = lv_cfld
+              low      = '*'
+              modified = 'U'
+              neu      = 'X'
+              deleted  = ' '
+            ) TO lt_child_1251.
+          ELSE.
+            IF <ls_cfv_chk>-low IS INITIAL OR <ls_cfv_chk>-low = space.
+              <ls_cfv_chk>-low      = '*'.
+              <ls_cfv_chk>-modified = 'U'.
+              <ls_cfv_chk>-neu      = 'X'.
+            ENDIF.
+            <ls_cfv_chk>-deleted = ' '.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
     ENDLOOP.
 
     " 4. If TCodes were added to Leading Role, propagate to child role's S_TCODE object
@@ -2165,7 +2244,16 @@ FORM derive_specific_objects
       ENDIF.
     ENDIF.
 
-    " 5. Save derived child role via standard FMs if changes made
+    " 5. Save Org Levels in child role if any missing org level was inherited
+    IF lv_child_org_changed = abap_true.
+      CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+        EXPORTING
+          activity_group = lv_child_role
+        TABLES
+          org_levels     = lt_child_1252.
+    ENDIF.
+
+    " 6. Save derived child role via standard PFCG FMs if changes made
     IF lv_has_changes = abap_true.
       CALL FUNCTION 'PRGN_1250_SAVE_AUTH_DATA'
         EXPORTING activity_group = lv_child_role
@@ -2179,12 +2267,12 @@ FORM derive_specific_objects
       COMMIT WORK AND WAIT.
     ENDIF.
 
-    " 6. Unlock child role
+    " 7. Unlock child role
     CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
       EXPORTING
         activity_group = lv_child_role.
 
-    " 7. Regenerate profile for derived role
+    " 8. Regenerate profile for derived role (without full rebuild to preserve other role objects)
     IF lv_has_changes = abap_true.
       CLEAR lv_gen_subrc.
       PERFORM generate_role_profile USING lv_child_role ' ' abap_true abap_false
