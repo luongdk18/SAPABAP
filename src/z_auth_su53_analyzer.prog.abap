@@ -14,12 +14,14 @@ TABLES: usr02, agr_define.
 * 1. TYPES & DATA DEFINITIONS
 *----------------------------------------------------------------------*
 TYPES: BEGIN OF ty_user_role,
+         locked     TYPE c LENGTH 1,         " 'X' if role is currently locked/targeted
          radio      TYPE c LENGTH 4,         " Radio indicator: @06@ (Selected) / @07@ (Unselected)
          agr_name   TYPE agr_name,           " Single Role Name
          parent_agr TYPE agr_name,           " Leading Role (Master Role)
          text       TYPE c LENGTH 80,        " Role Description
          from_dat   TYPE agr_fdate,          " Valid From Date
          to_dat     TYPE agr_tdate,          " Valid To Date
+         row_color  TYPE c LENGTH 4,         " Row highlight color for locked role
        END OF ty_user_role.
 
 TYPES: tt_user_role TYPE STANDARD TABLE OF ty_user_role.
@@ -185,25 +187,11 @@ START-OF-SELECTION.
   IF gt_user_roles IS NOT INITIAL.
     ASSIGN gt_user_roles[ 1 ] TO FIELD-SYMBOL(<ls_r_init>).
     IF sy-subrc = 0.
-      gv_selected_role = <ls_r_init>-agr_name.
-      IF <ls_r_init>-parent_agr IS NOT INITIAL.
-        gv_leading_role = <ls_r_init>-parent_agr.
-      ELSE.
-        gv_leading_role = <ls_r_init>-agr_name.
-      ENDIF.
+      PERFORM sync_role_selection USING <ls_r_init>-agr_name.
     ENDIF.
   ELSE.
     CLEAR: gv_selected_role, gv_leading_role.
   ENDIF.
-
-  " Set initial radio state
-  LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_r_sync>).
-    IF <ls_r_sync>-agr_name = gv_selected_role.
-      <ls_r_sync>-radio = gc_radio_on.
-    ELSE.
-      <ls_r_sync>-radio = gc_radio_off.
-    ENDIF.
-  ENDLOOP.
 
   PERFORM get_missing_authorizations USING p_uname.
   PERFORM eval_auths_for_role USING gv_selected_role.
@@ -520,16 +508,42 @@ FORM get_user_roles USING pv_uname  TYPE usr02-bname
     ENDIF.
 
     APPEND VALUE #(
+      locked     = ' '
       radio      = gc_radio_off
       agr_name   = ls_r-agr_name
       parent_agr = ls_r-parent_agr
       text       = ls_r-text
       from_dat   = ls_r-from_dat
       to_dat     = ls_r-to_dat
+      row_color  = space
     ) TO gt_user_roles.
   ENDLOOP.
 
   SORT gt_user_roles BY agr_name.
+ENDFORM.
+
+FORM sync_role_selection USING pv_role TYPE agr_name.
+  gv_selected_role = pv_role.
+  CLEAR gv_leading_role.
+
+  READ TABLE gt_user_roles INTO DATA(ls_r) WITH KEY agr_name = gv_selected_role.
+  IF sy-subrc = 0 AND ls_r-parent_agr IS NOT INITIAL.
+    gv_leading_role = ls_r-parent_agr.
+  ELSE.
+    gv_leading_role = gv_selected_role.
+  ENDIF.
+
+  LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_r>).
+    IF <ls_r>-agr_name = gv_selected_role.
+      <ls_r>-locked    = 'X'.
+      <ls_r>-radio     = gc_radio_on.
+      <ls_r>-row_color = 'C500'.
+    ELSE.
+      <ls_r>-locked    = ' '.
+      <ls_r>-radio     = gc_radio_off.
+      <ls_r>-row_color = space.
+    ENDIF.
+  ENDLOOP.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -806,6 +820,7 @@ FORM set_pf_status USING rt_extab TYPE slis_t_extab.
       SET HANDLER go_event_handler->on_double_click_roles FOR go_grid_roles.
 
       DATA: lt_fcat_roles TYPE lvc_t_fcat.
+      APPEND VALUE #( fieldname = 'LOCKED'     coltext = 'Locked'        outputlen = 6 hotspot = 'X' just = 'C' emphasize = 'C500' ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'RADIO'      coltext = 'Target'        icon = 'X' hotspot = 'X' outputlen = 8 ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'AGR_NAME'   coltext = 'Assigned Role' outputlen = 25 emphasize = 'C400' ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'PARENT_AGR' coltext = 'Leading Role'  outputlen = 25 emphasize = 'C500' hotspot = 'X' ) TO lt_fcat_roles.
@@ -816,7 +831,8 @@ FORM set_pf_status USING rt_extab TYPE slis_t_extab.
       DATA: ls_layo_roles TYPE lvc_s_layo.
       ls_layo_roles-zebra      = 'X'.
       ls_layo_roles-cwidth_opt = 'X'.
-      ls_layo_roles-grid_title = '1. Assigned Roles of User (Leading Role is targeted for TCode/Auth additions)'.
+      ls_layo_roles-info_fname = 'ROW_COLOR'.
+      ls_layo_roles-grid_title = '1. Assigned Roles of User (Column "Locked" [X] indicates currently locked role)'.
 
       DATA: lt_excl TYPE ui_functions.
       APPEND cl_gui_alv_grid=>mc_fc_print TO lt_excl.
@@ -2349,30 +2365,15 @@ FORM refresh_all_data.
   PERFORM get_user_roles USING p_uname p_actv.
   IF gv_selected_role IS INITIAL
      OR NOT line_exists( gt_user_roles[ agr_name = gv_selected_role ] ).
-    IF gt_user_roles IS NOT INITIAL.
-      gv_selected_role = gt_user_roles[ 1 ]-agr_name.
+    READ TABLE gt_user_roles INTO DATA(ls_rf_first) INDEX 1.
+    IF sy-subrc = 0.
+      PERFORM sync_role_selection USING ls_rf_first-agr_name.
     ELSE.
-      CLEAR gv_selected_role.
-    ENDIF.
-  ENDIF.
-
-  IF gv_selected_role IS NOT INITIAL.
-    READ TABLE gt_user_roles INTO DATA(ls_rf_init) WITH KEY agr_name = gv_selected_role.
-    IF sy-subrc = 0 AND ls_rf_init-parent_agr IS NOT INITIAL.
-      gv_leading_role = ls_rf_init-parent_agr.
-    ELSE.
-      gv_leading_role = gv_selected_role.
+      CLEAR: gv_selected_role, gv_leading_role.
     ENDIF.
   ELSE.
-    CLEAR gv_leading_role.
+    PERFORM sync_role_selection USING gv_selected_role.
   ENDIF.
-  LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_rf>).
-    IF <ls_rf>-agr_name = gv_selected_role.
-      <ls_rf>-radio = gc_radio_on.
-    ELSE.
-      <ls_rf>-radio = gc_radio_off.
-    ENDIF.
-  ENDLOOP.
 
   PERFORM get_missing_authorizations USING p_uname.
   PERFORM eval_auths_for_role USING gv_selected_role.
@@ -2454,21 +2455,7 @@ CLASS lcl_event_handler IMPLEMENTATION.
         RETURN.
       ENDIF.
 
-      gv_selected_role = <ls_clicked_role>-agr_name.
-      IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
-        gv_leading_role = <ls_clicked_role>-parent_agr.
-      ELSE.
-        gv_leading_role = <ls_clicked_role>-agr_name.
-      ENDIF.
-
-      LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_r>).
-        IF <ls_r>-agr_name = gv_selected_role.
-          <ls_r>-radio = gc_radio_on.
-        ELSE.
-          <ls_r>-radio = gc_radio_off.
-        ENDIF.
-      ENDLOOP.
-
+      PERFORM sync_role_selection USING <ls_clicked_role>-agr_name.
       PERFORM eval_auths_for_role USING gv_selected_role.
 
       IF go_grid_roles IS BOUND.
@@ -2479,9 +2466,9 @@ CLASS lcl_event_handler IMPLEMENTATION.
       ENDIF.
 
       IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
-        MESSAGE |Target Role: { gv_selected_role } -> Leading Role: { gv_leading_role }.| TYPE 'S'.
+        MESSAGE |Role { gv_selected_role } is now LOCKED -> Target Leading Role: { gv_leading_role }.| TYPE 'S'.
       ELSE.
-        MESSAGE |Target Role: { gv_selected_role } (Standalone / Master Role).| TYPE 'S'.
+        MESSAGE |Role { gv_selected_role } is now LOCKED (Standalone / Master Role).| TYPE 'S'.
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -2498,21 +2485,7 @@ CLASS lcl_event_handler IMPLEMENTATION.
         RETURN.
       ENDIF.
 
-      gv_selected_role = <ls_clicked_role>-agr_name.
-      IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
-        gv_leading_role = <ls_clicked_role>-parent_agr.
-      ELSE.
-        gv_leading_role = <ls_clicked_role>-agr_name.
-      ENDIF.
-
-      LOOP AT gt_user_roles ASSIGNING FIELD-SYMBOL(<ls_r>).
-        IF <ls_r>-agr_name = gv_selected_role.
-          <ls_r>-radio = gc_radio_on.
-        ELSE.
-          <ls_r>-radio = gc_radio_off.
-        ENDIF.
-      ENDLOOP.
-
+      PERFORM sync_role_selection USING <ls_clicked_role>-agr_name.
       PERFORM eval_auths_for_role USING gv_selected_role.
 
       IF go_grid_roles IS BOUND.
@@ -2523,9 +2496,9 @@ CLASS lcl_event_handler IMPLEMENTATION.
       ENDIF.
 
       IF <ls_clicked_role>-parent_agr IS NOT INITIAL.
-        MESSAGE |Target Role: { gv_selected_role } -> Leading Role: { gv_leading_role }.| TYPE 'S'.
+        MESSAGE |Role { gv_selected_role } is now LOCKED -> Target Leading Role: { gv_leading_role }.| TYPE 'S'.
       ELSE.
-        MESSAGE |Target Role: { gv_selected_role } (Standalone / Master Role).| TYPE 'S'.
+        MESSAGE |Role { gv_selected_role } is now LOCKED (Standalone / Master Role).| TYPE 'S'.
       ENDIF.
     ENDIF.
   ENDMETHOD.
