@@ -155,7 +155,7 @@ DATA: go_event_handler TYPE REF TO lcl_event_handler.
 * 3. SELECTION SCREEN
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE title1.
-  PARAMETERS: p_uname TYPE usr02-bname OBLIGATORY DEFAULT 'ROLE_TEST'.
+  PARAMETERS: p_uname TYPE usr02-bname OBLIGATORY.
 SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE title2.
