@@ -118,7 +118,7 @@ Follow this standardized 5-step procedure when blocked by an authorization failu
    - Alternatively, click the **`[Select All]`** toolbar button to select all valid remediation items at once.
 5. **Step 5 - Click [Add to Role] for automated Leading Role remediation & selective derivation**:
    - Click the **`[Add to Role]`** button on the Top Grid toolbar. The utility automatically executes in background:
-     - **Leading Role Injection**: Adds the TCode to menu (for `S_TCODE`) or injects the missing object into the **Leading Role** (`LRFI01_PERIOD_CONTROL`).
+     - **Leading Role Injection**: Adds the TCode to menu (nested under the **first folder** of the role menu, or home if no folder exists) or injects the missing object into the **Leading Role** (`LRFI01_PERIOD_CONTROL`).
      - **Selective Child Derivation**: Propagates **ONLY the newly added object(s) / TCodes** down to all child derived roles of that Leading Role.
      - **Zero Unwanted Impact**: All existing authorizations, custom fields, and Organizational Levels (`AGR_1252`) in derived roles remain **100% untouched**!
      - **Profile Compilation**: Automatically regenerates runtime authorization profiles for both the Leading Role and all its child derived roles.

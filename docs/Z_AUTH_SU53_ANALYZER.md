@@ -68,7 +68,9 @@ Interactive dual-grid operational cockpit for SAP Security Administrators. Autom
 ## 🔧 SAP Function Modules Used
 
 - `SUSR_USER_SU53_READ`: Reads SU53 buffer failure history.
-- `PRGN_RFC_MODIFY_ACTIVITY_GROUP`: Injects transactions into role menu.
+- `PRGN_STRU_LOAD_NODES`: Loads menu hierarchy nodes to locate the first folder.
+- `PRGN_STRU_SAVE_NODES`: Saves updated menu hierarchy with new TCodes nested under the first folder.
+- `PRGN_1250_SAVE_AUTH_DATA`: Saves authorization header data.
 - `PRGN_1251_SAVE_FIELD_VALUES`: Saves authorization objects and fields.
 - `SUPRN_DARK_MANIPULATE_PROFILE`: Background profile generation.
 

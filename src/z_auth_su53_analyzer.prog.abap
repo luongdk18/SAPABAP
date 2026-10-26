@@ -1617,52 +1617,222 @@ FORM collect_menu_tcode USING pv_field TYPE xufield
   INSERT lv_tcode INTO TABLE ct_tcodes.
 ENDFORM.
 
+*&---------------------------------------------------------------------*
+*& Form add_tcodes_to_role_menu
+*&---------------------------------------------------------------------*
+*& Purpose: Add transaction codes into the target role's menu hierarchy.
+*& Requirement: Always insert under the FIRST folder if one exists;
+*&              otherwise fallback to home/root.
+*&---------------------------------------------------------------------*
 FORM add_tcodes_to_role_menu USING pv_role TYPE agr_name
-                             CHANGING ct_tcodes    TYPE tt_tcode
-                                      cv_added     TYPE i
-                                      cv_failed    TYPE i
+                             CHANGING ct_tcodes     TYPE tt_tcode
+                                      cv_added      TYPE i
+                                      cv_failed     TYPE i
                                       cv_failed_txt TYPE string
-                                      cv_abort     TYPE abap_bool.
-  DATA: lv_tcode  TYPE sytcode,
-        lt_return TYPE bapirettab.
+                                      cv_abort      TYPE abap_bool.
+  DATA: lt_nodes         TYPE STANDARD TABLE OF agr_shier,
+        lt_texts         TYPE STANDARD TABLE OF agr_shiert,
+        lt_folders       TYPE STANDARD TABLE OF agr_shier,
+        lt_top_folders   TYPE STANDARD TABLE OF agr_shier,
+        lt_return        TYPE bapirettab,
+        lv_err_flag      TYPE char01,
+        lv_target_folder TYPE menu_num_8 VALUE 1,
+        lv_target_level  TYPE menu_num_2 VALUE 1,
+        lv_folder_found  TYPE abap_bool  VALUE abap_false,
+        lv_max_id        TYPE menu_num_8 VALUE 1,
+        lv_max_sort      TYPE menu_num_8 VALUE 0,
+        lv_nodes_changed TYPE abap_bool  VALUE abap_false,
+        lv_tcode         TYPE sytcode,
+        lv_chk_tc        TYPE sytcode,
+        lv_ttext         TYPE ssm_title,
+        ls_new_node      TYPE agr_shier,
+        ls_new_stck      TYPE smen_stck,
+        ls_cur_stck      TYPE smen_stck,
+        lv_in_nodes      TYPE abap_bool.
 
   CLEAR: cv_added, cv_failed, cv_failed_txt, cv_abort.
 
-  LOOP AT ct_tcodes INTO lv_tcode.
-    CLEAR lt_return.
-    CALL FUNCTION 'PRGN_RFC_ADD_TRANSACTION'
-      EXPORTING
-        activity_group                = pv_role
-        tcode                         = lv_tcode
-        no_dialog                     = 'X'
-      TABLES
-        return                        = lt_return
-      EXCEPTIONS
-        activity_group_enqueued       = 1
-        activity_group_does_not_exist = 2
-        namespace_problem             = 3
-        tcodes_inherited_from_parent  = 4
-        illegal_tcode                 = 5
-        not_authorized                = 6
-        profgen_tables_not_updated    = 7
-        OTHERS                        = 8.
-    IF sy-subrc = 0.
-      cv_added = cv_added + 1.
-    ELSE.
-      cv_failed = cv_failed + 1.
-      cv_failed_txt = |{ cv_failed_txt } { lv_tcode }|.
-      " Lock, missing role, derived menu, or missing authority blocks the whole add.
-      IF sy-subrc = 1 OR sy-subrc = 2 OR sy-subrc = 4 OR sy-subrc = 6.
-        cv_abort = abap_true.
-        IF sy-subrc = 1.
-          MESSAGE |Role { pv_role } is locked (Edit mode). Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
-        ELSE.
-          MESSAGE |Cannot add transaction { lv_tcode } to the menu of role { pv_role }.| TYPE 'S' DISPLAY LIKE 'E'.
-        ENDIF.
-        RETURN.
-      ENDIF.
+  IF ct_tcodes IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  " 1. Load existing menu hierarchy nodes and texts
+  CALL FUNCTION 'PRGN_STRU_LOAD_NODES'
+    EXPORTING
+      activity_group = pv_role
+    TABLES
+      i_nodes_out    = lt_nodes
+      i_texts_out    = lt_texts
+    EXCEPTIONS
+      not_authorized = 1
+      OTHERS         = 2.
+  IF sy-subrc <> 0.
+    cv_abort = abap_true.
+    MESSAGE |Not authorized or unable to read menu of role { pv_role }.| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 2. Find the FIRST folder in role menu hierarchy:
+  "    First priority: Top-level folder (parent_id = 1) with lowest sort_order / object_id.
+  "    Second priority: Any folder (folder = 'X') with lowest level/sort_order.
+  "    Fallback: Home/root (parent_id = 1, menu_level = 1).
+  CLEAR: lt_folders, lt_top_folders.
+  LOOP AT lt_nodes INTO DATA(ls_n) WHERE folder = 'X'.
+    APPEND ls_n TO lt_folders.
+    IF ls_n-parent_id = 1.
+      APPEND ls_n TO lt_top_folders.
     ENDIF.
   ENDLOOP.
+
+  IF lt_top_folders IS NOT INITIAL.
+    SORT lt_top_folders BY sort_order ASCENDING object_id ASCENDING.
+    READ TABLE lt_top_folders INTO DATA(ls_first_top) INDEX 1.
+    IF sy-subrc = 0.
+      lv_target_folder = ls_first_top-object_id.
+      lv_target_level  = ls_first_top-menu_level + 1.
+      lv_folder_found  = abap_true.
+    ENDIF.
+  ELSEIF lt_folders IS NOT INITIAL.
+    SORT lt_folders BY menu_level ASCENDING sort_order ASCENDING object_id ASCENDING.
+    READ TABLE lt_folders INTO DATA(ls_first_any) INDEX 1.
+    IF sy-subrc = 0.
+      lv_target_folder = ls_first_any-object_id.
+      lv_target_level  = ls_first_any-menu_level + 1.
+      lv_folder_found  = abap_true.
+    ENDIF.
+  ENDIF.
+
+  IF lv_folder_found = abap_false.
+    " No folder found in role menu -> place at home/root
+    lv_target_folder = 1.
+    lv_target_level  = 1.
+  ENDIF.
+
+  " 3. Determine max object_id in role and max sort_order under target folder
+  lv_max_id   = 1.
+  lv_max_sort = 0.
+  LOOP AT lt_nodes INTO DATA(ls_chk_node).
+    IF ls_chk_node-object_id > lv_max_id.
+      lv_max_id = ls_chk_node-object_id.
+    ENDIF.
+    IF ls_chk_node-parent_id = lv_target_folder AND ls_chk_node-sort_order > lv_max_sort.
+      lv_max_sort = ls_chk_node-sort_order.
+    ENDIF.
+  ENDLOOP.
+
+  " Read currently assigned TCodes in AGR_TCODES to detect duplicates
+  SELECT tcode FROM agr_tcodes
+    WHERE agr_name = @pv_role AND type = 'TR'
+    INTO TABLE @DATA(lt_curr_tcds).
+
+  " 4. Add transactions under the chosen target folder
+  LOOP AT ct_tcodes INTO lv_tcode.
+    " Verify TCode exists in TSTC
+    CLEAR lv_chk_tc.
+    SELECT SINGLE tcode FROM tstc INTO @lv_chk_tc WHERE tcode = @lv_tcode.
+    IF sy-subrc <> 0.
+      cv_failed = cv_failed + 1.
+      cv_failed_txt = |{ cv_failed_txt } { lv_tcode }|.
+      CONTINUE.
+    ENDIF.
+
+    " Skip if already in role menu (AGR_TCODES)
+    READ TABLE lt_curr_tcds WITH KEY tcode = lv_tcode TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      cv_added = cv_added + 1.
+      CONTINUE.
+    ENDIF.
+
+    " Also skip if already queued in lt_nodes in this run
+    CLEAR lv_in_nodes.
+    LOOP AT lt_nodes INTO DATA(ls_cur_nd).
+      CLEAR ls_cur_stck.
+      ls_cur_stck = ls_cur_nd-string1.
+      IF ls_cur_stck-reporttype = 'TR' AND ls_cur_stck-report = lv_tcode.
+        lv_in_nodes = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+    IF lv_in_nodes = abap_true.
+      cv_added = cv_added + 1.
+      CONTINUE.
+    ENDIF.
+
+    " Allocate new node ID and sort order
+    lv_max_id   = lv_max_id + 1.
+    lv_max_sort = lv_max_sort + 10.
+
+    CLEAR: ls_new_node, ls_new_stck.
+    ls_new_node-object_id  = lv_max_id.
+    ls_new_node-parent_id  = lv_target_folder.
+    ls_new_node-folder     = space.
+    ls_new_node-menu_level = lv_target_level.
+    ls_new_node-sort_order = lv_max_sort.
+    ls_new_stck-reporttype = 'TR'.
+    ls_new_stck-report     = lv_tcode.
+    ls_new_node-string1    = ls_new_stck.
+    APPEND ls_new_node TO lt_nodes.
+
+    " Retrieve transaction description from TSTCT
+    CLEAR lv_ttext.
+    SELECT SINGLE ttext FROM tstct INTO @lv_ttext
+      WHERE sprsl = @sy-langu AND tcode = @lv_tcode.
+    IF lv_ttext IS INITIAL AND sy-langu <> 'E'.
+      SELECT SINGLE ttext FROM tstct INTO @lv_ttext
+        WHERE sprsl = 'E' AND tcode = @lv_tcode.
+    ENDIF.
+    IF lv_ttext IS INITIAL.
+      lv_ttext = lv_tcode.
+    ENDIF.
+
+    APPEND VALUE agr_shiert(
+      object_id = lv_max_id
+      spras     = sy-langu
+      text      = lv_ttext
+    ) TO lt_texts.
+
+    IF sy-langu <> 'E'.
+      APPEND VALUE agr_shiert(
+        object_id = lv_max_id
+        spras     = 'E'
+        text      = lv_ttext
+      ) TO lt_texts.
+    ENDIF.
+
+    cv_added = cv_added + 1.
+    lv_nodes_changed = abap_true.
+  ENDLOOP.
+
+  " 5. Save updated menu nodes if new transactions were added
+  IF lv_nodes_changed = abap_true.
+    CALL FUNCTION 'PRGN_STRU_SAVE_NODES'
+      EXPORTING
+        activity_group    = pv_role
+        use_global_tables = space
+        enqueue           = 'X'
+      IMPORTING
+        error_flag        = lv_err_flag
+      TABLES
+        menu_hierarchy    = lt_nodes
+        menu_texts        = lt_texts
+        return            = lt_return
+      EXCEPTIONS
+        not_authorized          = 1
+        activity_group_enqueued = 2
+        OTHERS                  = 3.
+
+    IF sy-subrc <> 0 OR lv_err_flag IS NOT INITIAL.
+      cv_abort = abap_true.
+      IF sy-subrc = 2 OR lv_err_flag = 'L'.
+        MESSAGE |Role { pv_role } is locked (Edit mode). Please exit Edit mode in PFCG first, then try again.| TYPE 'S' DISPLAY LIKE 'E'.
+      ELSEIF sy-subrc = 1 OR lv_err_flag = 'A'.
+        MESSAGE |Not authorized to maintain menu for role { pv_role }.| TYPE 'S' DISPLAY LIKE 'E'.
+      ELSE.
+        MESSAGE |Failed to update menu of role { pv_role } (error flag: { lv_err_flag }).| TYPE 'S' DISPLAY LIKE 'E'.
+      ENDIF.
+      RETURN.
+    ENDIF.
+  ENDIF.
 ENDFORM.
 
 FORM generate_role_profile USING pv_role           TYPE agr_name
