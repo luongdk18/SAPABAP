@@ -820,10 +820,10 @@ FORM set_pf_status USING rt_extab TYPE slis_t_extab.
       SET HANDLER go_event_handler->on_double_click_roles FOR go_grid_roles.
 
       DATA: lt_fcat_roles TYPE lvc_t_fcat.
-      APPEND VALUE #( fieldname = 'LOCKED'     coltext = 'Locked'        outputlen = 6 hotspot = 'X' just = 'C' emphasize = 'C500' ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'LOCKED'     coltext = 'Locked'        outputlen = 6 hotspot = 'X' just = 'C' ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'RADIO'      coltext = 'Target'        icon = 'X' hotspot = 'X' outputlen = 8 ) TO lt_fcat_roles.
-      APPEND VALUE #( fieldname = 'AGR_NAME'   coltext = 'Assigned Role' outputlen = 25 emphasize = 'C400' ) TO lt_fcat_roles.
-      APPEND VALUE #( fieldname = 'PARENT_AGR' coltext = 'Leading Role'  outputlen = 25 emphasize = 'C500' hotspot = 'X' ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'AGR_NAME'   coltext = 'Assigned Role' outputlen = 25 ) TO lt_fcat_roles.
+      APPEND VALUE #( fieldname = 'PARENT_AGR' coltext = 'Leading Role'  outputlen = 25 hotspot = 'X' ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'TEXT'       coltext = 'Role Description' outputlen = 35 ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'FROM_DAT'   coltext = 'Valid From'    outputlen = 12 ) TO lt_fcat_roles.
       APPEND VALUE #( fieldname = 'TO_DAT'     coltext = 'Valid To'      outputlen = 12 ) TO lt_fcat_roles.
