@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 """
-Convert Organizational Levels and Authorization Objects & Activities from Excel matrix
-into two separate flat CSV files for SAP Role upload.
+Convert Organizational Levels, Authorization Objects, and Activity fields from Excel matrix
+into three separate flat CSV files for SAP Role upload.
 
 Features:
 - Reads consolidated role workbooks (Sheet 2: Derived role, Org, and Object data)
   or standalone matrix files.
+- Column structure in Sheet 2:
+  * Col 1: Master Role (Leading Role)
+  * Col 2: Derived Role
+  * Col 3: Derived Role Description
+  * Col 4: Activity Field(s) (ACTVT, PS_ACTVT, or comma-separated) -> outputs <stem>_03C_Activity_converted.csv
+  * Col 5+: Org Levels ($VARBL) & Auth Objects (Object-Field)
 - Automatically classifies columns:
   * Organizational Levels (matched against Org_Levels.csv / SAP USORG) -> outputs <stem>_03a_Org_Levels_converted.csv
+    - STRICT: Only assigned to Derived Roles (Col 2). Master Roles (Col 1) are NEVER updated with Org Levels.
   * Authorization Objects / Fields (matched against Object_Levels.csv)  -> outputs <stem>_03b_Auth_Objects_converted.csv
+    - Assigned to BOTH Derived Roles (Col 2) AND Master Roles (Col 1).
+  * Activity Fields (Col 4)                                            -> outputs <stem>_03C_Activity_converted.csv
+    - Assigned to BOTH Derived Roles (Col 2) AND Master Roles (Col 1) for dedicated Activity upload.
 - Strictly non-overlapping: Org values are maintained in AGR_1252 via Org Level variables ($VARBL)
   and are NEVER mixed into Object output (AGR_1251).
 - Excludes TCode check (S_TCODE-TCD) as it is maintained via the role menu.
@@ -16,19 +26,25 @@ Features:
 
 Output formats:
 1. Org CSV (03a_Org_Levels):
-   Col 1: Role
+   Col 1: Role (Derived Role ONLY)
    Col 2: Org_Level ($VARBL)
    Col 3: value-low
    Col 4: value-high
 2. Object CSV (03b_Auth_Objects):
-   Col 1: Role
+   Col 1: Role (Master Role & Derived Role)
    Col 2: object-field (e.g., F_BKPF_BUK-BUKRS)
+   Col 3: value-low
+   Col 4: value-high
+3. Activity CSV (03C_Activity):
+   Col 1: Role (Master Role & Derived Role)
+   Col 2: Field (e.g., ACTVT, PS_ACTVT)
    Col 3: value-low
    Col 4: value-high
 
 Outputs:
 - <parent_dir>/converted/<stem>_03a_Org_Levels_converted.csv
 - <parent_dir>/converted/<stem>_03b_Auth_Objects_converted.csv
+- <parent_dir>/converted/<stem>_03C_Activity_converted.csv
 """
 
 import os
@@ -481,10 +497,11 @@ def parse_low_high_values(raw_val, field_name=None):
 
 def convert_role_03_org_obj(input_path, output_dir=None):
     """
-    Reads an Excel file and converts Organizational levels and Authorization Objects
-    into two separate flat CSV files:
-      - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, value-low, value-high) -> for AGR_1252
-      - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value-low, value-high) -> for AGR_1251
+    Reads an Excel file and converts Organizational levels, Authorization Objects, and Activity fields
+    into three separate flat CSV files:
+      - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, value-low, value-high) -> for AGR_1252 (Derived Roles ONLY)
+      - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value-low, value-high) -> for AGR_1251 (Master & Derived Roles)
+      - <stem>_03C_Activity_converted.csv (Role, Field, value-low, value-high) -> Dedicated Activity upload (Master & Derived Roles)
     """
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -503,7 +520,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     os.makedirs(output_dir, exist_ok=True)
 
     # Determine output file stems
-    clean_stem = re.sub(r'_(03[ab]?_)?(org|object|obj).*$', '', stem, flags=re.IGNORECASE)
+    clean_stem = re.sub(r'_(03[abcC]?_)?(org|object|obj|activity|actvt).*$', '', stem, flags=re.IGNORECASE)
     if not clean_stem.endswith('_Role') and stem.endswith('_Role'):
         clean_stem = stem
     elif not clean_stem:
@@ -511,6 +528,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
 
     out_org_path = os.path.join(output_dir, f"{clean_stem}_03a_Org_Levels_converted.csv")
     out_obj_path = os.path.join(output_dir, f"{clean_stem}_03b_Auth_Objects_converted.csv")
+    out_act_path = os.path.join(output_dir, f"{clean_stem}_03C_Activity_converted.csv")
 
     # Load Reference Dictionaries
     org_ref_path = os.path.join("excel-templates", "Org_Levels.csv")
@@ -547,38 +565,66 @@ def convert_role_03_org_obj(input_path, output_dir=None):
 
     ws = target_sheet
 
-    # Detect Role Name Column:
-    # In Sheet 2 of consolidated file: Col 1 = Master, Col 2 = Derived Role, Col 3 = Desc, Col 4+ = Data
-    role_col = 2
+    # Detect Columns:
+    # Sheet 2 Layout:
+    # Col 1 = Master Role
+    # Col 2 = Derived Role
+    # Col 3 = Derived Role Description
+    # Col 4 = Specific Activity field (ACTVT, PS_ACTVT, or comma-separated) if present
+    # Col 5+ = Org Levels & Auth Objects (or Col 4+ if Col 4 is not Activity)
+    header_row = 1
+    col_master = None
+    col_derived = None
+    col_actvt = None
+    act_fields = []
     data_start_col = 4
 
     sample_col1 = [str(ws.cell(r, 1).value or '').strip() for r in range(2, min(ws.max_row + 1, 10))]
     sample_col2 = [str(ws.cell(r, 2).value or '').strip() for r in range(2, min(ws.max_row + 1, 10))]
 
     if any(s.startswith(('DR', 'Z_')) for s in sample_col2):
-        role_col = 2
-        data_start_col = 4
+        col_master = 1
+        col_derived = 2
     elif any(s.startswith(('DR', 'Z_')) for s in sample_col1):
-        role_col = 1
+        col_master = None
+        col_derived = 1
         data_start_col = 2
     else:
         h1 = str(ws.cell(1, 1).value or '').lower()
         h2 = str(ws.cell(1, 2).value or '').lower()
         if 'derive' in h2 or 'role' in h2:
-            role_col = 2
-            data_start_col = 4 if ws.max_column >= 4 else 3
+            col_master = 1
+            col_derived = 2
         else:
-            role_col = 1
+            col_master = None
+            col_derived = 1
             data_start_col = 2
 
-    print(f"[INFO] Role column: Col {role_col}, Org/Object data columns start at: Col {data_start_col}")
+    if col_derived == 2:
+        # Check if Col 4 is Activity field (e.g. ACTVT, PS_ACTVT, or comma-separated)
+        h4 = str(ws.cell(header_row, 4).value or '').strip()
+        if re.search(r'\b(ACTVT|PS_ACTVT)\b', h4, re.IGNORECASE):
+            col_actvt = 4
+            clean_h4 = h4.replace('\n', ' ').strip()
+            for tok in re.split(r'[,;]+', clean_h4):
+                tok_clean = tok.strip().upper()
+                m_act = re.search(r'(PS_ACTVT|ACTVT)', tok_clean)
+                if m_act:
+                    field_name = m_act.group(1)
+                    if field_name not in act_fields:
+                        act_fields.append(field_name)
+            data_start_col = 5
+            print(f"[INFO] Col 4 is Activity column with field(s): {', '.join(act_fields)}")
+        else:
+            data_start_col = 4
+
+    print(f"[INFO] Master col: {col_master}, Derived col: {col_derived}, Activity col: {col_actvt} ({act_fields}), Org/Obj data start: Col {data_start_col}")
 
     # Classify Columns
     classified_cols = []
     org_col_count = 0
     obj_col_count = 0
 
-    header_row = 1
     for c in range(data_start_col, ws.max_column + 1):
         h_val = ws.cell(header_row, c).value
         if h_val is None:
@@ -610,28 +656,79 @@ def convert_role_03_org_obj(input_path, output_dir=None):
 
     # Process Data Rows
     org_rows = []
+    org_seen = set()
+
     obj_rows = []
-    roles_processed = set()
-    current_role = None
+    obj_seen = set()
+
+    act_rows = []
+    act_seen = set()
+
+    current_master = None
+    current_derived = None
 
     for r in range(header_row + 1, ws.max_row + 1):
-        role_val = ws.cell(r, role_col).value
-        if role_val is not None and str(role_val).strip() and str(role_val).strip().lower() not in ('none', 'role', 'derived role', 'role name'):
-            current_role = str(role_val).strip()
+        # Master Role (Col 1)
+        if col_master is not None:
+            m_val = ws.cell(r, col_master).value
+            if m_val is not None and str(m_val).strip() and str(m_val).strip().lower() not in ('none', 'master', 'leading', 'leading role', 'master role'):
+                current_master = str(m_val).strip()
 
-        if not current_role:
+        # Derived Role (Col 2)
+        if col_derived is not None:
+            d_val = ws.cell(r, col_derived).value
+            if d_val is not None and str(d_val).strip() and str(d_val).strip().lower() not in ('none', 'role', 'derived role', 'role name'):
+                current_derived = str(d_val).strip()
+
+        if not current_derived and not current_master:
             continue
 
-        # Check if row has any non-empty data in classified columns
-        has_data = any(
+        # Check if row has any non-empty data in Activity or classified columns
+        has_act_data = False
+        if col_actvt:
+            v_act = ws.cell(r, col_actvt).value
+            if v_act is not None and str(v_act).strip() not in ('', 'None', 'n/a', '-'):
+                has_act_data = True
+
+        has_class_data = any(
             ws.cell(r, c).value is not None and str(ws.cell(r, c).value).strip() not in ('', 'None', 'n/a', '-')
             for c, _, _, _ in classified_cols
         )
-        if not has_data:
+
+        if not (has_act_data or has_class_data):
             continue
 
-        roles_processed.add(current_role)
+        # -------------------------------------------------------------
+        # 1. Process Col 4: Activity Field (e.g. ACTVT, PS_ACTVT)
+        # -------------------------------------------------------------
+        if col_actvt and act_fields:
+            val_act_cell = ws.cell(r, col_actvt).value
+            if val_act_cell is not None:
+                if isinstance(val_act_cell, float) and val_act_cell.is_integer():
+                    raw_act_val = str(int(val_act_cell))
+                else:
+                    raw_act_val = str(val_act_cell).strip()
 
+                if raw_act_val and raw_act_val.lower() not in ('none', 'n/a', '-'):
+                    for fld in act_fields:
+                        act_pairs = parse_low_high_values(raw_act_val, field_name=fld)
+                        for v_low, v_high in act_pairs:
+                            # Add for Derived Role
+                            if current_derived:
+                                tup_der = (current_derived, fld, v_low, v_high)
+                                if tup_der not in act_seen:
+                                    act_seen.add(tup_der)
+                                    act_rows.append([current_derived, fld, v_low, v_high])
+                            # Add for Master Role
+                            if current_master:
+                                tup_mst = (current_master, fld, v_low, v_high)
+                                if tup_mst not in act_seen:
+                                    act_seen.add(tup_mst)
+                                    act_rows.append([current_master, fld, v_low, v_high])
+
+        # -------------------------------------------------------------
+        # 2. Process Classified Columns (Org Levels & Auth Objects)
+        # -------------------------------------------------------------
         for c, kind, idents, h_text in classified_cols:
             val_cell = ws.cell(r, c).value
             if val_cell is None:
@@ -652,40 +749,65 @@ def convert_role_03_org_obj(input_path, output_dir=None):
             if not pairs:
                 continue
 
-            # Populate rows (with deduplication)
             if kind == 'ORG':
-                for varbl in idents:
-                    for v_low, v_high in pairs:
-                        row_entry = [current_role, varbl, v_low, v_high]
-                        if row_entry not in org_rows:
-                            org_rows.append(row_entry)
+                # Organizational Levels: ONLY assigned to Derived Role (STRICT: NEVER to Master Role)
+                if current_derived:
+                    for varbl in idents:
+                        for v_low, v_high in pairs:
+                            tup_org = (current_derived, varbl, v_low, v_high)
+                            if tup_org not in org_seen:
+                                org_seen.add(tup_org)
+                                org_rows.append([current_derived, varbl, v_low, v_high])
+
             elif kind == 'OBJECT':
+                # Authorization Objects: Assigned to Derived Role AND Master Role (User requirement: Col 1 included)
                 for obj_field in idents:
                     for v_low, v_high in pairs:
-                        row_entry = [current_role, obj_field, v_low, v_high]
-                        if row_entry not in obj_rows:
-                            obj_rows.append(row_entry)
+                        if current_derived:
+                            tup_der = (current_derived, obj_field, v_low, v_high)
+                            if tup_der not in obj_seen:
+                                obj_seen.add(tup_der)
+                                obj_rows.append([current_derived, obj_field, v_low, v_high])
+                        if current_master:
+                            tup_mst = (current_master, obj_field, v_low, v_high)
+                            if tup_mst not in obj_seen:
+                                obj_seen.add(tup_mst)
+                                obj_rows.append([current_master, obj_field, v_low, v_high])
 
-    # Write Org CSV
+    # 1. Write Org CSV (AGR_1252)
+    org_roles = {row[0] for row in org_rows}
     try:
         with open(out_org_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Role", "Org_Level", "value-low", "value-high"])
             writer.writerows(org_rows)
-        print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {len(roles_processed)} roles)")
+        print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {len(org_roles)} roles)")
     except Exception as e:
         print(f"[ERROR] Could not write Org Levels CSV '{out_org_path}': {e}")
         return False
 
-    # Write Object CSV
+    # 2. Write Object CSV (AGR_1251)
+    obj_roles = {row[0] for row in obj_rows}
     try:
         with open(out_obj_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Role", "object-field", "value-low", "value-high"])
             writer.writerows(obj_rows)
-        print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {len(roles_processed)} roles)")
+        print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {len(obj_roles)} roles)")
     except Exception as e:
         print(f"[ERROR] Could not write Auth Objects CSV '{out_obj_path}': {e}")
+        return False
+
+    # 3. Write Activity CSV (Dedicated Upload File)
+    act_roles = {row[0] for row in act_rows}
+    try:
+        with open(out_act_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Role", "Field", "value-low", "value-high"])
+            writer.writerows(act_rows)
+        print(f"[OK] Wrote Activity CSV     : {out_act_path} ({len(act_rows)} rows across {len(act_roles)} roles)")
+    except Exception as e:
+        print(f"[ERROR] Could not write Activity CSV '{out_act_path}': {e}")
         return False
 
     return True

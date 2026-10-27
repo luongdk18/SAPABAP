@@ -111,6 +111,7 @@ def create_consolidated_role_template():
 
     headers_s2 = [
         None, None, None,
+        "ACTVT, PS_ACTVT",
         "Operating concern\n($CEERKRS)",
         "Controlling area\n($KOKRS)",
         "Company Code ($BUKRS)",
@@ -123,8 +124,7 @@ def create_consolidated_role_template():
         "Business Place",
         "Credit segment",
         "Costing variant (K_KEKO)",
-        "Person Responsible (C_PROJ_VNR-PS_VERNR, C_PRPS_VNR-PS_VERNR)",
-        "Project System (Field PS_ACTVT)"
+        "Person Responsible (C_PROJ_VNR-PS_VERNR, C_PRPS_VNR-PS_VERNR)"
     ]
 
     for col_idx, h in enumerate(headers_s2, start=1):
@@ -137,26 +137,26 @@ def create_consolidated_role_template():
 
     derived_rows = [
         ("Z_FI_PERIOD_CONTROL", "Z_FI_PERIOD_CONTROL_1000", "GL Period Control - CC 1000",
-         "1000", "1000", "1000", "1000", "10000100 - 10009899; ' '", "1000*", "*", "*", "*", "*", "*", "*",
-         "00000000; 00000080", "*"),
+         "*", "1000", "1000", "1000", "1000", "10000100 - 10009899; ' '", "1000*", "*", "*", "*", "*", "*", "*",
+         "00000000; 00000080"),
         ("Z_FI_PERIOD_CONTROL", "Z_FI_PERIOD_CONTROL_2000", "GL Period Control - CC 2000",
-         "1000", "1000", "2000", "2000", "' '", "2000*", "*", "*", "*", "*", "*", "*",
-         "*", "03, F4"),
+         "03, F4", "1000", "1000", "2000", "2000", "' '", "2000*", "*", "*", "*", "*", "*", "*",
+         "*"),
         ("Z_FI_GL_MASTER_MAINT", "Z_FI_GL_MASTER_MAINT_1000", "GL Master Data Maint - CC 1000",
-         "1000", "1000", "1000", "1000", "10009930; ' '", "1000*", "*", "*", "*", "*", "*", "*",
-         "00000000;", "*"),
+         "*", "1000", "1000", "1000", "1000", "10009930; ' '", "1000*", "*", "*", "*", "*", "*", "*",
+         "00000000;"),
         (None, None, None,
-         None, None, None, None, None, "*", None, None, None, None, None, None,
-         30, None),
+         None, None, None, None, None, None, "*", None, None, None, None, None, None,
+         30),
         ("Z_FI_GL_MASTER_MAINT", "Z_FI_GL_MASTER_MAINT_2000", "GL Master Data Maint - CC 2000",
-         "1000", "1000", "2000", "2000", "20000100 - 20009899; ' '", "2000*", "*", "*", "*", "*", "*", "*",
-         "*", "03, F4"),
+         "03, F4", "1000", "1000", "2000", "2000", "20000100 - 20009899; ' '", "2000*", "*", "*", "*", "*", "*", "*",
+         "*"),
         ("Z_FI_JOURNAL_POST", "Z_FI_JOURNAL_POST_1000", "General Ledger Posting - CC 1000",
-         "1000", "1000", "1000", "1000", "1000*", "1000*", "*", "*", "*", "*", "*", "*",
-         "*", "*"),
+         "*", "1000", "1000", "1000", "1000", "1000*", "1000*", "*", "*", "*", "*", "*", "*",
+         "*"),
         ("Z_FI_JOURNAL_POST", "Z_FI_JOURNAL_POST_2000", "General Ledger Posting - CC 2000",
-         "1000", "1000", "2000", "2000", "2000*", "2000*", "*", "*", "*", "*", "*", "*",
-         "*", "*"),
+         "*", "1000", "1000", "2000", "2000", "2000*", "2000*", "*", "*", "*", "*", "*", "*",
+         "*"),
     ]
 
     for row_idx, r_data in enumerate(derived_rows, start=2):
