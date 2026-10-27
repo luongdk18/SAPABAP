@@ -469,7 +469,8 @@ FORM process_org_update.
       IF sy-subrc = 0 AND lt_pt1251_fix IS NOT INITIAL.
         LOOP AT gt_usorg_map INTO DATA(ls_um).
           LOOP AT lt_pt1251_fix ASSIGNING FIELD-SYMBOL(<ls_f51>)
-            WHERE field = ls_um-field AND low = '-1'.
+            WHERE field = ls_um-field AND low = '-1'
+              AND deleted = space AND copied <> 'I'.
             <ls_f51>-low      = ls_um-varbl.
             <ls_f51>-modified = 'U'.
             lv_fix_needed     = abap_true.
@@ -505,13 +506,16 @@ FORM process_org_update.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 5. Find Org Variables in Authorizations (AGR_1251)
+    " 5. Find Org Variables in Active Authorizations (AGR_1251)
+    "    Strict Rule: Ignore inactive/deactivated nodes (deleted='X'/copied='I')!
     " -----------------------------------------------------------------
     SELECT DISTINCT low FROM agr_1251 INTO TABLE @lt_auth_vars
-      WHERE agr_name = @ls_role-agr_name AND low LIKE '$%'.
+      WHERE agr_name = @ls_role-agr_name AND low LIKE '$%'
+        AND deleted  = @space AND copied <> 'I'.
     IF lv_parent_chk IS NOT INITIAL.
       SELECT DISTINCT low FROM agr_1251 APPENDING TABLE @lt_auth_vars
-        WHERE agr_name = @lv_parent_chk AND low LIKE '$%'.
+        WHERE agr_name = @lv_parent_chk AND low LIKE '$%'
+          AND deleted  = @space AND copied <> 'I'.
     ENDIF.
     SORT lt_auth_vars.
     DELETE ADJACENT DUPLICATES FROM lt_auth_vars.

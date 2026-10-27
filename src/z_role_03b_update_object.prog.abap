@@ -482,13 +482,18 @@ FORM process_object_update.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 2. Read Existing Authorization Objects & Fields in Role
+    " 2. Read Existing Active Authorization Objects & Fields in Role
+    "    Strict Rule: Skip inactive/deactivated nodes (deleted='X'/copied='I')!
     " -----------------------------------------------------------------
     SELECT * FROM agr_1250 INTO TABLE @lt_curr_1250
-      WHERE agr_name = @ls_role-agr_name.
+      WHERE agr_name = @ls_role-agr_name
+        AND deleted  = @space
+        AND copied  <> 'I'.
 
     SELECT * FROM agr_1251 INTO TABLE @lt_curr_1251
-      WHERE agr_name = @ls_role-agr_name.
+      WHERE agr_name = @ls_role-agr_name
+        AND deleted  = @space
+        AND copied  <> 'I'.
 
     " Assemble distinct (object, field) pairs from input file for this role
     DATA: lt_distinct_of TYPE STANDARD TABLE OF ty_obj_fld.
@@ -631,13 +636,18 @@ FORM process_object_update.
           CONTINUE.
         ENDIF.
 
-        " Find all distinct authorization IDs (AUTH) for this object & field in lt_pt1251
+        " Find all distinct ACTIVE authorization IDs (AUTH) for this object & field in lt_pt1251
         DATA: lt_auth_ids TYPE STANDARD TABLE OF xuauth.
         CLEAR lt_auth_ids.
-        LOOP AT lt_pt1251 INTO DATA(ls_p) WHERE object = ls_of-object AND field = ls_of-field.
-          READ TABLE lt_auth_ids WITH KEY table_line = ls_p-auth TRANSPORTING NO FIELDS.
-          IF sy-subrc <> 0.
-            APPEND ls_p-auth TO lt_auth_ids.
+        LOOP AT lt_pt1251 INTO DATA(ls_p)
+          WHERE object = ls_of-object AND field = ls_of-field
+            AND deleted = space AND copied <> 'I'.
+          READ TABLE lt_curr_1250 WITH KEY object = ls_p-object auth = ls_p-auth TRANSPORTING NO FIELDS.
+          IF sy-subrc = 0.
+            READ TABLE lt_auth_ids WITH KEY table_line = ls_p-auth TRANSPORTING NO FIELDS.
+            IF sy-subrc <> 0.
+              APPEND ls_p-auth TO lt_auth_ids.
+            ENDIF.
           ENDIF.
         ENDLOOP.
 

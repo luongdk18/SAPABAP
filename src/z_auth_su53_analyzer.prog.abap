@@ -562,6 +562,7 @@ FORM eval_auths_for_role USING pv_role TYPE agr_name.
     FROM agr_1251
     WHERE agr_name = @pv_role
       AND deleted  = ' '
+      AND copied  <> 'I'
     INTO TABLE @lt_role_flds.
 
   " Read active authorization objects defined in this role
@@ -569,6 +570,7 @@ FORM eval_auths_for_role USING pv_role TYPE agr_name.
     FROM agr_1250
     WHERE agr_name = @pv_role
       AND deleted  = ' '
+      AND copied  <> 'I'
     INTO TABLE @lt_role_objs.
 
   " Flags must be cleared on every row and every authorization instance.
@@ -1013,7 +1015,9 @@ FORM add_selected_auths_to_role.
 
   " Take snapshot of active objects in Master Role before any menu / auth additions
   SELECT DISTINCT object FROM agr_1250
-    WHERE agr_name = @lv_target_role AND deleted = ' '
+    WHERE agr_name = @lv_target_role
+      AND deleted  = ' '
+      AND copied  <> 'I'
     INTO TABLE @lt_lead_objs_prior.
 
   " 1. Add TCodes to Master role menu hierarchy (under first folder or home)
@@ -1145,34 +1149,32 @@ FORM add_selected_auths_to_role.
       LOOP AT lt_agg_objs INTO DATA(ls_agg_obj).
         DATA: lv_auth TYPE xuauth.
         CLEAR lv_auth.
-        READ TABLE lt_auth_data ASSIGNING FIELD-SYMBOL(<ls_ad>)
-          WITH KEY object = ls_agg_obj-object.
-        IF sy-subrc <> 0.
+        LOOP AT lt_auth_data ASSIGNING FIELD-SYMBOL(<ls_ad>)
+          WHERE object = ls_agg_obj-object AND deleted = space AND copied <> 'I'.
+          lv_auth = <ls_ad>-auth.
+          <ls_ad>-modified = 'U'.
+          EXIT.
+        ENDLOOP.
+        IF lv_auth IS INITIAL.
           CONTINUE.
         ENDIF.
-        lv_auth = <ls_ad>-auth.
-        <ls_ad>-modified = 'U'.
-        <ls_ad>-deleted  = ' '.
 
         LOOP AT ls_agg_obj-values INTO DATA(ls_val).
           READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_fv>)
             WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = ls_val-low.
-          IF sy-subrc = 0.
-            <ls_fv>-deleted  = ' '.
+          IF sy-subrc = 0 AND <ls_fv>-deleted = space AND <ls_fv>-copied <> 'I'.
             <ls_fv>-modified = 'U'.
           ELSE.
             READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_empty_fv>)
               WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = space.
-            IF sy-subrc = 0.
+            IF sy-subrc = 0 AND <ls_empty_fv>-deleted = space AND <ls_empty_fv>-copied <> 'I'.
               <ls_empty_fv>-low      = ls_val-low.
               <ls_empty_fv>-modified = 'U'.
-              <ls_empty_fv>-deleted  = ' '.
               <ls_empty_fv>-neu      = 'X'.
             ELSE.
               READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_star_fv>)
                 WITH KEY object = ls_agg_obj-object auth = lv_auth field = ls_val-field low = '*'.
-              IF sy-subrc = 0.
-                <ls_star_fv>-deleted  = ' '.
+              IF sy-subrc = 0 AND <ls_star_fv>-deleted = space AND <ls_star_fv>-copied <> 'I'.
                 <ls_star_fv>-modified = 'U'.
               ELSE.
                 APPEND VALUE pt1251(
@@ -1212,7 +1214,7 @@ FORM add_selected_auths_to_role.
           LOOP AT lt_def_fields INTO DATA(lv_check_fld).
             READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_any_fv>)
               WITH KEY object = ls_agg_obj-object auth = lv_auth field = lv_check_fld.
-            IF sy-subrc <> 0.
+            IF sy-subrc <> 0 OR <ls_any_fv>-deleted <> space OR <ls_any_fv>-copied = 'I'.
               APPEND VALUE pt1251(
                 object   = ls_agg_obj-object
                 auth     = lv_auth
@@ -1230,20 +1232,19 @@ FORM add_selected_auths_to_role.
                 <ls_any_fv>-modified = 'U'.
                 <ls_any_fv>-neu      = 'X'.
               ENDIF.
-              <ls_any_fv>-deleted  = ' '.
             ENDIF.
           ENDLOOP.
         ENDIF.
       ENDLOOP.
 
-      " Global sweep: ensure NO field in lt_field_values for target role has low = space
-      LOOP AT lt_field_values ASSIGNING FIELD-SYMBOL(<ls_sweep_fv>).
+      " Global sweep: ensure NO field in lt_field_values for target role has low = space (active fields only)
+      LOOP AT lt_field_values ASSIGNING FIELD-SYMBOL(<ls_sweep_fv>)
+        WHERE deleted = space AND copied <> 'I'.
         IF <ls_sweep_fv>-low IS INITIAL OR <ls_sweep_fv>-low = space.
           <ls_sweep_fv>-low      = '*'.
           <ls_sweep_fv>-modified = 'U'.
           <ls_sweep_fv>-neu      = 'X'.
         ENDIF.
-        <ls_sweep_fv>-deleted  = ' '.
       ENDLOOP.
 
       IF lt_org_vals IS NOT INITIAL.
@@ -1331,8 +1332,9 @@ FORM add_selected_auths_to_role.
     ENDLOOP.
   ENDIF.
 
-  " Add newly introduced Master Role objects AND SU24 accompanying objects into lt_sel_objects
-  LOOP AT lt_auth_data INTO DATA(ls_ad_chk) WHERE deleted = ' ' AND object <> 'S_TCODE'.
+  " Add newly introduced Master Role objects AND SU24 accompanying objects into lt_sel_objects (active only)
+  LOOP AT lt_auth_data INTO DATA(ls_ad_chk)
+    WHERE deleted = ' ' AND copied <> 'I' AND object <> 'S_TCODE'.
     READ TABLE lt_lead_objs_prior TRANSPORTING NO FIELDS WITH TABLE KEY table_line = ls_ad_chk-object.
     IF sy-subrc <> 0.
       INSERT ls_ad_chk-object INTO TABLE lt_sel_objects.
@@ -1436,17 +1438,18 @@ FORM ensure_role_auth USING pv_object TYPE tobj-objct
                                cv_counter TYPE i.
   DATA lv_auth TYPE xuauth.
 
-  READ TABLE ct_auth ASSIGNING FIELD-SYMBOL(<ls_auth>) WITH KEY object = pv_object.
-  IF sy-subrc = 0.
+  " Search for existing ACTIVE node (skip deactivated/inactive nodes)
+  LOOP AT ct_auth ASSIGNING FIELD-SYMBOL(<ls_auth>)
+    WHERE object = pv_object AND deleted = space AND copied <> 'I'.
     <ls_auth>-modified = 'U'.
-    <ls_auth>-deleted  = ' '.  " Reactivate if was deactivated!
     RETURN.
-  ENDIF.
+  ENDLOOP.
 
+  " If no active node exists, generate a brand new active node (DO NOT reactivate inactive nodes!)
   DO 99 TIMES.
     lv_auth = |__________{ cv_counter WIDTH = 2 ALIGN = RIGHT PAD = '0' }|.
     READ TABLE ct_auth TRANSPORTING NO FIELDS
-      WITH KEY object = pv_object auth = lv_auth.
+      WITH KEY auth = lv_auth.
     IF sy-subrc <> 0.
       EXIT.
     ENDIF.
@@ -1572,7 +1575,8 @@ FORM distribute_org_levels USING pt_usorg TYPE tt_usorg
       CONTINUE.
     ENDIF.
 
-    LOOP AT ct_auth ASSIGNING FIELD-SYMBOL(<ls_auth>).
+    LOOP AT ct_auth ASSIGNING FIELD-SYMBOL(<ls_auth>)
+      WHERE deleted = space AND copied <> 'I'.
       READ TABLE lt_obj_fields TRANSPORTING NO FIELDS
         WITH TABLE KEY object = <ls_auth>-object field = lv_field.
       IF sy-subrc <> 0.
@@ -1617,7 +1621,6 @@ FORM distribute_org_levels USING pt_usorg TYPE tt_usorg
         ) TO ct_flds.
       ENDIF.
       <ls_auth>-modified = 'U'.
-      <ls_auth>-deleted  = ' '.
     ENDLOOP.
   ENDLOOP.
 ENDFORM.
@@ -2094,21 +2097,21 @@ FORM derive_specific_objects
     LOOP AT pt_sel_objects INTO DATA(lv_new_obj).
       CLEAR lv_child_auth.
 
-      " Ensure object exists in child 1250
-      READ TABLE lt_child_1250 ASSIGNING FIELD-SYMBOL(<ls_cad>)
-        WITH KEY object = lv_new_obj.
-      IF sy-subrc = 0.
+      " Ensure object exists as an active node in child 1250 (skip inactive nodes)
+      LOOP AT lt_child_1250 ASSIGNING FIELD-SYMBOL(<ls_cad>)
+        WHERE object = lv_new_obj AND deleted = space AND copied <> 'I'.
         lv_child_auth     = <ls_cad>-auth.
         <ls_cad>-modified = 'U'.
-        <ls_cad>-deleted  = ' '.
-      ELSE.
+        EXIT.
+      ENDLOOP.
+      IF lv_child_auth IS INITIAL.
         PERFORM ensure_role_auth USING lv_new_obj
                                  CHANGING lt_child_1250 lv_counter.
-        READ TABLE lt_child_1250 ASSIGNING <ls_cad>
-          WITH KEY object = lv_new_obj.
-        IF sy-subrc = 0.
+        LOOP AT lt_child_1250 ASSIGNING <ls_cad>
+          WHERE object = lv_new_obj AND deleted = space AND copied <> 'I'.
           lv_child_auth = <ls_cad>-auth.
-        ENDIF.
+          EXIT.
+        ENDLOOP.
       ENDIF.
 
       IF lv_child_auth IS INITIAL.
@@ -2119,7 +2122,7 @@ FORM derive_specific_objects
 
       " Copy active field values from Leading Role for THIS specific object only
       LOOP AT pt_lead_1251 INTO DATA(ls_lead_fv)
-        WHERE object = lv_new_obj AND deleted = ' '.
+        WHERE object = lv_new_obj AND deleted = ' ' AND copied <> 'I'.
 
         " Check if field is an Org Level (AGR_1252)
         DATA: lv_val_to_use TYPE xuval.
@@ -2144,17 +2147,15 @@ FORM derive_specific_objects
 
         READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_cfv>)
           WITH KEY object = lv_new_obj auth = lv_child_auth field = ls_lead_fv-field low = lv_val_to_use.
-        IF sy-subrc = 0.
-          <ls_cfv>-deleted  = ' '.
+        IF sy-subrc = 0 AND <ls_cfv>-deleted = space AND <ls_cfv>-copied <> 'I'.
           <ls_cfv>-modified = 'U'.
         ELSE.
           READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_empty_cfv>)
             WITH KEY object = lv_new_obj auth = lv_child_auth field = ls_lead_fv-field low = space.
-          IF sy-subrc = 0.
+          IF sy-subrc = 0 AND <ls_empty_cfv>-deleted = space AND <ls_empty_cfv>-copied <> 'I'.
             <ls_empty_cfv>-low      = lv_val_to_use.
             <ls_empty_cfv>-high     = ls_lead_fv-high.
             <ls_empty_cfv>-modified = 'U'.
-            <ls_empty_cfv>-deleted  = ' '.
             <ls_empty_cfv>-neu      = 'X'.
           ELSE.
             APPEND VALUE pt1251(
@@ -2192,7 +2193,7 @@ FORM derive_specific_objects
         LOOP AT lt_def_child_flds INTO DATA(lv_cfld).
           READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_cfv_chk>)
             WITH KEY object = lv_new_obj auth = lv_child_auth field = lv_cfld.
-          IF sy-subrc <> 0.
+          IF sy-subrc <> 0 OR <ls_cfv_chk>-deleted <> space OR <ls_cfv_chk>-copied = 'I'.
             APPEND VALUE pt1251(
               object   = lv_new_obj
               auth     = lv_child_auth
@@ -2209,7 +2210,6 @@ FORM derive_specific_objects
               <ls_cfv_chk>-modified = 'U'.
               <ls_cfv_chk>-neu      = 'X'.
             ENDIF.
-            <ls_cfv_chk>-deleted = ' '.
           ENDIF.
         ENDLOOP.
       ENDIF.
@@ -2220,28 +2220,27 @@ FORM derive_specific_objects
       DATA: lv_child_tcd_auth TYPE xuauth.
       CLEAR lv_child_tcd_auth.
 
-      READ TABLE lt_child_1250 ASSIGNING FIELD-SYMBOL(<ls_tcd_ad>)
-        WITH KEY object = 'S_TCODE'.
-      IF sy-subrc = 0.
+      LOOP AT lt_child_1250 ASSIGNING FIELD-SYMBOL(<ls_tcd_ad>)
+        WHERE object = 'S_TCODE' AND deleted = space AND copied <> 'I'.
         lv_child_tcd_auth = <ls_tcd_ad>-auth.
         <ls_tcd_ad>-modified = 'U'.
-        <ls_tcd_ad>-deleted  = ' '.
-      ELSE.
+        EXIT.
+      ENDLOOP.
+      IF lv_child_tcd_auth IS INITIAL.
         PERFORM ensure_role_auth USING 'S_TCODE'
                                  CHANGING lt_child_1250 lv_counter.
-        READ TABLE lt_child_1250 ASSIGNING <ls_tcd_ad>
-          WITH KEY object = 'S_TCODE'.
-        IF sy-subrc = 0.
+        LOOP AT lt_child_1250 ASSIGNING <ls_tcd_ad>
+          WHERE object = 'S_TCODE' AND deleted = space AND copied <> 'I'.
           lv_child_tcd_auth = <ls_tcd_ad>-auth.
-        ENDIF.
+          EXIT.
+        ENDLOOP.
       ENDIF.
 
       IF lv_child_tcd_auth IS NOT INITIAL.
         LOOP AT pt_menu_tcodes INTO DATA(lv_menu_tc).
           READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_tcd_fv>)
             WITH KEY object = 'S_TCODE' auth = lv_child_tcd_auth field = 'TCD' low = lv_menu_tc.
-          IF sy-subrc = 0.
-            <ls_tcd_fv>-deleted  = ' '.
+          IF sy-subrc = 0 AND <ls_tcd_fv>-deleted = space AND <ls_tcd_fv>-copied <> 'I'.
             <ls_tcd_fv>-modified = 'U'.
           ELSE.
             APPEND VALUE pt1251(

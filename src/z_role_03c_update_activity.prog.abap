@@ -439,11 +439,20 @@ FORM process_activity_update.
       CONTINUE.
     ENDIF.
 
-    " Count total distinct objects currently in role
-    LOOP AT lt_pt1251 INTO DATA(ls_p_scan).
-      READ TABLE lt_obj_all WITH KEY table_line = ls_p_scan-object TRANSPORTING NO FIELDS.
-      IF sy-subrc <> 0.
-        APPEND ls_p_scan-object TO lt_obj_all.
+    " Count total distinct objects currently active in role
+    SELECT object, auth FROM agr_1250
+      INTO TABLE @DATA(lt_active_1250)
+      WHERE agr_name = @ls_role-agr_name
+        AND deleted  = @space
+        AND copied  <> 'I'.
+
+    LOOP AT lt_pt1251 INTO DATA(ls_p_scan) WHERE deleted = space AND copied <> 'I'.
+      READ TABLE lt_active_1250 WITH KEY object = ls_p_scan-object auth = ls_p_scan-auth TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        READ TABLE lt_obj_all WITH KEY table_line = ls_p_scan-object TRANSPORTING NO FIELDS.
+        IF sy-subrc <> 0.
+          APPEND ls_p_scan-object TO lt_obj_all.
+        ENDIF.
       ENDIF.
     ENDLOOP.
     ls_res-obj_scan_cnt = lines( lt_obj_all ).
@@ -482,7 +491,8 @@ FORM process_activity_update.
     " -----------------------------------------------------------------
     " 4. Scan and Match: For each target field, find objects in role
     "    Strict Rule: Only update objects that already contain the field!
-    "    Objects without the field remain completely untouched.
+    "                 Skip inactive/deactivated nodes (deleted='X' / copied='I')!
+    "                 Objects without the field remain completely untouched.
     " -----------------------------------------------------------------
     DATA: lt_matched_objs TYPE STANDARD TABLE OF xuobject,
           lv_role_modified TYPE abap_bool VALUE abap_false.
@@ -490,9 +500,14 @@ FORM process_activity_update.
     CLEAR: lt_matched_objs.
 
     LOOP AT lt_flds INTO DATA(lv_target_field).
-      " Find all distinct (object, auth) instances in role containing this field
+      " Find all distinct (object, auth) ACTIVE instances in role containing this field
       CLEAR lt_obj_auth.
-      LOOP AT lt_pt1251 INTO DATA(ls_pt) WHERE field = lv_target_field.
+      LOOP AT lt_pt1251 INTO DATA(ls_pt)
+        WHERE field = lv_target_field AND deleted = space AND copied <> 'I'.
+        READ TABLE lt_active_1250 WITH KEY object = ls_pt-object auth = ls_pt-auth TRANSPORTING NO FIELDS.
+        IF sy-subrc <> 0.
+          CONTINUE.
+        ENDIF.
         READ TABLE lt_obj_auth WITH KEY object = ls_pt-object auth = ls_pt-auth TRANSPORTING NO FIELDS.
         IF sy-subrc <> 0.
           APPEND VALUE ty_obj_auth( object = ls_pt-object auth = ls_pt-auth ) TO lt_obj_auth.
@@ -522,7 +537,8 @@ FORM process_activity_update.
         CLEAR lt_current_vals.
 
         LOOP AT lt_pt1251 INTO DATA(ls_cur)
-          WHERE object = ls_oa-object AND auth = ls_oa-auth AND field = lv_target_field.
+          WHERE object = ls_oa-object AND auth = ls_oa-auth AND field = lv_target_field
+            AND deleted = space AND copied <> 'I'.
           APPEND ls_cur TO lt_current_vals.
         ENDLOOP.
 
