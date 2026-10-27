@@ -5,7 +5,7 @@
 *& Description:
 *&   Reads a CSV (.csv) file containing Activity field values for roles
 *&   (Role Name, Field, Value-Low, Value-High), typically generated as
-*&   <stem>_03C_Activity_converted.csv.
+*&   <stem>_03c_Activity_converted.csv.
 *&
 *&   Logic:
 *&   - Scans all authorization objects and authorizations (AUTH) in each

@@ -10,14 +10,14 @@ Features:
   * Col 1: Master Role (Leading Role)
   * Col 2: Derived Role
   * Col 3: Derived Role Description
-  * Col 4: Activity Field(s) (ACTVT, PS_ACTVT, or comma-separated) -> outputs <stem>_03C_Activity_converted.csv
+  * Col 4: Activity Field(s) (ACTVT, PS_ACTVT, or comma-separated) -> outputs <stem>_03c_Activity_converted.csv
   * Col 5+: Org Levels ($VARBL) & Auth Objects (Object-Field)
 - Automatically classifies columns:
   * Organizational Levels (matched against Org_Levels.csv / SAP USORG) -> outputs <stem>_03a_Org_Levels_converted.csv
     - STRICT: Only assigned to Derived Roles (Col 2). Master Roles (Col 1) are NEVER updated with Org Levels.
   * Authorization Objects / Fields (matched against Object_Levels.csv)  -> outputs <stem>_03b_Auth_Objects_converted.csv
     - Assigned to BOTH Derived Roles (Col 2) AND Master Roles (Col 1).
-  * Activity Fields (Col 4)                                            -> outputs <stem>_03C_Activity_converted.csv
+  * Activity Fields (Col 4)                                            -> outputs <stem>_03c_Activity_converted.csv
     - Assigned to BOTH Derived Roles (Col 2) AND Master Roles (Col 1) for dedicated Activity upload.
 - Strictly non-overlapping: Org values are maintained in AGR_1252 via Org Level variables ($VARBL)
   and are NEVER mixed into Object output (AGR_1251).
@@ -35,7 +35,7 @@ Output formats:
    Col 2: object-field (e.g., F_BKPF_BUK-BUKRS)
    Col 3: value-low
    Col 4: value-high
-3. Activity CSV (03C_Activity):
+3. Activity CSV (03c_Activity):
    Col 1: Role (Master Role & Derived Role)
    Col 2: Field (e.g., ACTVT, PS_ACTVT)
    Col 3: value-low
@@ -44,7 +44,7 @@ Output formats:
 Outputs:
 - <parent_dir>/converted/<stem>_03a_Org_Levels_converted.csv
 - <parent_dir>/converted/<stem>_03b_Auth_Objects_converted.csv
-- <parent_dir>/converted/<stem>_03C_Activity_converted.csv
+- <parent_dir>/converted/<stem>_03c_Activity_converted.csv
 """
 
 import os
@@ -501,7 +501,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
     into three separate flat CSV files:
       - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, value-low, value-high) -> for AGR_1252 (Derived Roles ONLY)
       - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value-low, value-high) -> for AGR_1251 (Master & Derived Roles)
-      - <stem>_03C_Activity_converted.csv (Role, Field, value-low, value-high) -> Dedicated Activity upload (Master & Derived Roles)
+      - <stem>_03c_Activity_converted.csv (Role, Field, value-low, value-high) -> Dedicated Activity upload (Master & Derived Roles)
     """
     if not os.path.splitext(input_path)[1]:
         input_path = input_path + ".xlsx"
@@ -528,7 +528,7 @@ def convert_role_03_org_obj(input_path, output_dir=None):
 
     out_org_path = os.path.join(output_dir, f"{clean_stem}_03a_Org_Levels_converted.csv")
     out_obj_path = os.path.join(output_dir, f"{clean_stem}_03b_Auth_Objects_converted.csv")
-    out_act_path = os.path.join(output_dir, f"{clean_stem}_03C_Activity_converted.csv")
+    out_act_path = os.path.join(output_dir, f"{clean_stem}_03c_Activity_converted.csv")
 
     # Load Reference Dictionaries
     org_ref_path = os.path.join("excel-templates", "Org_Levels.csv")
