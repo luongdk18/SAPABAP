@@ -1041,6 +1041,8 @@ FORM add_selected_auths_to_role.
       ELSE.
         COMMIT WORK AND WAIT.
       ENDIF.
+      " Ensure newly introduced Org Levels in Master Role have low = '-1'
+      PERFORM ensure_master_org_levels USING lv_target_role.
     ELSEIF lv_menu_failed > 0 AND lt_object_auth IS INITIAL.
       MESSAGE |No transaction was added to the menu of role { lv_target_role }:{ lv_failed_txt }| TYPE 'S' DISPLAY LIKE 'E'.
       RETURN.
@@ -1215,12 +1217,17 @@ FORM add_selected_auths_to_role.
             READ TABLE lt_field_values ASSIGNING FIELD-SYMBOL(<ls_any_fv>)
               WITH KEY object = ls_agg_obj-object auth = lv_auth field = lv_check_fld.
             IF sy-subrc <> 0 OR <ls_any_fv>-deleted <> space OR <ls_any_fv>-copied = 'I'.
+              DATA: lv_m_def_val TYPE xuval VALUE '*'.
+              READ TABLE lt_usorg INTO DATA(ls_uo_m) WITH KEY field = lv_check_fld.
+              IF sy-subrc = 0.
+                lv_m_def_val = ls_uo_m-varbl.
+              ENDIF.
               APPEND VALUE pt1251(
                 object   = ls_agg_obj-object
                 auth     = lv_auth
                 variant  = ' '
                 field    = lv_check_fld
-                low      = '*'
+                low      = lv_m_def_val
                 modified = 'U'
                 neu      = 'X'
                 deleted  = ' '
@@ -1228,7 +1235,12 @@ FORM add_selected_auths_to_role.
               lv_total_added = lv_total_added + 1.
             ELSE.
               IF <ls_any_fv>-low IS INITIAL OR <ls_any_fv>-low = space.
-                <ls_any_fv>-low      = '*'.
+                READ TABLE lt_usorg INTO ls_uo_m WITH KEY field = lv_check_fld.
+                IF sy-subrc = 0.
+                  <ls_any_fv>-low = ls_uo_m-varbl.
+                ELSE.
+                  <ls_any_fv>-low = '*'.
+                ENDIF.
                 <ls_any_fv>-modified = 'U'.
                 <ls_any_fv>-neu      = 'X'.
               ENDIF.
@@ -1241,7 +1253,12 @@ FORM add_selected_auths_to_role.
       LOOP AT lt_field_values ASSIGNING FIELD-SYMBOL(<ls_sweep_fv>)
         WHERE deleted = space AND copied <> 'I'.
         IF <ls_sweep_fv>-low IS INITIAL OR <ls_sweep_fv>-low = space.
-          <ls_sweep_fv>-low      = '*'.
+          READ TABLE lt_usorg INTO DATA(ls_uo_swp) WITH KEY field = <ls_sweep_fv>-field.
+          IF sy-subrc = 0.
+            <ls_sweep_fv>-low = ls_uo_swp-varbl.
+          ELSE.
+            <ls_sweep_fv>-low = '*'.
+          ENDIF.
           <ls_sweep_fv>-modified = 'U'.
           <ls_sweep_fv>-neu      = 'X'.
         ENDIF.
@@ -1283,6 +1300,7 @@ FORM add_selected_auths_to_role.
         lv_gen_failed = abap_true.
       ENDIF.
       COMMIT WORK AND WAIT.
+      PERFORM ensure_master_org_levels USING lv_target_role.
     ENDIF.
   ENDIF.
 
@@ -1357,6 +1375,7 @@ FORM add_selected_auths_to_role.
     INTO TABLE @lt_child_roles.
 
   IF lt_child_roles IS NOT INITIAL AND ( lt_sel_objects IS NOT INITIAL OR lt_menu_tcodes IS NOT INITIAL ).
+    PERFORM ensure_master_org_levels USING lv_target_role.
     PERFORM derive_specific_objects
       USING lv_target_role
             lt_child_roles
@@ -1495,13 +1514,22 @@ FORM save_org_levels USING pv_role TYPE agr_name
       no_data_available = 1
       OTHERS            = 2.
 
+  DATA lv_parent_r TYPE agr_name.
+  CLEAR lv_parent_r.
+  SELECT SINGLE parent_agr FROM agr_define WHERE agr_name = @pv_role INTO @lv_parent_r.
+  DATA(lv_is_master) = xsdbool( lv_parent_r IS INITIAL ).
+
   LOOP AT pt_new INTO ls_new.
     READ TABLE ct_all TRANSPORTING NO FIELDS
-      WITH KEY varbl = ls_new-varbl low = ls_new-low.
+      WITH KEY varbl = ls_new-varbl.
     IF sy-subrc <> 0.
       CLEAR ls_row.
       ls_row-varbl = ls_new-varbl.
-      ls_row-low   = ls_new-low.
+      IF lv_is_master = abap_true.
+        ls_row-low = '-1'.
+      ELSE.
+        ls_row-low = COND #( WHEN ls_new-low IS NOT INITIAL THEN ls_new-low ELSE '*' ).
+      ENDIF.
       APPEND ls_row TO ct_all.
       cv_added = cv_added + 1.
     ENDIF.
@@ -1587,42 +1615,73 @@ FORM distribute_org_levels USING pt_usorg TYPE tt_usorg
                        AND auth   = <ls_auth>-auth
                        AND field  = lv_field.
 
-      DATA lv_org_appended TYPE abap_bool.
-      lv_org_appended = abap_false.
-
-      LOOP AT pt_all INTO DATA(ls_all) WHERE varbl = lv_varbl.
-        IF ls_all-low IS INITIAL AND ls_all-high IS INITIAL.
-          CONTINUE.
-        ENDIF.
-        APPEND VALUE pt1251(
-          object   = <ls_auth>-object
-          auth     = <ls_auth>-auth
-          variant  = ' '
-          field    = lv_field
-          low      = ls_all-low
-          high     = ls_all-high
-          modified = 'U'
-          neu      = 'X'
-          deleted  = ' '
-        ) TO ct_flds.
-        lv_org_appended = abap_true.
-      ENDLOOP.
-
-      IF lv_org_appended = abap_false.
-        APPEND VALUE pt1251(
-          object   = <ls_auth>-object
-          auth     = <ls_auth>-auth
-          variant  = ' '
-          field    = lv_field
-          low      = '*'
-          modified = 'U'
-          neu      = 'X'
-          deleted  = ' '
-        ) TO ct_flds.
-      ENDIF.
+      " In Master Role, Org Level fields in AGR_1251 are bound to Org Variable ($VARBL)
+      APPEND VALUE pt1251(
+        object   = <ls_auth>-object
+        auth     = <ls_auth>-auth
+        variant  = ' '
+        field    = lv_field
+        low      = lv_varbl
+        high     = space
+        modified = 'U'
+        neu      = 'X'
+        deleted  = ' '
+      ) TO ct_flds.
       <ls_auth>-modified = 'U'.
     ENDLOOP.
   ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form ensure_master_org_levels
+*&---------------------------------------------------------------------*
+FORM ensure_master_org_levels USING pv_role TYPE agr_name.
+  DATA: lt_orgs    TYPE tt_pt1252,
+        lv_org_mod TYPE abap_bool.
+
+  CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
+    EXPORTING
+      activity_group    = pv_role
+    TABLES
+      org_levels        = lt_orgs
+    EXCEPTIONS
+      OTHERS            = 1.
+
+  " 1. Any existing org level in Master Role with initial / space low becomes '-1'
+  LOOP AT lt_orgs ASSIGNING FIELD-SYMBOL(<ls_o>).
+    IF <ls_o>-low IS INITIAL OR <ls_o>-low = space.
+      <ls_o>-low = '-1'.
+      lv_org_mod = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  " 2. Any active authorization in AGR_1251 with an org variable ($...) not yet in AGR_1252
+  DATA lt_vars_in_1251 TYPE STANDARD TABLE OF agr_1251-low.
+  SELECT DISTINCT low FROM agr_1251 INTO TABLE @lt_vars_in_1251
+    WHERE agr_name = @pv_role AND low LIKE '$%'
+      AND deleted  = @space AND copied <> 'I'.
+
+  LOOP AT lt_vars_in_1251 INTO DATA(lv_var_1251).
+    READ TABLE lt_orgs WITH KEY varbl = lv_var_1251 TRANSPORTING NO FIELDS.
+    IF sy-subrc <> 0.
+      APPEND VALUE pt1252(
+        varbl = lv_var_1251
+        low   = '-1'
+        high  = space
+      ) TO lt_orgs.
+      lv_org_mod = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  IF lv_org_mod = abap_true.
+    CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+      EXPORTING
+        activity_group = pv_role
+      TABLES
+        org_levels     = lt_orgs.
+    CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+    COMMIT WORK AND WAIT.
+  ENDIF.
 ENDFORM.
 
 FORM collect_menu_tcode USING pv_field TYPE xufield
@@ -1891,9 +1950,16 @@ FORM generate_role_profile USING pv_role           TYPE agr_name
     ENDIF.
   ENDIF.
 
-  " Force-maintain all unmaintained Organizational Levels in AGR_1252 with '*'
-  " This mirrors what PFCG does when an administrator generates a profile
-  " and chooses 'All maintained' (full authorization for unmaintained org levels)
+  " Check if this is a Master Role (no parent) or Derived Role (has parent)
+  DATA lv_parent TYPE agr_name.
+  CLEAR lv_parent.
+  SELECT SINGLE parent_agr FROM agr_define
+    WHERE agr_name = @pv_role
+    INTO @lv_parent.
+
+  " Handle Organizational Levels in AGR_1252:
+  " - For Master Role (Leading Role): Unmaintained / empty Org Levels become '-1'
+  " - For Derived Role: Có rồi thì giữ nguyên, chưa có (rỗng / space / -1) thì thành '*'
   CLEAR: lt_orgs, lv_org_mod.
   CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
     EXPORTING
@@ -1905,9 +1971,19 @@ FORM generate_role_profile USING pv_role           TYPE agr_name
       OTHERS            = 2.
   IF sy-subrc = 0 AND lt_orgs IS NOT INITIAL.
     LOOP AT lt_orgs ASSIGNING FIELD-SYMBOL(<ls_org>).
-      IF <ls_org>-low IS INITIAL OR <ls_org>-low = space.
-        <ls_org>-low = '*'.
-        lv_org_mod   = abap_true.
+      IF lv_parent IS INITIAL.
+        " Master Role: unmaintained / new org level becomes '-1'
+        IF <ls_org>-low IS INITIAL OR <ls_org>-low = space.
+          <ls_org>-low = '-1'.
+          lv_org_mod   = abap_true.
+        ENDIF.
+      ELSE.
+        " Derived Role: Có rồi thì giữ nguyên, chưa có (initial/space/-1) thì thành '*'
+        IF <ls_org>-low IS INITIAL OR <ls_org>-low = space OR <ls_org>-low = '-1'.
+          <ls_org>-low  = '*'.
+          <ls_org>-high = space.
+          lv_org_mod    = abap_true.
+        ENDIF.
       ENDIF.
     ENDLOOP.
     IF lv_org_mod = abap_true.
@@ -1921,10 +1997,12 @@ FORM generate_role_profile USING pv_role           TYPE agr_name
     ENDIF.
   ENDIF.
 
+  DATA(lv_fill_org_star) = COND char01( WHEN lv_parent IS INITIAL THEN ' ' ELSE 'X' ).
+
   CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
     EXPORTING
       activity_group        = pv_role
-      fill_orgs_with_star   = 'X'
+      fill_orgs_with_star   = lv_fill_org_star
       fill_fields_with_star = 'X'
       no_dialog             = 'X'
       rebuild_auth_data     = pv_rebuild
@@ -1947,7 +2025,7 @@ FORM generate_role_profile USING pv_role           TYPE agr_name
         activity_group              = pv_role
         no_dialog                   = 'X'
         rebuild_auth_data           = pv_rebuild
-        org_levels_with_star        = 'X'
+        org_levels_with_star        = lv_fill_org_star
         fill_empty_fields_with_star = 'X'
         generate_profile            = 'X'
       TABLES
@@ -2091,6 +2169,31 @@ FORM derive_specific_objects
         no_data_available = 1
         OTHERS            = 2.
 
+    " -----------------------------------------------------------------
+    " Sync Org Levels from Master Role to Derived Role:
+    " Principle: Có rồi thì giữ nguyên, chưa có (hoặc rỗng / -1) thì thành '*'
+    " -----------------------------------------------------------------
+    LOOP AT lt_lead_1252 INTO DATA(ls_l_org).
+      READ TABLE lt_child_1252 ASSIGNING FIELD-SYMBOL(<ls_c_org>)
+        WITH KEY varbl = ls_l_org-varbl.
+      IF sy-subrc = 0.
+        " Có rồi: giữ nguyên giá trị hợp lệ. Nếu rỗng hoặc '-1' thì gán '*'
+        IF <ls_c_org>-low IS INITIAL OR <ls_c_org>-low = space OR <ls_c_org>-low = '-1'.
+          <ls_c_org>-low  = '*'.
+          <ls_c_org>-high = space.
+          lv_child_org_changed = abap_true.
+        ENDIF.
+      ELSE.
+        " Chưa có: thêm mới vào lt_child_1252 với giá trị '*'
+        APPEND VALUE pt1252(
+          varbl = ls_l_org-varbl
+          low   = '*'
+          high  = space
+        ) TO lt_child_1252.
+        lv_child_org_changed = abap_true.
+      ENDIF.
+    ENDLOOP.
+
     " 3. Selectively add ONLY the newly added authorization objects (including SU24 accompanying objects)
     DATA(lv_has_changes) = abap_false.
 
@@ -2130,18 +2233,25 @@ FORM derive_specific_objects
 
         READ TABLE lt_usorg INTO DATA(ls_uo) WITH KEY field = ls_lead_fv-field.
         IF sy-subrc = 0.
-          " It's an org level field. If child role has an org level value in AGR_1252, use child's org level!
-          READ TABLE lt_child_1252 INTO DATA(ls_child_org) WITH KEY varbl = ls_uo-varbl.
-          IF sy-subrc = 0 AND ls_child_org-low IS NOT INITIAL.
-            lv_val_to_use = ls_child_org-low.
-          ELSE.
-            " If child role doesn't have this org level yet, inherit from Master Role's AGR_1252
-            READ TABLE lt_lead_1252 INTO DATA(ls_lead_org) WITH KEY varbl = ls_uo-varbl.
-            IF sy-subrc = 0 AND ls_lead_org-low IS NOT INITIAL.
-              APPEND ls_lead_org TO lt_child_1252.
-              lv_val_to_use = ls_lead_org-low.
+          " It's an org level field. In AGR_1251, it MUST be bound to Org Variable ($VARBL)!
+          lv_val_to_use = ls_uo-varbl.
+
+          " Ensure this Org Level is in child 1252: có rồi thì giữ nguyên, chưa có thì thành '*'
+          READ TABLE lt_child_1252 ASSIGNING FIELD-SYMBOL(<ls_co2>)
+            WITH KEY varbl = ls_uo-varbl.
+          IF sy-subrc = 0.
+            IF <ls_co2>-low IS INITIAL OR <ls_co2>-low = space OR <ls_co2>-low = '-1'.
+              <ls_co2>-low  = '*'.
+              <ls_co2>-high = space.
               lv_child_org_changed = abap_true.
             ENDIF.
+          ELSE.
+            APPEND VALUE pt1252(
+              varbl = ls_uo-varbl
+              low   = '*'
+              high  = space
+            ) TO lt_child_1252.
+            lv_child_org_changed = abap_true.
           ENDIF.
         ENDIF.
 
@@ -2194,19 +2304,29 @@ FORM derive_specific_objects
           READ TABLE lt_child_1251 ASSIGNING FIELD-SYMBOL(<ls_cfv_chk>)
             WITH KEY object = lv_new_obj auth = lv_child_auth field = lv_cfld.
           IF sy-subrc <> 0 OR <ls_cfv_chk>-deleted <> space OR <ls_cfv_chk>-copied = 'I'.
+            DATA: lv_def_val TYPE xuval VALUE '*'.
+            READ TABLE lt_usorg INTO DATA(ls_uo_chk) WITH KEY field = lv_cfld.
+            IF sy-subrc = 0.
+              lv_def_val = ls_uo_chk-varbl.
+            ENDIF.
             APPEND VALUE pt1251(
               object   = lv_new_obj
               auth     = lv_child_auth
               variant  = ' '
               field    = lv_cfld
-              low      = '*'
+              low      = lv_def_val
               modified = 'U'
               neu      = 'X'
               deleted  = ' '
             ) TO lt_child_1251.
           ELSE.
             IF <ls_cfv_chk>-low IS INITIAL OR <ls_cfv_chk>-low = space.
-              <ls_cfv_chk>-low      = '*'.
+              READ TABLE lt_usorg INTO ls_uo_chk WITH KEY field = lv_cfld.
+              IF sy-subrc = 0.
+                <ls_cfv_chk>-low = ls_uo_chk-varbl.
+              ELSE.
+                <ls_cfv_chk>-low = '*'.
+              ENDIF.
               <ls_cfv_chk>-modified = 'U'.
               <ls_cfv_chk>-neu      = 'X'.
             ENDIF.
@@ -2259,13 +2379,15 @@ FORM derive_specific_objects
       ENDIF.
     ENDIF.
 
-    " 5. Save Org Levels in child role if any missing org level was inherited
+    " 5. Save Org Levels in child role if any missing org level was inherited / set to '*'
     IF lv_child_org_changed = abap_true.
       CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
         EXPORTING
           activity_group = lv_child_role
         TABLES
           org_levels     = lt_child_1252.
+      CALL FUNCTION 'PRGN_UPDATE_DATABASE'.
+      COMMIT WORK AND WAIT.
     ENDIF.
 
     " 6. Save derived child role via standard PFCG FMs if changes made
@@ -2288,7 +2410,7 @@ FORM derive_specific_objects
         activity_group = lv_child_role.
 
     " 8. Regenerate profile for derived role (without full rebuild to preserve other role objects)
-    IF lv_has_changes = abap_true.
+    IF lv_has_changes = abap_true OR lv_child_org_changed = abap_true.
       CLEAR lv_gen_subrc.
       PERFORM generate_role_profile USING lv_child_role ' ' abap_true abap_false
                                     CHANGING lv_gen_subrc.
