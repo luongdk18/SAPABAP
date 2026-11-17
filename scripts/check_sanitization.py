@@ -18,6 +18,7 @@ Exit code:
 import os
 import re
 import sys
+import argparse
 import subprocess
 
 try:
@@ -163,21 +164,58 @@ def scan_xlsx(filepath, active_patterns, findings):
         print(f'[WARN] Could not inspect workbook {filepath}: {exc}')
 
 
+def scan_commit_message(message_text, active_patterns, findings):
+    """Checks a Git commit message or comment for any sensitive data."""
+    if not message_text:
+        return
+    scan_text_content('<COMMIT_MESSAGE>', message_text, active_patterns, findings)
+
+
 def main():
-    files = get_repo_files()
+    parser = argparse.ArgumentParser(
+        description='Mandatory Public Repository & Commit Message Sanitization Audit'
+    )
+    parser.add_argument(
+        '--message', '-m',
+        default=None,
+        help='Check a commit message string for sensitive data before committing',
+    )
+    parser.add_argument(
+        '--commit-msg-file',
+        default=None,
+        help='Path to Git COMMIT_EDITMSG file (for commit-msg hook)',
+    )
+    parser.add_argument(
+        '--skip-files',
+        action='store_true',
+        help='Skip repository file scan (only check commit message)',
+    )
+    args = parser.parse_args()
+
     active_patterns = PATTERNS + load_local_custom_patterns()
     findings = []
+    files = []
 
-    for f in files:
-        if f in SKIP_FILES or f.lower().endswith(SKIP_EXTS):
-            continue
-        if not os.path.exists(f):
-            continue
-        if f.lower().endswith(('.xlsx', '.xlsm')):
-            scan_xlsx(f, active_patterns, findings)
-        else:
-            with open(f, 'r', encoding='utf-8', errors='replace') as fh:
-                scan_text_content(f, fh.read(), active_patterns, findings)
+    if not args.skip_files and not args.commit_msg_file:
+        files = get_repo_files()
+        for f in files:
+            if f in SKIP_FILES or f.lower().endswith(SKIP_EXTS):
+                continue
+            if not os.path.exists(f):
+                continue
+            if f.lower().endswith(('.xlsx', '.xlsm')):
+                scan_xlsx(f, active_patterns, findings)
+            else:
+                with open(f, 'r', encoding='utf-8', errors='replace') as fh:
+                    scan_text_content(f, fh.read(), active_patterns, findings)
+
+    if args.message:
+        scan_commit_message(args.message, active_patterns, findings)
+
+    if args.commit_msg_file and os.path.exists(args.commit_msg_file):
+        with open(args.commit_msg_file, 'r', encoding='utf-8', errors='replace') as fh:
+            msg_lines = [ln for ln in fh.read().splitlines() if not ln.lstrip().startswith('#')]
+        scan_commit_message('\n'.join(msg_lines), active_patterns, findings)
 
     if findings:
         print('=' * 76)
@@ -189,7 +227,10 @@ def main():
         print('=' * 76)
         sys.exit(1)
 
-    print(f'[PASS] Public repository sanitization audit passed ({len(files)} files checked, 0 violations).')
+    if args.commit_msg_file or (args.skip_files and args.message):
+        print('[PASS] Commit message sanitization audit passed (0 violations).')
+    else:
+        print(f'[PASS] Public repository sanitization audit passed ({len(files)} files checked, 0 violations).')
     sys.exit(0)
 
 

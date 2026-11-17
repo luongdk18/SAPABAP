@@ -87,13 +87,14 @@ All business logic involving users, roles, authorizations, organizational levels
    - Use `<TRANSPORT_REQUEST>` or `$TMP`, `<SID>`, `<CLIENT>`, `https://<your-sap-domain>/reset`, and RFC 2606 example domains (`example.com`).
 4. **Credentials, Secrets & Real Exports**:
    - Never commit `.sap.env`, `.env`, `excel-working/`, API tokens, basic-auth headers, or production/UAT data exports.
-5. **Mandatory Pre-Commit Verification Gate (BẮT BUỘC KIỂM TRA TRƯỚC KHI COMMIT/PUSH)**:
-   - Before EVERY `git commit` or `git push`, AI agents and developers **MUST** execute:
+5. **Mandatory Pre-Commit Verification Gate (BẮT BUỘC KIỂM TRA CẢ CODE LẪN COMMIT COMMENT)**:
+   - Whenever ANY file, comment, doc, or script is created or modified, AI agents and developers **MUST** verify both the repository files AND the Git commit message/description before every `git commit` or `git push`:
      ```bash
-     python scripts/check_sanitization.py
+     python scripts/check_sanitization.py --message "<your_commit_message>"
      ```
      (or `npm run check:sanitization`).
-   - If **any** violation is reported, the commit/push is **strictly blocked** until 100% of findings are sanitized and the script exits with code `0`.
+   - Commit messages/comments MUST NEVER mention real customer/company names, real employee names, project abbreviations, server hostnames, SIDs, client numbers, IPs, internal domains, or Transport Request numbers.
+   - If **any** violation is reported in either files or commit comments, the commit/push is **strictly blocked** until 100% of findings are sanitized and the script exits with code `0`.
 6. **Documentation Accuracy**:
    - Documentation must always accurately reflect the current ABAP program logic. When features or parameters are removed or altered, documentation must be updated immediately.
 

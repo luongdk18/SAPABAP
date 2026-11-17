@@ -68,15 +68,15 @@ All developers and AI pair-programming agents must strictly comply with the foll
 
 ## 🔍 Pre-Commit Sanitization Checklist (MANDATORY GATE)
 
-Before EVERY `git commit` and `git push`, you **MUST** run the automated sanitization audit script and verify **0 violations**:
+Before EVERY `git commit` and `git push`, you **MUST** run the automated sanitization audit script on BOTH the repository files AND the planned commit message (`--message`), verifying **0 violations**:
 
 ```bash
-python scripts/check_sanitization.py
-# or:
+python scripts/check_sanitization.py --message "<your_commit_message>"
+# or for files only:
 npm run check:sanitization
 ```
 
-In addition, perform a manual review of `git diff --cached` against these criteria:
+In addition, perform a manual review of both `git diff --cached` **and the commit title/body comments** against these criteria:
 1. **Personal Data**: No real names, real phone numbers, real emails, real employee IDs, real SAP usernames, or local OS user paths (`C:\Users\<user>`).
 2. **Company / Organization / Project-Specific Codes**: No real company/subsidiary names, client-specific role prefixes, or real production/UAT company codes (`BUKRS`), controlling areas (`KOKRS`), or plants (`WERKS`). Use only generic IDES examples (`1000`, `2000`, `Z_FI_*`, `Z_MM_*`).
 3. **System Names / SIDs / Domains / IPs / TRs**: No real SAP System IDs, client numbers, internal hostnames, private IP addresses, corporate domains, or real Transport Request numbers.
