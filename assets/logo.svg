@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="abapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ea580c"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(32, 32) scale(1.35) translate(-32, -32)">
+    <!-- Iconic ABAP / Code Brackets < / > (Centered, No Dot) -->
+    <path d="M 23 24 L 15 32 L 23 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="35" y1="22" x2="29" y2="42" stroke="url(#abapGrad)" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M 41 24 L 49 32 L 41 40" fill="none" stroke="url(#abapGrad)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

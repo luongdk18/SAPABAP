@@ -1,0 +1,8 @@
+﻿Parameter ID,Parameter Value,Description
+CAC,1000,Controlling area
+FIK,1000,FM Area
+ERB,1000,Operating Concern
+EKR,1000,Operating Concern
+IVFIDISPLAY,X,Logistics Invoice Verification: Display Accounting Doc. No.
+PFL,000000000001,Project information system profile
+PDB,000000000001,Profile for logical database PSJ

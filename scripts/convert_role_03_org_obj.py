@@ -1,0 +1,876 @@
+#!/usr/bin/env python3
+"""
+Convert Organizational Levels, Authorization Objects, and Activity fields from Excel matrix
+into three separate flat CSV files for SAP Role upload.
+
+Features:
+- Reads consolidated role workbooks (Sheet 2: Derived role, Org, and Object data)
+  or standalone matrix files.
+- Column structure in Sheet 2:
+  * Col 1: Master Role (Leading Role)
+  * Col 2: Derived Role
+  * Col 3: Derived Role Description
+  * Col 4: Activity Field(s) (ACTVT, PS_ACTVT, or comma-separated) -> outputs <stem>_03c_Activity_converted.csv
+  * Col 5+: Org Levels ($VARBL) & Auth Objects (Object-Field)
+- Automatically classifies columns:
+  * Organizational Levels (matched against Org_Levels.csv / SAP USORG) -> outputs <stem>_03a_Org_Levels_converted.csv
+    - STRICT: Only assigned to Derived Roles (Col 2). Master Roles (Col 1) are NEVER updated with Org Levels.
+  * Authorization Objects / Fields (matched against Object_Levels.csv)  -> outputs <stem>_03b_Auth_Objects_converted.csv
+    - Assigned to BOTH Derived Roles (Col 2) AND Master Roles (Col 1).
+  * Activity Fields (Col 4)                                            -> outputs <stem>_03c_Activity_converted.csv
+    - Assigned to BOTH Derived Roles (Col 2) AND Master Roles (Col 1) for dedicated Activity upload.
+- Strictly non-overlapping: Org values are maintained in AGR_1252 via Org Level variables ($VARBL)
+  and are NEVER mixed into Object output (AGR_1251).
+- Excludes TCode check (S_TCODE-TCD) as it is maintained via the role menu.
+- Supports multi-object columns where one value applies to multiple objects (e.g. Person Responsible in C_PROJ_VNR and C_PRPS_VNR).
+
+Output formats:
+1. Org CSV (03a_Org_Levels):
+   Col 1: Role (Derived Role ONLY)
+   Col 2: Org_Level ($VARBL)
+   Col 3: value-low
+   Col 4: value-high
+2. Object CSV (03b_Auth_Objects):
+   Col 1: Role (Master Role & Derived Role)
+   Col 2: object-field (e.g., F_BKPF_BUK-BUKRS)
+   Col 3: value-low
+   Col 4: value-high
+3. Activity CSV (03c_Activity):
+   Col 1: Role (Master Role & Derived Role)
+   Col 2: Field (e.g., ACTVT, PS_ACTVT)
+   Col 3: value-low
+   Col 4: value-high
+
+Outputs:
+- <parent_dir>/converted/<stem>_03a_Org_Levels_converted.csv
+- <parent_dir>/converted/<stem>_03b_Auth_Objects_converted.csv
+- <parent_dir>/converted/<stem>_03c_Activity_converted.csv
+"""
+
+import os
+import sys
+import csv
+import glob
+import re
+import openpyxl
+
+# --- Safe Console Output on Windows ---
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+# Standard SAP Org Variable Synonyms & Common Business Terms
+COMMON_ORG_SYNONYMS = {
+    'company code': '$BUKRS',
+    'controlling area': '$KOKRS',
+    'co area': '$KOKRS',
+    'operating concern': '$ERKRS',
+    'plant': '$WERKS',
+    'plant / valuation area': '$WERKS',
+    'valuation area': '$BWKEY',
+    'profit center': '$PRCTR',
+    'profit centers': '$PRCTR',
+    'purchasing org': '$EKORG',
+    'purchasing organization': '$EKORG',
+    'purchasing group': '$EKGRP',
+    'sales org': '$VKORG',
+    'sales organization': '$VKORG',
+    'distribution channel': '$VTWEG',
+    'shipping point': '$VSTEL',
+    'division': '$SPART',
+    'business area': '$GSBER',
+    'functional area': '$FKBER',
+    'credit control area': '$KKBER',
+    'storage type': '$LGTYP',
+    'warehouse number': '$LGNUM',
+    'warehouse number / warehouse complex': '$LGNUM',
+    'sales office': '$VKBUR',
+    'sales group': '$VKGRP',
+    'work center': '$ARBPL',
+}
+
+# Common Business Field to SAP Authorization Object-Field Mapping (Comprehensive Multi-Object Expansion)
+COMMON_OBJECT_FIELDS = {
+    'segment': [
+        'F_FAGL_SEG-SEGMENT', 'F_FUD_DOCV-SEGMENT', 'F_ICA_U5-SEGMENT',
+        'F_ICA_U9-SEGMENT', 'F_ICA_U11-SEGMENT', 'E_CS_RPT-SEGMENT', 'FI_CS_RPT-SEGMENT'
+    ],
+    'business place': [
+        'F_BUK_BUPL-BUPLA', 'F_BR_BUPLA-BUPLA', 'J_1IEWTCER-BUPLA', 'J_1IEWTCHL-BUPLA',
+        'J_1IEWTMIS-BUPLA', 'J_1IEWT_AR-BUPLA', 'J_1IIRN-BUPLA', 'NFE_MBUPLA-BUPLA',
+        'NFE_UPLOAD-BUPLA', 'M_ASSETFIN-BUPLA', 'M_CIAP_RET-BUPLA', 'M_CIAP_WRI-BUPLA',
+        'M_CR_FACTR-BUPLA', 'M_CUR_ACCT-BUPLA', 'M_INV_STCK-BUPLA', 'M_PST_ACCT-BUPLA',
+        'M_REC_CANC-BUPLA', 'M_REC_DISP-BUPLA', 'M_REC_EDIT-BUPLA', 'M_REC_SUSP-BUPLA',
+        'M_REV_ACCT-BUPLA', 'LOBR_BUPLA-BUPLA', 'LOBR_NFCDS-BUPLA', 'LOBR_NFIMP-BUPLA'
+    ],
+    'cost center': [
+        'K_CSKS-KOSTL', 'K_REPO_CCA-KOSTL', 'K_CSKS_BUD-KOSTL', 'K_CSKS_PLA-KOSTL',
+        'A_S_KOSTL-KOSTL', 'K_FCO-KOSTL', 'F_FUD_DOCV-KOSTL', 'F_RELOCAT-KOSTL',
+        'F_TRAVL-KOSTL', 'F_TRAVL_TG-KOSTL', 'F_TRAVL_TP-KOSTL', 'F_TV_TGREQ-KOSTL',
+        'P_TRAVL-KOSTL', 'F_ICA_U3-KOSTL', 'P_CATSXT-KOSTL', 'P_DRL_COST-KOSTL',
+        'I_KOSTL-KOSTL', 'RSH_RES-KOSTL', 'V_PRS_LS_H-KOSTL', 'F_BR_KOSTL-KOSTL',
+        'W_COCO_PER-KOSTL', 'W_WBRK_PER-KOSTL', '/S4PPM/PR1-KOSTL', '/S4PPM/PRJ-KOSTL'
+    ],
+    'cost centers': [
+        'K_CSKS-KOSTL', 'K_REPO_CCA-KOSTL', 'K_CSKS_BUD-KOSTL', 'K_CSKS_PLA-KOSTL',
+        'A_S_KOSTL-KOSTL', 'K_FCO-KOSTL', 'F_FUD_DOCV-KOSTL', 'F_RELOCAT-KOSTL',
+        'F_TRAVL-KOSTL', 'F_TRAVL_TG-KOSTL', 'F_TRAVL_TP-KOSTL', 'F_TV_TGREQ-KOSTL',
+        'P_TRAVL-KOSTL', 'F_ICA_U3-KOSTL', 'P_CATSXT-KOSTL', 'P_DRL_COST-KOSTL',
+        'I_KOSTL-KOSTL', 'RSH_RES-KOSTL', 'V_PRS_LS_H-KOSTL', 'F_BR_KOSTL-KOSTL',
+        'W_COCO_PER-KOSTL', 'W_WBRK_PER-KOSTL', '/S4PPM/PR1-KOSTL', '/S4PPM/PRJ-KOSTL'
+    ],
+    'order type': [
+        'K_ORDER-AUFART', 'K_REPO_OPA-AUFART', 'K_AUFK_ART-AUFART', 'F_BKPF_ORD-AUFART',
+        'C_AFKO_AWA-AUFART', 'C_AFKO_AWK-AUFART', 'C_AFKO_CST-AUFART', 'C_AFKO_REL-AUFART',
+        'C_AFRU_AWK-AUFART', 'C_MPE_ASCR-AUFART', 'C_OAI_PLAN-AUFART', 'I_AER-AUFART',
+        'I_AUART-AUFART', 'I_EXCP_MO-AUFART', 'I_ILOA-AUFART', 'I_PHSE_CTL-AUFART',
+        'I_VORG_ORD-AUFART', 'P_DRL_COST-AUFART', 'DF_PMTRAIN-AUFART', 'DF_TRAIN_C-AUFART',
+        'DF_TRAIN_P-AUFART', '/CUM/CPEDT-AUFART', '/CUM/EFEDT-AUFART'
+    ],
+    'order types': [
+        'K_ORDER-AUFART', 'K_REPO_OPA-AUFART', 'K_AUFK_ART-AUFART', 'F_BKPF_ORD-AUFART',
+        'C_AFKO_AWA-AUFART', 'C_AFKO_AWK-AUFART', 'C_AFKO_CST-AUFART', 'C_AFKO_REL-AUFART',
+        'C_AFRU_AWK-AUFART', 'C_MPE_ASCR-AUFART', 'C_OAI_PLAN-AUFART', 'I_AER-AUFART',
+        'I_AUART-AUFART', 'I_EXCP_MO-AUFART', 'I_ILOA-AUFART', 'I_PHSE_CTL-AUFART',
+        'I_VORG_ORD-AUFART', 'P_DRL_COST-AUFART', 'DF_PMTRAIN-AUFART', 'DF_TRAIN_C-AUFART',
+        'DF_TRAIN_P-AUFART', '/CUM/CPEDT-AUFART', '/CUM/EFEDT-AUFART'
+    ],
+    'asset class': [
+        'A_S_ANLKL-ANLKL', 'A_B_ANLKL-ANLKL', 'A_M_ANLKL-ANLKL', 'A_B_BWART-ANLKL', 'A_S_MD-ANLKL'
+    ],
+    'credit segment': [
+        'F_UKM_SGMT-UKM_SGMNT', 'F_UKM_CLRA-UKM_SGMNT', 'F_UKM_DCDA-UKM_SGMNT', 'F_UKM_SUP-UKM_SGMNT'
+    ],
+    'costing variant': [
+        'K_KEKO-KLVAR'
+    ],
+    'person responsible': [
+        'C_PROJ_VNR-PS_VERNR', 'C_PRPS_VNR-PS_VERNR'
+    ],
+    'project type': [
+        'C_PRPS_ART-PS_PRART', '/S4PPM/PR1-PS_PRART'
+    ],
+    'release group': [
+        'M_EINK_FRG-FRGGR'
+    ],
+    'release code': [
+        'M_EINK_FRG-FRGCO', 'M_BANF_FRG-FRGCD'
+    ],
+    'storage location': [
+        'M_MSEG_LGO-LGORT', 'M_BEST_LGO-LGORT', 'M_BANF_LGO-LGORT', 'M_ANFR_LGO-LGORT',
+        'M_ANGB_LGO-LGORT', 'M_RAHM_LGO-LGORT', 'M_LPET_LGO-LGORT', 'M_QTN_LGO-LGORT',
+        'M_RFQ_LGO-LGORT', 'C_BACKFL-LGORT', '/ACCGO/NET-LGORT', 'O_OIJ_PROL-LGORT',
+        'O_SILO-LGORT', 'O_SILO1-LGORT'
+    ],
+}
+
+
+def load_org_levels_reference(org_levels_path):
+    """Loads Org_Levels.csv mapping dictionary."""
+    if not os.path.exists(org_levels_path):
+        return {}
+
+    mapping = {}
+    try:
+        with open(org_levels_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                varbl = row.get('Org Level Variable', '').strip().upper()
+                desc = row.get('Org Level Description', '').strip().lower()
+                fld = row.get('Field Name', '').strip().upper()
+
+                if desc and varbl:
+                    mapping[desc] = varbl
+                if fld and varbl:
+                    mapping[fld] = varbl
+                    mapping[fld.lstrip('/')] = varbl
+                if varbl:
+                    mapping[varbl] = varbl
+                    mapping[varbl.lstrip('$')] = varbl
+    except Exception as e:
+        print(f"[WARN] Could not load Org_Levels.csv: {e}")
+
+    return mapping
+
+
+def load_object_levels_reference(obj_levels_path):
+    """Loads Object_Levels.csv into lookup structures."""
+    if not os.path.exists(obj_levels_path):
+        return {}, {}, {}, {}
+
+    pair_dict = {}
+    object_fields_map = {}
+    field_pairs_map = {}
+    desc_dict = {}
+
+    try:
+        with open(obj_levels_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                pair = row.get('Object-Field', '').strip().upper()
+                obj = row.get('Object', '').strip().upper()
+                field = row.get('Field', '').strip().upper()
+                fdesc = row.get('Field Description', '').strip()
+                odesc = row.get('Object Description', '').strip()
+
+                if pair:
+                    pair_dict[pair] = (obj, field, fdesc, odesc)
+
+                if obj:
+                    if obj not in object_fields_map:
+                        object_fields_map[obj] = []
+                    object_fields_map[obj].append((field, fdesc, odesc, pair))
+
+                if field and pair:
+                    if field not in field_pairs_map:
+                        field_pairs_map[field] = []
+                    if pair not in field_pairs_map[field]:
+                        field_pairs_map[field].append(pair)
+
+                if fdesc and pair:
+                    k_desc = fdesc.lower()
+                    if k_desc not in desc_dict:
+                        desc_dict[k_desc] = []
+                    if pair not in desc_dict[k_desc]:
+                        desc_dict[k_desc].append(pair)
+    except Exception as e:
+        print(f"[WARN] Could not load Object_Levels.csv: {e}")
+
+    return pair_dict, object_fields_map, field_pairs_map, desc_dict
+
+
+def classify_column(header_text, org_ref_map, obj_pairs, obj_fields_map, field_pairs_map, obj_desc_dict):
+    """
+    Classifies an Excel column header as either:
+      ('ORG', [varbl])
+      ('OBJECT', [object_field_1, object_field_2, ...])
+      ('SKIP_TCODE', 'S_TCODE-TCD')
+      or None if unclassified.
+
+    Guarantees strict non-overlapping classification:
+    Org levels are NEVER routed to Object CSV.
+    """
+    raw = str(header_text or '').strip()
+    if not raw:
+        return None
+
+    clean = raw.replace('\n', ' ').strip()
+    clean_lower = clean.lower()
+
+    # =========================================================================
+    # STEP 0: EXCLUDE TCODES (S_TCODE-TCD)
+    # =========================================================================
+    if any(k in clean_lower for k in ('s_tcode', 's_tcode-tcd', 'transaction code check')):
+        return ('SKIP_TCODE', 'S_TCODE-TCD')
+
+    # =========================================================================
+    # STEP 1: CHECK IF ORGANIZATIONAL LEVEL
+    # =========================================================================
+    # 1.1 Direct parenthesized variable in header, e.g., ($BUKRS), ($CEERKRS), ($KOKRS)
+    m_var = re.search(r'\(\$([A-Za-z0-9_]+)\)', raw)
+    if m_var:
+        return ('ORG', [f"${m_var.group(1).upper()}"])
+
+    # 1.2 Standalone $VARBL in header
+    m_dollar = re.search(r'\$([A-Za-z0-9_]+)', raw)
+    if m_dollar:
+        cand_var = f"${m_dollar.group(1).upper()}"
+        if cand_var in org_ref_map.values() or cand_var in COMMON_ORG_SYNONYMS.values():
+            return ('ORG', [cand_var])
+
+    # 1.3 Check parenthesized field name if it is an Org Level (e.g. (BUKRS), (WERKS), (KOKRS))
+    m_paren = re.search(r'\((.*?)\)', clean)
+    if m_paren:
+        inside = m_paren.group(1).strip()
+        tokens = [t.strip().upper() for t in inside.split(',') if t.strip()]
+        for t in tokens:
+            t_clean = t.lstrip('$')
+            if t in org_ref_map:
+                return ('ORG', [org_ref_map[t]])
+            if t_clean in org_ref_map:
+                return ('ORG', [org_ref_map[t_clean]])
+
+    # 1.4 Check common business synonyms
+    stripped_paren = re.sub(r'\(.*?\)', '', clean).strip().lower()
+    if stripped_paren in COMMON_ORG_SYNONYMS:
+        return ('ORG', [COMMON_ORG_SYNONYMS[stripped_paren]])
+    if clean_lower in COMMON_ORG_SYNONYMS:
+        return ('ORG', [COMMON_ORG_SYNONYMS[clean_lower]])
+
+    # 1.5 Check Org_Levels.csv reference
+    if stripped_paren in org_ref_map:
+        return ('ORG', [org_ref_map[stripped_paren]])
+    if clean_lower in org_ref_map:
+        return ('ORG', [org_ref_map[clean_lower]])
+
+    # 1.6 Check if header is an explicit OBJECT-FIELD whose field is an Org Level (e.g. F_BKPF_BUK-BUKRS)
+    m_pair_std = re.search(r'([A-Za-z0-9_]{3,10})[-:.]([A-Za-z0-9_]{2,10})', raw)
+    if m_pair_std:
+        fld_part = m_pair_std.group(2).upper()
+        if fld_part in org_ref_map:
+            return ('ORG', [org_ref_map[fld_part]])
+
+    # =========================================================================
+    # STEP 2: CHECK IF AUTHORIZATION OBJECT / FIELD (Non-Org)
+    # =========================================================================
+    # 2.1 Check common business object fields mapping first (e.g. Storage Location, Cost Center, Order Type...)
+    if stripped_paren in COMMON_OBJECT_FIELDS:
+        return ('OBJECT', COMMON_OBJECT_FIELDS[stripped_paren])
+    if clean_lower in COMMON_OBJECT_FIELDS:
+        return ('OBJECT', COMMON_OBJECT_FIELDS[clean_lower])
+
+    # 2.2 Check parenthesized content: could be single or comma-separated objects/fields
+    if m_paren:
+        inside = m_paren.group(1).strip()
+        tokens = [t.strip().upper() for t in inside.split(',') if t.strip()]
+        matched_pairs = []
+
+        for t in tokens:
+            # Strip 'FIELD ' or 'FLD ' prefix if present, e.g. "FIELD PS_ACTVT" -> "PS_ACTVT"
+            t_clean_fld = re.sub(r'^(FIELD|FLD)\s+', '', t)
+
+            # Token is an explicit OBJECT-FIELD (e.g. F_BKPF_BUK-BUKRS or F_BKPF_BUK:BUKRS)
+            if '-' in t_clean_fld or ':' in t_clean_fld or '.' in t_clean_fld:
+                norm_pair = re.sub(r'[:.]', '-', t_clean_fld)
+                fld_cand = norm_pair.split('-')[1] if '-' in norm_pair else ''
+                # Protect: If field belongs to Org Levels, redirect to Org Level
+                if fld_cand in org_ref_map:
+                    return ('ORG', [org_ref_map[fld_cand]])
+                matched_pairs.append(norm_pair)
+                continue
+
+            # Token is an OBJECT name (e.g. K_KEKO, C_PROJ_VNR, C_PRPS_VNR)
+            if t_clean_fld in obj_fields_map:
+                fields = obj_fields_map[t_clean_fld]
+                chosen = None
+                # First check if field description or field name matches header
+                for fld, fdesc, odesc, p in fields:
+                    if fdesc.lower() in clean_lower or fld.lower() in clean_lower:
+                        chosen = p
+                        break
+                if not chosen:
+                    # If header mentions activity/actvt, pick ACTVT field
+                    if 'activity' in clean_lower or 'actvt' in clean_lower:
+                        actvt_flds = [p for f, d, o, p in fields if 'actvt' in f.lower()]
+                        chosen = actvt_flds[0] if actvt_flds else fields[0][3]
+                    else:
+                        # Pick non-ACTVT field
+                        non_actvt = [p for f, d, o, p in fields if 'actvt' not in f.lower()]
+                        chosen = non_actvt[0] if non_actvt else fields[0][3]
+                if chosen and chosen not in matched_pairs:
+                    matched_pairs.append(chosen)
+
+            # Token is a FIELD name (e.g. FRGGR, FRGCO, LGORT, KOSTL, AUFART, PS_ACTVT)
+            # Match ALL objects in SAP containing this field!
+            if t_clean_fld in field_pairs_map:
+                for p in field_pairs_map[t_clean_fld]:
+                    if p not in matched_pairs:
+                        matched_pairs.append(p)
+
+        if matched_pairs:
+            return ('OBJECT', matched_pairs)
+
+    # 2.3 Check standalone OBJECT-FIELD in header
+    if m_pair_std:
+        fld_part = m_pair_std.group(2).upper()
+        if fld_part in org_ref_map:
+            return ('ORG', [org_ref_map[fld_part]])
+        pair = f"{m_pair_std.group(1).upper()}-{m_pair_std.group(2).upper()}"
+        if pair in obj_pairs:
+            return ('OBJECT', [pair])
+
+    # 2.4 Check Object_Levels.csv field description dictionary (returns all matching pairs)
+    if stripped_paren in obj_desc_dict:
+        return ('OBJECT', obj_desc_dict[stripped_paren])
+    if clean_lower in obj_desc_dict:
+        return ('OBJECT', obj_desc_dict[clean_lower])
+
+    return None
+
+
+def _format_cell_token(v, field_name=None):
+    """
+    Formats an individual token: normalizes space quotes and applies SAP domain conversion exit rules:
+    - Space in quotes: ' ' or " " -> "' '"
+    - PS_VERNR / Person Responsible: NUMC 8 -> zfill(8) (e.g. 30 -> 00000030)
+    - PRCTR / Profit Center ($PRCTR): CHAR 10 with ALPHA conversion exit -> zfill(10) (e.g. 10000100 -> 0010000100)
+    - KOSTL / Cost Center: CHAR 10 with ALPHA conversion exit -> zfill(10)
+    """
+    v = str(v).strip()
+    # Normalize space quotes: if user has ' ' or " " or '  '
+    if re.match(r"^['\"][\s]*['\"]$", v):
+        return "' '"
+    
+    fn_upper = str(field_name or '').upper()
+
+    # Check if PS_VERNR padding is needed (NUMC 8)
+    if any(k in fn_upper for k in ('VERNR', 'PERSON RESPONSIBLE')):
+        if v.isdigit() and len(v) < 8:
+            return v.zfill(8)
+
+    # Check if PRCTR / Profit Center padding is needed (CHAR 10, Conversion Exit ALPHA)
+    if any(k in fn_upper for k in ('PRCTR', 'PROFIT CENTER', '$PRCTR')):
+        if v.isdigit() and len(v) < 10:
+            return v.zfill(10)
+
+    # Check if KOSTL / Cost Center padding is needed (CHAR 10, Conversion Exit ALPHA)
+    if any(k in fn_upper for k in ('KOSTL', 'COST CENTER', '$KOSTL')):
+        if v.isdigit() and len(v) < 10:
+            return v.zfill(10)
+
+    return v
+
+
+def parse_low_high_values(raw_val, field_name=None):
+    """
+    Parses cell content into pairs of (value-low, value-high).
+    Preserves leading zeros and guarantees data integrity.
+
+    Rules:
+    - Preserves exact ' ' if string is literally ' ' or " ' ".
+    - Semicolons (;), commas (,), and newlines (\n) separate distinct values.
+    - Ranges are ONLY denoted by ' - ' or ':' or an explicit numeric range '1000-2000'.
+    - Special SAP value `' '` (a space in quotes) is preserved as ("' '", "").
+    - If field_name is PS_VERNR (or Person Responsible) and value is numeric with length < 8,
+      it is zero-padded to 8 digits (e.g. 30 -> 00000030, 80 -> 00000080).
+    """
+    if raw_val is None:
+        return []
+    s = str(raw_val).strip()
+    if not s or s.lower() in ('none', 'n/a', '-'):
+        return []
+
+    # Normalize space quotes directly if the whole cell is ' '
+    if re.match(r"^['\"][\s]*['\"]$", s):
+        return [("' '", '')]
+
+    # Replace newlines with semicolon
+    normalized = s.replace('\r\n', ';').replace('\n', ';').replace('\r', ';')
+
+    # Split by semicolon first
+    raw_tokens = [t.strip() for t in normalized.split(';') if t.strip() and t.strip().lower() not in ('none', 'n/a', '-')]
+    if not raw_tokens:
+        return []
+
+    # For each token, check if it contains comma-separated values (e.g. '03, F4')
+    # BUT do not split if within quotes
+    split_tokens = []
+    for tok in raw_tokens:
+        if ',' in tok and not (tok.startswith("'") and tok.endswith("'")):
+            comma_parts = [p.strip() for p in tok.split(',') if p.strip()]
+            split_tokens.extend(comma_parts)
+        else:
+            split_tokens.append(tok)
+
+    results = []
+    for t in split_tokens:
+        # Check range with ' - '
+        if ' - ' in t:
+            parts = [p.strip() for p in t.split(' - ') if p.strip()]
+            if len(parts) == 2:
+                v1 = _format_cell_token(parts[0], field_name)
+                v2 = _format_cell_token(parts[1], field_name)
+                results.append((v1, v2))
+                continue
+        # Check range with ':'
+        elif ':' in t:
+            parts = [p.strip() for p in t.split(':') if p.strip()]
+            if len(parts) == 2:
+                v1 = _format_cell_token(parts[0], field_name)
+                v2 = _format_cell_token(parts[1], field_name)
+                results.append((v1, v2))
+                continue
+
+        # Check numeric hyphen range without spaces: e.g. 1000-2000
+        m_rng = re.match(r'^([0-9]+)\s*-\s*([0-9]+)$', t)
+        if m_rng:
+            v1 = _format_cell_token(m_rng.group(1), field_name)
+            v2 = _format_cell_token(m_rng.group(2), field_name)
+            results.append((v1, v2))
+            continue
+
+        # Single value
+        v = _format_cell_token(t, field_name)
+        results.append((v, ''))
+
+    return results
+
+
+def convert_role_03_org_obj(input_path, output_dir=None):
+    """
+    Reads an Excel file and converts Organizational levels, Authorization Objects, and Activity fields
+    into three separate flat CSV files:
+      - <stem>_03a_Org_Levels_converted.csv (Role, Org_Level, value-low, value-high) -> for AGR_1252 (Derived Roles ONLY)
+      - <stem>_03b_Auth_Objects_converted.csv (Role, object-field, value-low, value-high) -> for AGR_1251 (Master & Derived Roles)
+      - <stem>_03c_Activity_converted.csv (Role, Field, value-low, value-high) -> Dedicated Activity upload (Master & Derived Roles)
+    """
+    if not os.path.splitext(input_path)[1]:
+        input_path = input_path + ".xlsx"
+
+    if not os.path.exists(input_path):
+        print(f"[ERROR] Input file not found: {input_path}")
+        return False
+
+    base_name = os.path.basename(input_path)
+    stem, _ = os.path.splitext(base_name)
+
+    # Resolve output directory
+    if output_dir is None:
+        dir_name = os.path.dirname(input_path) or "."
+        output_dir = os.path.join(dir_name, "converted")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Determine output file stems
+    clean_stem = re.sub(r'_(03[abcC]?_)?(org|object|obj|activity|actvt).*$', '', stem, flags=re.IGNORECASE)
+    if not clean_stem.endswith('_Role') and stem.endswith('_Role'):
+        clean_stem = stem
+    elif not clean_stem:
+        clean_stem = stem
+
+    out_org_path = os.path.join(output_dir, f"{clean_stem}_03a_Org_Levels_converted.csv")
+    out_obj_path = os.path.join(output_dir, f"{clean_stem}_03b_Auth_Objects_converted.csv")
+    out_act_path = os.path.join(output_dir, f"{clean_stem}_03c_Activity_converted.csv")
+
+    # Load Reference Dictionaries
+    org_ref_path = os.path.join("excel-templates", "Org_Levels.csv")
+    obj_ref_path = os.path.join("excel-templates", "Object_Levels.csv")
+
+    org_ref_map = load_org_levels_reference(org_ref_path)
+    obj_pairs, obj_fields_map, field_pairs_map, obj_desc_dict = load_object_levels_reference(obj_ref_path)
+
+    # Load Workbook
+    try:
+        wb_in = openpyxl.load_workbook(input_path, data_only=True)
+    except Exception as e:
+        print(f"[ERROR] Could not read Excel workbook '{input_path}': {e}")
+        return False
+
+    # Sheet Selection:
+    # Rule: For consolidated role files (e.g. FICO_Role.xlsx), Sheet 2 (Index 1) is Derived + Org + Object.
+    # Otherwise, prefer sheet containing 'derive', 'org', 'object', or active/Sheet 1.
+    is_consolidated = not any(k in stem.lower() for k in ('_01_', '_02_', '_03_', '_04_', '_master', '_derive', '_org', '_object', '_composite'))
+
+    target_sheet = None
+    if is_consolidated and len(wb_in.sheetnames) >= 2:
+        target_sheet = wb_in.worksheets[1]
+        print(f"[INFO] Consolidated file: Using Sheet 2 (Index 1): '{target_sheet.title}' for Derived Role & Org/Object data.")
+    else:
+        for name in wb_in.sheetnames:
+            low = name.strip().lower()
+            if any(k in low for k in ('org', 'object', 'derive')):
+                target_sheet = wb_in[name]
+                break
+        if target_sheet is None:
+            target_sheet = wb_in.worksheets[0] if wb_in.worksheets else wb_in.active
+        print(f"[INFO] Processing sheet: '{target_sheet.title}'")
+
+    ws = target_sheet
+
+    # Detect Columns:
+    # Sheet 2 Layout:
+    # Col 1 = Master Role
+    # Col 2 = Derived Role
+    # Col 3 = Derived Role Description
+    # Col 4 = Specific Activity field (ACTVT, PS_ACTVT, or comma-separated) if present
+    # Col 5+ = Org Levels & Auth Objects (or Col 4+ if Col 4 is not Activity)
+    header_row = 1
+    col_master = None
+    col_derived = None
+    col_actvt = None
+    act_fields = []
+    data_start_col = 4
+
+    sample_col1 = [str(ws.cell(r, 1).value or '').strip() for r in range(2, min(ws.max_row + 1, 10))]
+    sample_col2 = [str(ws.cell(r, 2).value or '').strip() for r in range(2, min(ws.max_row + 1, 10))]
+
+    if any(s.startswith(('DR', 'Z_')) for s in sample_col2):
+        col_master = 1
+        col_derived = 2
+    elif any(s.startswith(('DR', 'Z_')) for s in sample_col1):
+        col_master = None
+        col_derived = 1
+        data_start_col = 2
+    else:
+        h1 = str(ws.cell(1, 1).value or '').lower()
+        h2 = str(ws.cell(1, 2).value or '').lower()
+        if 'derive' in h2 or 'role' in h2:
+            col_master = 1
+            col_derived = 2
+        else:
+            col_master = None
+            col_derived = 1
+            data_start_col = 2
+
+    if col_derived == 2:
+        # Check if Col 4 is Activity field (e.g. ACTVT, PS_ACTVT, or comma-separated)
+        h4 = str(ws.cell(header_row, 4).value or '').strip()
+        if re.search(r'\b(ACTVT|PS_ACTVT)\b', h4, re.IGNORECASE):
+            col_actvt = 4
+            clean_h4 = h4.replace('\n', ' ').strip()
+            for tok in re.split(r'[,;]+', clean_h4):
+                tok_clean = tok.strip().upper()
+                m_act = re.search(r'(PS_ACTVT|ACTVT)', tok_clean)
+                if m_act:
+                    field_name = m_act.group(1)
+                    if field_name not in act_fields:
+                        act_fields.append(field_name)
+            data_start_col = 5
+            print(f"[INFO] Col 4 is Activity column with field(s): {', '.join(act_fields)}")
+        else:
+            data_start_col = 4
+
+    print(f"[INFO] Master col: {col_master}, Derived col: {col_derived}, Activity col: {col_actvt} ({act_fields}), Org/Obj data start: Col {data_start_col}")
+
+    # Classify Columns
+    classified_cols = []
+    org_col_count = 0
+    obj_col_count = 0
+
+    for c in range(data_start_col, ws.max_column + 1):
+        h_val = ws.cell(header_row, c).value
+        if h_val is None:
+            continue
+        h_text = str(h_val).strip()
+        if not h_text:
+            continue
+
+        kind_info = classify_column(h_text, org_ref_map, obj_pairs, obj_fields_map, field_pairs_map, obj_desc_dict)
+        if kind_info:
+            kind, idents = kind_info
+            if kind == 'SKIP_TCODE':
+                print(f"[INFO] Col {c:2d}: '{h_text}' (S_TCODE-TCD) -> Skipped from authorization convert (managed via Menu).")
+                continue
+
+            classified_cols.append((c, kind, idents, h_text))
+            if kind == 'ORG':
+                org_col_count += len(idents)
+            elif kind == 'OBJECT':
+                obj_col_count += len(idents)
+        else:
+            print(f"[WARN] Col {c:2d} '{h_text}' could not be classified as Org Level or Authorization Object. Skipped.")
+
+    print(f"[INFO] Classification summary: {org_col_count} Org Level mappings, {obj_col_count} Auth Object/Field mappings.")
+    for c, kind, idents, h_text in classified_cols:
+        clean_name = h_text.replace('\n', ' ')
+        ident_str = ', '.join(idents)
+        print(f"  - Col {c:2d}: [{kind:6s}] {clean_name:35s} -> {ident_str}")
+
+    # Process Data Rows
+    org_rows = []
+    org_seen = set()
+
+    obj_rows = []
+    obj_seen = set()
+
+    act_rows = []
+    act_seen = set()
+
+    current_master = None
+    current_derived = None
+
+    for r in range(header_row + 1, ws.max_row + 1):
+        # Master Role (Col 1)
+        if col_master is not None:
+            m_val = ws.cell(r, col_master).value
+            if m_val is not None and str(m_val).strip() and str(m_val).strip().lower() not in ('none', 'master', 'leading', 'leading role', 'master role'):
+                current_master = str(m_val).strip()
+
+        # Derived Role (Col 2)
+        if col_derived is not None:
+            d_val = ws.cell(r, col_derived).value
+            if d_val is not None and str(d_val).strip() and str(d_val).strip().lower() not in ('none', 'role', 'derived role', 'role name'):
+                current_derived = str(d_val).strip()
+
+        if not current_derived and not current_master:
+            continue
+
+        # Check if row has any non-empty data in Activity or classified columns
+        has_act_data = False
+        if col_actvt:
+            v_act = ws.cell(r, col_actvt).value
+            if v_act is not None and str(v_act).strip() not in ('', 'None', 'n/a', '-'):
+                has_act_data = True
+
+        has_class_data = any(
+            ws.cell(r, c).value is not None and str(ws.cell(r, c).value).strip() not in ('', 'None', 'n/a', '-')
+            for c, _, _, _ in classified_cols
+        )
+
+        if not (has_act_data or has_class_data):
+            continue
+
+        # -------------------------------------------------------------
+        # 1. Process Col 4: Activity Field (e.g. ACTVT, PS_ACTVT)
+        # -------------------------------------------------------------
+        if col_actvt and act_fields:
+            val_act_cell = ws.cell(r, col_actvt).value
+            if val_act_cell is not None:
+                if isinstance(val_act_cell, float) and val_act_cell.is_integer():
+                    raw_act_val = str(int(val_act_cell))
+                else:
+                    raw_act_val = str(val_act_cell).strip()
+
+                if raw_act_val and raw_act_val.lower() not in ('none', 'n/a', '-'):
+                    for fld in act_fields:
+                        act_pairs = parse_low_high_values(raw_act_val, field_name=fld)
+                        for v_low, v_high in act_pairs:
+                            # Add for Derived Role
+                            if current_derived:
+                                tup_der = (current_derived, fld, v_low, v_high)
+                                if tup_der not in act_seen:
+                                    act_seen.add(tup_der)
+                                    act_rows.append([current_derived, fld, v_low, v_high])
+                            # Add for Master Role
+                            if current_master:
+                                tup_mst = (current_master, fld, v_low, v_high)
+                                if tup_mst not in act_seen:
+                                    act_seen.add(tup_mst)
+                                    act_rows.append([current_master, fld, v_low, v_high])
+
+        # -------------------------------------------------------------
+        # 2. Process Classified Columns (Org Levels & Auth Objects)
+        # -------------------------------------------------------------
+        for c, kind, idents, h_text in classified_cols:
+            val_cell = ws.cell(r, c).value
+            if val_cell is None:
+                continue
+
+            if isinstance(val_cell, float) and val_cell.is_integer():
+                raw_val = str(int(val_cell))
+            else:
+                raw_val = str(val_cell).strip()
+
+            if not raw_val or raw_val.lower() in ('none', 'n/a', '-'):
+                continue
+
+            # Multi-value & Range Parsing:
+            # Passes combined field context (header text + SAP idents) for domain conversion padding (ALPHA, NUMC)
+            full_context = f"{h_text} {' '.join(idents)}"
+            pairs = parse_low_high_values(raw_val, field_name=full_context)
+            if not pairs:
+                continue
+
+            if kind == 'ORG':
+                # Organizational Levels: ONLY assigned to Derived Role (STRICT: NEVER to Master Role)
+                if current_derived:
+                    for varbl in idents:
+                        for v_low, v_high in pairs:
+                            tup_org = (current_derived, varbl, v_low, v_high)
+                            if tup_org not in org_seen:
+                                org_seen.add(tup_org)
+                                org_rows.append([current_derived, varbl, v_low, v_high])
+
+            elif kind == 'OBJECT':
+                # Authorization Objects: Assigned to Derived Role AND Master Role (User requirement: Col 1 included)
+                for obj_field in idents:
+                    for v_low, v_high in pairs:
+                        if current_derived:
+                            tup_der = (current_derived, obj_field, v_low, v_high)
+                            if tup_der not in obj_seen:
+                                obj_seen.add(tup_der)
+                                obj_rows.append([current_derived, obj_field, v_low, v_high])
+                        if current_master:
+                            tup_mst = (current_master, obj_field, v_low, v_high)
+                            if tup_mst not in obj_seen:
+                                obj_seen.add(tup_mst)
+                                obj_rows.append([current_master, obj_field, v_low, v_high])
+
+    # 1. Write Org CSV (AGR_1252)
+    org_roles = {row[0] for row in org_rows}
+    try:
+        with open(out_org_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Role", "Org_Level", "value-low", "value-high"])
+            writer.writerows(org_rows)
+        print(f"[OK] Wrote Org Levels CSV   : {out_org_path} ({len(org_rows)} rows across {len(org_roles)} roles)")
+    except Exception as e:
+        print(f"[ERROR] Could not write Org Levels CSV '{out_org_path}': {e}")
+        return False
+
+    # 2. Write Object CSV (AGR_1251)
+    obj_roles = {row[0] for row in obj_rows}
+    try:
+        with open(out_obj_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Role", "object-field", "value-low", "value-high"])
+            writer.writerows(obj_rows)
+        print(f"[OK] Wrote Auth Objects CSV: {out_obj_path} ({len(obj_rows)} rows across {len(obj_roles)} roles)")
+    except Exception as e:
+        print(f"[ERROR] Could not write Auth Objects CSV '{out_obj_path}': {e}")
+        return False
+
+    # 3. Write Activity CSV (Dedicated Upload File)
+    act_roles = {row[0] for row in act_rows}
+    try:
+        with open(out_act_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Role", "Field", "value-low", "value-high"])
+            writer.writerows(act_rows)
+        print(f"[OK] Wrote Activity CSV     : {out_act_path} ({len(act_rows)} rows across {len(act_roles)} roles)")
+    except Exception as e:
+        print(f"[ERROR] Could not write Activity CSV '{out_act_path}': {e}")
+        return False
+
+    return True
+
+
+# --- CLI Entrypoint ---
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+        print("Usage: python scripts/convert_role_03_org_obj.py [path_to_excel_file]")
+        print("Example: python scripts/convert_role_03_org_obj.py excel-working/FICO_Role.xlsx")
+        sys.exit(0)
+
+    target_files = []
+
+    if len(sys.argv) > 1:
+        for arg in sys.argv[1:]:
+            matches = [m for m in glob.glob(arg) if not os.path.basename(m).startswith('~$')]
+            if matches:
+                target_files.extend(matches)
+            elif not os.path.basename(arg).startswith('~$'):
+                target_files.append(arg)
+    else:
+        # Default lookup in excel-working: prioritize consolidated *Role.xlsx, include remaining legacy
+        working_consolidated = [f for f in glob.glob(os.path.join("excel-working", "*Role*.xlsx"))
+                                if not os.path.basename(f).startswith('~$')
+                                and not any(k in os.path.basename(f) for k in ('_01_', '_02_', '_03_', '_04_', '_converted'))]
+        working_legacy = [f for f in glob.glob(os.path.join("excel-working", "*_03_*.xlsx"))
+                          if not os.path.basename(f).startswith('~$')]
+
+        consolidated_stems = {re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() for f in working_consolidated}
+        filtered_legacy = [f for f in working_legacy if re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() not in consolidated_stems]
+
+        unique_working = sorted(working_consolidated + filtered_legacy)
+
+        if unique_working:
+            target_files = unique_working
+        else:
+            tpl_consolidated = [f for f in glob.glob(os.path.join("excel-templates", "*Role*.xlsx"))
+                                if not os.path.basename(f).startswith('~$')
+                                and not any(k in os.path.basename(f) for k in ('_01_', '_02_', '_03_', '_04_', '_converted'))]
+            tpl_legacy = [f for f in glob.glob(os.path.join("excel-templates", "*_03_*.xlsx"))
+                          if not os.path.basename(f).startswith('~$')]
+            tpl_stems = {re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() for f in tpl_consolidated}
+            filtered_tpl = [f for f in tpl_legacy if re.sub(r'_?Role.*$', '', os.path.basename(f), flags=re.I).upper() not in tpl_stems]
+
+            unique_templates = sorted(tpl_consolidated + filtered_tpl)
+            if unique_templates:
+                target_files = unique_templates
+            else:
+                target_files = ["Template_Role.xlsx"]
+
+    if not target_files:
+        print("[ERROR] No input file provided or found in default locations.")
+        print("Usage: python scripts/convert_role_03_org_obj.py <path_to_excel_file>")
+        sys.exit(1)
+
+    success = True
+    for tf in target_files:
+        print(f"\n==================================================")
+        print(f"[RUNNING] Converting Org & Object Levels: {tf}")
+        print(f"==================================================")
+        if not convert_role_03_org_obj(tf):
+            success = False
+
+    if not success:
+        sys.exit(1)

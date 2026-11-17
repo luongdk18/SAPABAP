@@ -1,0 +1,44 @@
+# Environment & local sanitization blocklist files (NEVER commit credentials or proprietary keywords!)
+.sap.env
+.env
+.env.*
+!.env.example
+!.sap.env.example
+.sap.blocklist
+
+# Confidential / Real Data directories (NEVER commit!)
+excel-working/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Logs
+*.log
+logs/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary & backup files
+*.bak
+*.tmp
+*.backup
+*~
+~$*
