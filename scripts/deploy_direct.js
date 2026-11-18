@@ -11,6 +11,8 @@ if (!fs.existsSync(filePath)) {
   process.exit(1);
 }
 
+require('./env_guard').assertSafeEnvFile(envPath);
+
 const sourceCode = fs.readFileSync(filePath, 'utf-8');
 const mcpBin = path.join(process.env.APPDATA, 'npm', 'node_modules', '@mcp-abap-adt', 'core', 'bin', 'mcp-abap-adt.js');
 
@@ -26,14 +28,15 @@ function parseEnv(p) {
 }
 const envConfig = parseEnv(envPath);
 const transportRequest = envConfig.SAP_TRANSPORT_REQUEST || '';
+const connectionType = envConfig.SAP_CONNECTION_TYPE || 'http';
 
 console.log(`📦 Deploying ${programName} (${sourceCode.length} bytes, TR: ${transportRequest})...`);
 
 const child = spawn(process.execPath, [
   '--dns-result-order=ipv4first',
   mcpBin,
-  '--transport=stdio',
-  `--env-path=${envPath}`
+  `--env-path=${envPath}`,
+  `--connection-type=${connectionType}`
 ], {
   stdio: ['pipe', 'pipe', 'pipe']
 });

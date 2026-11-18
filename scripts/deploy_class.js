@@ -24,6 +24,8 @@ if (!fs.existsSync(envPath)) {
   process.exit(1);
 }
 
+require('./env_guard').assertSafeEnvFile(envPath);
+
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
   const content = fs.readFileSync(filePath, 'utf8');
@@ -47,6 +49,7 @@ function parseEnvFile(filePath) {
 const fileEnv = parseEnvFile(envPath);
 const targetPackage = process.env.SAP_PACKAGE || fileEnv.SAP_PACKAGE || '$TMP';
 const transportRequest = process.env.SAP_TRANSPORT_REQUEST || fileEnv.SAP_TRANSPORT_REQUEST || '';
+const connectionType = process.env.SAP_CONNECTION_TYPE || fileEnv.SAP_CONNECTION_TYPE || 'http';
 
 const inputTarget = process.argv[2] || 'ZCL_SSPR_HTTP_HANDLER';
 
@@ -76,8 +79,8 @@ console.log(`📦 Target Package: ${targetPackage} | Transport: ${transportReque
 const isWin = process.platform === 'win32';
 const cmd = isWin ? 'cmd.exe' : 'mcp-abap-adt';
 const args = isWin 
-  ? ['/c', 'mcp-abap-adt', '--transport=stdio', `--env-path=${envPath}`]
-  : ['--transport=stdio', `--env-path=${envPath}`];
+  ? ['/c', 'mcp-abap-adt', `--env-path=${envPath}`, `--connection-type=${connectionType}`]
+  : [`--env-path=${envPath}`, `--connection-type=${connectionType}`];
 
 console.log(`🔌 Starting SAP ADT MCP Server with environment: ${envPath}`);
 const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });

@@ -2124,6 +2124,13 @@ FORM generate_role_profile USING pv_role           TYPE agr_name
     ENDIF.
   ENDIF.
 
+  " Release lock BEFORE SUPRN_DARK_MANIPULATE_PROFILE so profile generation manages its own lock lifecycle
+  IF pv_caller_locked = abap_false.
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+      EXPORTING
+        activity_group = pv_role.
+  ENDIF.
+
   DATA(lv_fill_org_star) = COND char01( WHEN lv_parent IS INITIAL THEN ' ' ELSE 'X' ).
 
   CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
@@ -2162,13 +2169,11 @@ FORM generate_role_profile USING pv_role           TYPE agr_name
     cv_subrc = sy-subrc.
   ENDIF.
 
-  PERFORM restore_role_1251_org_bindings USING pv_role.
-
-  IF pv_caller_locked = abap_false.
-    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
-      EXPORTING
-        activity_group = pv_role.
+  IF cv_subrc = 0.
+    COMMIT WORK AND WAIT.
   ENDIF.
+
+  PERFORM restore_role_1251_org_bindings USING pv_role.
 ENDFORM.
 
 FORM field_value_covered USING pt_flds   TYPE tt_role_fld

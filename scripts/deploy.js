@@ -30,6 +30,8 @@ if (!fs.existsSync(envPath)) {
   process.exit(1);
 }
 
+require('./env_guard').assertSafeEnvFile(envPath);
+
 // Simple parser for .sap.env file
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -54,6 +56,7 @@ function parseEnvFile(filePath) {
 const fileEnv = parseEnvFile(envPath);
 const targetPackage = process.env.SAP_PACKAGE || fileEnv.SAP_PACKAGE || '$TMP';
 const transportRequest = process.env.SAP_TRANSPORT_REQUEST || fileEnv.SAP_TRANSPORT_REQUEST || '';
+const connectionType = process.env.SAP_CONNECTION_TYPE || fileEnv.SAP_CONNECTION_TYPE || 'http';
 
 // Discover available programs in src/
 const availableFiles = fs.existsSync(srcDir)
@@ -124,13 +127,13 @@ function executeDeployment(targetFile, customProgName) {
   let cmd, args;
   if (mcpBin) {
     cmd = process.execPath;
-    args = ['--dns-result-order=ipv4first', mcpBin, '--transport=stdio', `--env-path=${envPath}`];
+    args = ['--dns-result-order=ipv4first', mcpBin, `--env-path=${envPath}`, `--connection-type=${connectionType}`];
   } else {
     const isWin = process.platform === 'win32';
     cmd = isWin ? 'cmd.exe' : 'mcp-abap-adt';
     args = isWin 
-      ? ['/c', 'mcp-abap-adt', '--transport=stdio', `--env-path=${envPath}`]
-      : ['--transport=stdio', `--env-path=${envPath}`];
+      ? ['/c', 'mcp-abap-adt', `--env-path=${envPath}`, `--connection-type=${connectionType}`]
+      : [`--env-path=${envPath}`, `--connection-type=${connectionType}`];
   }
 
   console.log(`🔌 Starting SAP ADT MCP Server with environment: ${envPath}`);
@@ -268,6 +271,13 @@ function executeDeployment(targetFile, customProgName) {
   child.on('error', err => {
     console.error(`❌ Failed to start MCP process:`, err);
     process.exit(1);
+  });
+
+  child.on('close', code => {
+    if (code !== 0) {
+      console.error(`❌ MCP server exited early with code ${code}.`);
+      process.exit(code || 1);
+    }
   });
 
   // Start initialization

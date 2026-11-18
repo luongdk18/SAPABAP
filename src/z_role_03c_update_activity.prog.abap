@@ -769,6 +769,10 @@ FORM process_activity_update.
 
     " Regenerate Authorization Profile
     IF p_genprf = abap_true.
+      DATA: lv_gen_subrc TYPE sy-subrc,
+            lv_chk_color TYPE char10,
+            lv_chk_msg   TYPE c LENGTH 255.
+
       CLEAR lt_bapiret.
       CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
         EXPORTING
@@ -782,19 +786,38 @@ FORM process_activity_update.
           return                = lt_bapiret
         EXCEPTIONS
           OTHERS                = 1.
+      lv_gen_subrc = sy-subrc.
 
       PERFORM restore_1251_org_bindings USING ls_role-agr_name.
+      COMMIT WORK AND WAIT.
 
-      IF sy-subrc = 0.
-        SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
-          WHERE agr_name = @ls_role-agr_name.
-        ls_res-status  = gc_status_ok.
-        ls_res-action  = 'UPDATED'.
-        ls_res-message = |{ lv_upd_cnt } auth instance(s) updated. Profile '{ ls_res-profile }' regenerated successfully.|.
-      ELSE.
+      SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
+        WHERE agr_name = @ls_role-agr_name.
+
+      CLEAR: lv_chk_color, lv_chk_msg.
+      CALL FUNCTION 'PRGN_CHECK_PROFILE_STATUS'
+        EXPORTING
+          activity_group = ls_role-agr_name
+        IMPORTING
+          message_text   = lv_chk_msg
+          led_color      = lv_chk_color.
+
+      IF lv_gen_subrc <> 0.
         ls_res-status  = gc_status_warn.
         ls_res-action  = 'UPDATED'.
-        ls_res-message = |{ lv_upd_cnt } auth instance(s) updated. Profile generation returned error/warning.|.
+        ls_res-message = |{ lv_upd_cnt } auth instance(s) updated. Profile generation returned warning: { lv_chk_msg }|.
+      ELSEIF lv_chk_color = 'GREEN'.
+        ls_res-status  = gc_status_ok.
+        ls_res-action  = 'UPDATED'.
+        ls_res-message = |{ lv_upd_cnt } auth instance(s) updated. Profile '{ ls_res-profile }' is GREEN.|.
+      ELSEIF lv_chk_color = 'YELLOW'.
+        ls_res-status  = gc_status_warn.
+        ls_res-action  = 'UPDATED'.
+        ls_res-message = |{ lv_upd_cnt } auth instance(s) updated. Profile Yellow: { lv_chk_msg }|.
+      ELSE.
+        ls_res-status  = gc_status_err.
+        ls_res-action  = 'WARNING'.
+        ls_res-message = |Profile Red: { lv_chk_msg }|.
       ENDIF.
     ELSE.
       ls_res-status  = gc_status_ok.
