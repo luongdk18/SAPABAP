@@ -8,6 +8,7 @@
 
 # Confidential / Real Data directories (NEVER commit!)
 excel-working/
+.agent/plugins/
 
 # Node.js
 node_modules/

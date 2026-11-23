@@ -67,6 +67,9 @@ Configure your IDE MCP server (see `mcp-config.example.json`) and `.sap.env` wit
    - Keep `DEBUG_HANDLERS`, `DEBUG_CONNECTORS`, `DEBUG_CONNECTION_MANAGER`, `DEBUG_AUTH_LOG`, and `--auth-debug` **unset/disabled** in normal sessions (saves output tokens and avoids leaking auth headers into logs).
 5. **Keep Batch raw parts off**:
    - Keep `--batch-keep-raw-parts` at default `false` so batch responses omit raw HTTP headers and raw XML bodies.
+6. **Per-Workspace MCP Isolation (Recommended for Antigravity / Multi-Repo Setups)**:
+   - Keep the global `~/.gemini/config/mcp_config.json` empty (`{"mcpServers": {}}`) so SAP MCP tools are never loaded into unrelated non-SAP workspaces.
+   - Store this workspace's local MCP server inside a gitignored workspace plugin (`.agent/plugins/sap-adt-sapabap/plugin.json` + `mcp_config.json`, ignored via `.agent/plugins/` in `.gitignore`), pointing exclusively to this repository's `.sap.env` with a workspace-specific server name (e.g., `sap-sapabap`). This guarantees zero cross-repo credential mixing and zero token overhead in other workspaces.
 
 ---
 

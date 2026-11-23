@@ -157,6 +157,13 @@ Add to your AI agent's MCP configuration (`mcpServers` object — full template 
 ```
 *(On macOS/Linux, replace `cmd.exe /c` with direct `mcp-abap-adt-compact`. `--deferred-logon` delays SAP logon until the first tool call; `--deny-actions=HandlerDebug*` unregisters debugger tools when not needed. For coding ABAP programs in `src/`, edit locally and deploy via `npm run deploy:*` to avoid passing full ABAP files through LLM tool calls — see [`.agent/skills/02_mcp-token-optimization.md`](.agent/skills/02_mcp-token-optimization.md)).*
 
+#### Per-Workspace MCP Isolation (Antigravity Recommended)
+To avoid loading SAP MCP tools in non-SAP workspaces or colliding across multiple SAP repositories, keep your global `~/.gemini/config/mcp_config.json` empty (`{"mcpServers": {}}`) and place the local MCP config in a **gitignored workspace plugin**:
+- `.agent/plugins/sap-adt-sapabap/plugin.json` (`{"name": "sap-adt-sapabap"}`)
+- `.agent/plugins/sap-adt-sapabap/mcp_config.json` (copied from [`mcp-config.example.json`](mcp-config.example.json) with your local `.sap.env` path)
+
+`.agent/plugins/` is excluded by `.gitignore`, so local paths and workspace-specific MCP bindings are never committed.
+
 ---
 
 ## 4. Deployment Commands
