@@ -96,8 +96,10 @@ This repository connects AI coding assistants directly to live **SAP S/4HANA** a
 git clone https://github.com/luongdk18/SAPABAP.git
 cd SAPABAP
 
-# Install ADT MCP globally
-npm install -g @mcp-abap-adt/core
+# Install ADT MCP packages globally:
+# - @mcp-abap-adt/core: required by local CLI deploy scripts (npm run deploy:*)
+# - @mcp-abap-adt/compact & compact-ro: recommended for AI IDE chat (70-87% lower token usage)
+npm install -g @mcp-abap-adt/core @mcp-abap-adt/compact @mcp-abap-adt/compact-ro
 
 # Copy & configure credentials (never commit .sap.env!)
 cp .sap.env.example .sap.env
@@ -108,19 +110,32 @@ cp .sap.env.example .sap.env
 SAP_URL=https://your-sap-host:44310
 SAP_CLIENT=100
 SAP_AUTH_TYPE=basic
+SAP_SYSTEM_TYPE=onprem
+SAP_CONNECTION_TYPE=http
 SAP_USERNAME=YOUR_USER
-SAP_PASSWORD=YOUR_PASSWORD
+SAP_PASSWORD='YOUR_PASSWORD'
 SAP_LANGUAGE=EN
 NODE_TLS_REJECT_UNAUTHORIZED=0
+HANDLER_LOG_SILENT=true
 SAP_PACKAGE=$TMP
 # SAP_TRANSPORT_REQUEST=DEVK900001 # Required if SAP_PACKAGE != $TMP
 ```
+> **Note:** Always wrap `SAP_PASSWORD` in single quotes (`'...'`) so characters like `#` are not truncated by dotenv.
 
 ---
 
-## 3. AI Agent Setup (MCP)
+## 3. AI Agent Setup (MCP — Token-Optimized)
 
-Add to your AI agent's MCP configuration (`mcpServers` object):
+Use **`@mcp-abap-adt/compact`** (or **`@mcp-abap-adt/compact-ro`** for read-only inspection) in your AI IDE instead of `@mcp-abap-adt/core` to cut tool-schema token usage by **70–87%** per turn:
+
+| Binary | Tools (`onprem`) | Schema Overhead / Turn | Best For |
+| :--- | :---: | :---: | :--- |
+| `mcp-abap-adt` (`@mcp-abap-adt/core`) | 272 | ~100,400 tokens | Local CLI scripts (`npm run deploy:*`) — **0 LLM tokens** |
+| `mcp-abap-adt-compact` | 38 | ~29,900 tokens (-70%) | Interactive IDE dev + ABAP Debugger |
+| `mcp-abap-adt-compact --deny-actions=HandlerDebug*` | 33 | ~25,300 tokens (-75%) | **Default AI IDE dev** (without debugger tools) |
+| `mcp-abap-adt-compact-ro` | 20 | ~13,200 tokens (-87%) | **Read-only inspection & analysis** |
+
+Add to your AI agent's MCP configuration (`mcpServers` object — full template in [`mcp-config.example.json`](mcp-config.example.json)):
 
 ```json
 {
@@ -128,14 +143,19 @@ Add to your AI agent's MCP configuration (`mcpServers` object):
     "command": "cmd.exe",
     "args": [
       "/c",
-      "mcp-abap-adt",
-      "--transport=stdio",
-      "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
-    ]
+      "mcp-abap-adt-compact",
+      "--env-path=C:\\path\\to\\SAPABAP\\.sap.env",
+      "--connection-type=http",
+      "--deferred-logon",
+      "--deny-actions=HandlerDebug*"
+    ],
+    "env": {
+      "HANDLER_LOG_SILENT": "true"
+    }
   }
 }
 ```
-*(On macOS/Linux, replace `cmd.exe /c` with direct `mcp-abap-adt`).*
+*(On macOS/Linux, replace `cmd.exe /c` with direct `mcp-abap-adt-compact`. `--deferred-logon` delays SAP logon until the first tool call; `--deny-actions=HandlerDebug*` unregisters debugger tools when not needed. For coding ABAP programs in `src/`, edit locally and deploy via `npm run deploy:*` to avoid passing full ABAP files through LLM tool calls — see [`.agent/skills/02_mcp-token-optimization.md`](.agent/skills/02_mcp-token-optimization.md)).*
 
 ---
 

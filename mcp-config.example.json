@@ -4,10 +4,28 @@
       "command": "cmd.exe",
       "args": [
         "/c",
-        "mcp-abap-adt",
-        "--transport=stdio",
-        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env"
-      ]
+        "mcp-abap-adt-compact",
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env",
+        "--connection-type=http",
+        "--deferred-logon",
+        "--deny-actions=HandlerDebug*"
+      ],
+      "env": {
+        "HANDLER_LOG_SILENT": "true"
+      }
+    },
+    "sap-s4hana-readonly": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "mcp-abap-adt-compact-ro",
+        "--env-path=C:\\path\\to\\SAPABAP\\.sap.env",
+        "--connection-type=http",
+        "--deferred-logon"
+      ],
+      "env": {
+        "HANDLER_LOG_SILENT": "true"
+      }
     }
   }
 }

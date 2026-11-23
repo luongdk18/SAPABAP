@@ -14,6 +14,7 @@ Before planning or executing any repository task, AI agents **MUST** inspect `.a
 | :--- | :--- | :--- |
 | `public-repo-sanitization` | `.agent/skills/00_public-repo-sanitization.md` | Authoring, reviewing, or committing any ABAP code, scripts, configuration examples, or documentation to ensure zero hardcoded customer/company data, real domains, Transport Request numbers, internal IPs, user IDs, or system IDs. |
 | `sap-security-api-guidelines` | `.agent/skills/01_sap-security-api-guidelines.md` | Authoring, updating, or debugging ABAP code that interacts with SAP roles (`PFCG`), authorization objects, organizational levels, user accounts, or role assignments. |
+| `mcp-token-optimization` | `.agent/skills/02_mcp-token-optimization.md` | Configuring `@mcp-abap-adt/*` MCP servers, querying live SAP objects/DDIC via ADT, or deploying ABAP programs/classes to minimize LLM token overhead and tool round-trips. |
 
 ---
 
