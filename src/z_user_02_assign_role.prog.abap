@@ -41,7 +41,7 @@ TYPES: BEGIN OF ty_user_assignment,
 
 TYPES: BEGIN OF ty_alv_result,
          status         TYPE char12,              " Status Icon & Code: @08@ [OK], @09@ [WARN], @0A@ [ERR]
-         action         TYPE char12,              " SYNCHRONIZED / APPENDED / SIMULATED / UP-TO-DATE / WARNING / ERROR
+         action         TYPE char12,              " SYNCHRONIZED / APPENDED / DEDUPLICATED / SIMULATED / UP-TO-DATE / WARNING / ERROR
          username       TYPE bapibname-bapibname, " SAP User ID (Hotspot to SU01)
          roles_cnt      TYPE i,                   " Total Roles in CSV
          valid_cnt      TYPE i,                   " Valid Roles in SAP
@@ -49,9 +49,11 @@ TYPES: BEGIN OF ty_alv_result,
          roles_add_cnt  TYPE i,                   " Roles Added (Count)
          roles_del_cnt  TYPE i,                   " Roles Removed (Count)
          roles_keep_cnt TYPE i,                   " Roles Retained (Count)
+         dup_del_cnt    TYPE i,                   " Duplicate Role Periods Cleared (Count)
          roles_add      TYPE string,              " List of Added Roles
          roles_del      TYPE string,              " List of Removed Roles
          roles_keep     TYPE string,              " List of Retained Roles
+         dup_roles      TYPE string,              " List of Deduplicated Roles
          missing_roles  TYPE string,              " Roles Missing in SAP
          message        TYPE string,              " Execution Log / BAPI Message
        END OF ty_alv_result.
@@ -73,7 +75,8 @@ SELECTION-SCREEN END OF BLOCK b_file.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_proc WITH FRAME TITLE b_tit2.
   PARAMETERS: p_test   TYPE abap_bool AS CHECKBOX DEFAULT 'X',
-              p_chkrol TYPE abap_bool AS CHECKBOX DEFAULT 'X'.
+              p_chkrol TYPE abap_bool AS CHECKBOX DEFAULT 'X',
+              p_dedup  TYPE abap_bool AS CHECKBOX DEFAULT ' '.
   SELECTION-SCREEN ULINE.
   PARAMETERS: rb_sync  RADIOBUTTON GROUP rmod DEFAULT 'X',
               rb_app   RADIOBUTTON GROUP rmod.
@@ -95,6 +98,7 @@ INITIALIZATION.
   %_p_file_%_app_%-text   = 'File Path'.
   %_p_test_%_app_%-text   = 'Simulation (Test Run)'.
   %_p_chkrol_%_app_%-text = 'Validate Roles in SAP'.
+  %_p_dedup_%_app_%-text  = 'Clear Duplicate Role Periods'.
   %_rb_sync_%_app_%-text  = 'Two-Way Sync (Add & Remove)'.
   %_rb_app_%_app_%-text   = 'Append Only (Keep Existing)'.
   %_p_from_%_app_%-text   = 'Valid From Date'.
@@ -105,6 +109,11 @@ AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
 
 AT SELECTION-SCREEN ON p_file.
   PERFORM validate_filename USING p_file.
+
+AT SELECTION-SCREEN.
+  IF p_from IS NOT INITIAL AND p_to IS NOT INITIAL AND p_from > p_to.
+    MESSAGE 'Valid From Date cannot be later than Valid To Date.' TYPE 'E'.
+  ENDIF.
 
 *----------------------------------------------------------------------*
 * 4. START-OF-SELECTION
@@ -445,6 +454,7 @@ FORM process_assignments.
         lt_valid_roles  TYPE STANDARD TABLE OF agr_name,
         lt_miss_roles   TYPE STANDARD TABLE OF agr_name,
         lt_actgroups    TYPE STANDARD TABLE OF bapiagr,
+        lt_dedup_act    TYPE STANDARD TABLE OF bapiagr,
         ls_actgroup     TYPE bapiagr,
         lt_return       TYPE STANDARD TABLE OF bapiret2,
         lv_errmsg       TYPE string,
@@ -452,18 +462,23 @@ FORM process_assignments.
         lt_roles_to_add TYPE STANDARD TABLE OF agr_name,
         lt_roles_to_del TYPE STANDARD TABLE OF agr_name,
         lt_roles_keep   TYPE STANDARD TABLE OF agr_name,
+        lt_roles_dedup  TYPE STANDARD TABLE OF agr_name,
+        lv_dedup_cnt    TYPE i,
+        lv_prev_agr     TYPE agr_name,
         lv_str_add      TYPE string,
         lv_str_del      TYPE string,
         lv_str_keep     TYPE string,
+        lv_str_dedup    TYPE string,
         lv_str_missing  TYPE string.
 
   CLEAR gt_results.
 
   LOOP AT gt_assignments INTO DATA(ls_assign).
-    CLEAR: ls_res, lt_valid_roles, lt_miss_roles, lt_actgroups,
+    CLEAR: ls_res, lt_valid_roles, lt_miss_roles, lt_actgroups, lt_dedup_act,
            lt_return, lv_errmsg, lv_has_err,
-           lt_roles_to_add, lt_roles_to_del, lt_roles_keep,
-           lv_str_add, lv_str_del, lv_str_keep, lv_str_missing.
+           lt_roles_to_add, lt_roles_to_del, lt_roles_keep, lt_roles_dedup,
+           lv_dedup_cnt, lv_prev_agr,
+           lv_str_add, lv_str_del, lv_str_keep, lv_str_dedup, lv_str_missing.
 
     ls_res-username  = ls_assign-username.
     ls_res-roles_cnt = lines( ls_assign-roles ).
@@ -548,12 +563,19 @@ FORM process_assignments.
       WHERE uname = @ls_assign-username
         AND col_flag = @space.
 
-    " Calculate Diff: ADD, DEL, KEEP
-    " 1. Roles to Add: in CSV valid list, but not currently assigned
+    " Calculate Diff: ADD, DEL, KEEP (respecting existing active/overlapping validity periods)
+    " 1. Roles to Add: in CSV valid list, with NO existing valid/overlapping period for [p_from, p_to]
+    DATA: lv_has_valid_period TYPE abap_bool.
     LOOP AT lt_valid_roles INTO DATA(lv_vrole).
-      READ TABLE lt_existing_roles TRANSPORTING NO FIELDS
-        WITH KEY agr_name = lv_vrole.
-      IF sy-subrc <> 0.
+      lv_has_valid_period = abap_false.
+      LOOP AT lt_existing_roles INTO DATA(ls_ex_chk) WHERE agr_name = lv_vrole.
+        " Existing assignment already covers or overlaps the target validity period (e.g. earlier from_dat still valid)
+        IF ls_ex_chk-from_dat <= p_to AND ls_ex_chk-to_dat >= p_from.
+          lv_has_valid_period = abap_true.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF lv_has_valid_period = abap_false.
         APPEND lv_vrole TO lt_roles_to_add.
       ENDIF.
     ENDLOOP.
@@ -564,36 +586,58 @@ FORM process_assignments.
         READ TABLE lt_valid_roles TRANSPORTING NO FIELDS
           WITH KEY table_line = ls_exist_del-agr_name.
         IF sy-subrc <> 0.
-          APPEND ls_exist_del-agr_name TO lt_roles_to_del.
+          READ TABLE lt_roles_to_del TRANSPORTING NO FIELDS
+            WITH KEY table_line = ls_exist_del-agr_name.
+          IF sy-subrc <> 0.
+            APPEND ls_exist_del-agr_name TO lt_roles_to_del.
+          ENDIF.
         ENDIF.
       ENDLOOP.
     ENDIF.
 
-    " 3. Roles to Keep:
+    " 3. Roles to Keep (deduplicated; preserves existing active/valid period assignments)
     IF rb_sync = abap_true.
-      " In Sync mode: keep only those present in both SAP and CSV
+      " In Sync mode: keep roles present in both SAP (with valid period) and CSV
       LOOP AT lt_existing_roles INTO DATA(ls_exist_keep).
         READ TABLE lt_valid_roles TRANSPORTING NO FIELDS
           WITH KEY table_line = ls_exist_keep-agr_name.
-        IF sy-subrc = 0.
-          APPEND ls_exist_keep-agr_name TO lt_roles_keep.
+        IF sy-subrc = 0 AND ls_exist_keep-from_dat <= p_to AND ls_exist_keep-to_dat >= p_from.
+          READ TABLE lt_roles_keep TRANSPORTING NO FIELDS
+            WITH KEY table_line = ls_exist_keep-agr_name.
+          IF sy-subrc <> 0.
+            APPEND ls_exist_keep-agr_name TO lt_roles_keep.
+          ENDIF.
         ENDIF.
       ENDLOOP.
     ELSE.
-      " In Append mode: keep all existing roles
+      " In Append mode: keep all existing roles (excluding expired ones being re-added)
       LOOP AT lt_existing_roles INTO DATA(ls_exist_app).
-        APPEND ls_exist_app-agr_name TO lt_roles_keep.
+        READ TABLE lt_roles_to_add TRANSPORTING NO FIELDS
+          WITH KEY table_line = ls_exist_app-agr_name.
+        IF sy-subrc <> 0.
+          READ TABLE lt_roles_keep TRANSPORTING NO FIELDS
+            WITH KEY table_line = ls_exist_app-agr_name.
+          IF sy-subrc <> 0.
+            APPEND ls_exist_app-agr_name TO lt_roles_keep.
+          ENDIF.
+        ENDIF.
       ENDLOOP.
     ENDIF.
 
     " Build target lt_actgroups table for standard BAPI
+    " CRITICAL: Always preserve original (from_dat, to_dat) of existing valid periods so
+    " BAPI_USER_ACTGROUPS_ASSIGN does not split/duplicate assignments when p_from > existing from_dat!
     IF rb_sync = abap_true.
-      LOOP AT lt_roles_keep INTO DATA(lv_krole).
-        CLEAR ls_actgroup.
-        ls_actgroup-agr_name = lv_krole.
-        ls_actgroup-from_dat = p_from.
-        ls_actgroup-to_dat   = p_to.
-        APPEND ls_actgroup TO lt_actgroups.
+      LOOP AT lt_existing_roles INTO DATA(ls_sync_row).
+        READ TABLE lt_valid_roles TRANSPORTING NO FIELDS
+          WITH KEY table_line = ls_sync_row-agr_name.
+        IF sy-subrc = 0 AND ls_sync_row-from_dat <= p_to AND ls_sync_row-to_dat >= p_from.
+          CLEAR ls_actgroup.
+          ls_actgroup-agr_name = ls_sync_row-agr_name.
+          ls_actgroup-from_dat = ls_sync_row-from_dat.
+          ls_actgroup-to_dat   = ls_sync_row-to_dat.
+          APPEND ls_actgroup TO lt_actgroups.
+        ENDIF.
       ENDLOOP.
       LOOP AT lt_roles_to_add INTO DATA(lv_arole).
         CLEAR ls_actgroup.
@@ -603,21 +647,15 @@ FORM process_assignments.
         APPEND ls_actgroup TO lt_actgroups.
       ENDLOOP.
     ELSE.
-      " Append Mode
+      " Append Mode: preserve every existing assignment with its original validity period untouched
       LOOP AT lt_existing_roles INTO DATA(ls_exist_row).
         CLEAR ls_actgroup.
         ls_actgroup-agr_name = ls_exist_row-agr_name.
-        READ TABLE lt_valid_roles TRANSPORTING NO FIELDS
-          WITH KEY table_line = ls_exist_row-agr_name.
-        IF sy-subrc = 0.
-          ls_actgroup-from_dat = p_from.
-          ls_actgroup-to_dat   = p_to.
-        ELSE.
-          ls_actgroup-from_dat = ls_exist_row-from_dat.
-          ls_actgroup-to_dat   = ls_exist_row-to_dat.
-        ENDIF.
+        ls_actgroup-from_dat = ls_exist_row-from_dat.
+        ls_actgroup-to_dat   = ls_exist_row-to_dat.
         APPEND ls_actgroup TO lt_actgroups.
       ENDLOOP.
+      " Only append roles that do NOT already have an active/valid period
       LOOP AT lt_roles_to_add INTO DATA(lv_add_app).
         CLEAR ls_actgroup.
         ls_actgroup-agr_name = lv_add_app.
@@ -627,10 +665,36 @@ FORM process_assignments.
       ENDLOOP.
     ENDIF.
 
+    SORT lt_actgroups BY agr_name from_dat to_dat.
+    DELETE ADJACENT DUPLICATES FROM lt_actgroups COMPARING agr_name from_dat to_dat.
+
+    " Optional Deduplication: Clear duplicate validity periods for the same role
+    " Retention rule: Always keep the longest & oldest period per role
+    " (highest to_dat first to retain active/unlimited periods, then earliest from_dat)
+    IF p_dedup = abap_true.
+      SORT lt_actgroups BY agr_name ASCENDING to_dat DESCENDING from_dat ASCENDING.
+      CLEAR: lt_dedup_act, lv_prev_agr.
+      LOOP AT lt_actgroups INTO DATA(ls_act_chk).
+        IF ls_act_chk-agr_name = lv_prev_agr.
+          lv_dedup_cnt = lv_dedup_cnt + 1.
+          READ TABLE lt_roles_dedup TRANSPORTING NO FIELDS
+            WITH KEY table_line = ls_act_chk-agr_name.
+          IF sy-subrc <> 0.
+            APPEND ls_act_chk-agr_name TO lt_roles_dedup.
+          ENDIF.
+        ELSE.
+          APPEND ls_act_chk TO lt_dedup_act.
+          lv_prev_agr = ls_act_chk-agr_name.
+        ENDIF.
+      ENDLOOP.
+      lt_actgroups = lt_dedup_act.
+    ENDIF.
+
     " Format counts and string summaries
     ls_res-roles_add_cnt  = lines( lt_roles_to_add ).
     ls_res-roles_del_cnt  = lines( lt_roles_to_del ).
     ls_res-roles_keep_cnt = lines( lt_roles_keep ).
+    ls_res-dup_del_cnt    = lv_dedup_cnt.
     ls_res-assigned_cnt   = lines( lt_actgroups ).
 
     LOOP AT lt_roles_to_add INTO DATA(lv_s_add).
@@ -660,18 +724,24 @@ FORM process_assignments.
     ENDLOOP.
     ls_res-roles_keep = lv_str_keep.
 
-    " Determine whether anything changed (including validity dates of CSV roles)
+    LOOP AT lt_roles_dedup INTO DATA(lv_s_dedup).
+      IF lv_str_dedup IS INITIAL.
+        lv_str_dedup = lv_s_dedup.
+      ELSE.
+        lv_str_dedup = lv_str_dedup && ', ' && lv_s_dedup.
+      ENDIF.
+    ENDLOOP.
+    ls_res-dup_roles = lv_str_dedup.
+
+    " Determine whether anything actually changed
+    " If no roles are added/removed/deduplicated and existing valid periods are preserved, skip BAPI call
     DATA: lv_is_up_to_date TYPE abap_bool.
-    IF lt_roles_to_add IS INITIAL AND lt_roles_to_del IS INITIAL.
-      lv_is_up_to_date = abap_true.
-      LOOP AT lt_valid_roles INTO DATA(lv_chk_dt_role).
-        READ TABLE lt_existing_roles INTO DATA(ls_ex_dt)
-          WITH KEY agr_name = lv_chk_dt_role.
-        IF sy-subrc = 0 AND ( ls_ex_dt-from_dat <> p_from OR ls_ex_dt-to_dat <> p_to ).
-          lv_is_up_to_date = abap_false.
-          EXIT.
-        ENDIF.
-      ENDLOOP.
+    IF lt_roles_to_add IS INITIAL AND lt_roles_to_del IS INITIAL AND lv_dedup_cnt = 0.
+      IF rb_app = abap_true OR lines( lt_actgroups ) = lines( lt_existing_roles ).
+        lv_is_up_to_date = abap_true.
+      ELSE.
+        lv_is_up_to_date = abap_false.
+      ENDIF.
     ELSE.
       lv_is_up_to_date = abap_false.
     ENDIF.
@@ -685,7 +755,16 @@ FORM process_assignments.
       ELSE.
         ls_res-status  = gc_status_ok.
         ls_res-action  = 'SIMULATED'.
-        ls_res-message = |Simulation OK: Would add { ls_res-roles_add_cnt } [{ lv_str_add }], remove { ls_res-roles_del_cnt } [{ lv_str_del }], keep { ls_res-roles_keep_cnt }. Total active: { ls_res-assigned_cnt }.|.
+        IF lv_dedup_cnt > 0.
+          ls_res-message = |Simulation OK: Would add { ls_res-roles_add_cnt } [{ lv_str_add }], |
+                        && |remove { ls_res-roles_del_cnt } [{ lv_str_del }], |
+                        && |clear { lv_dedup_cnt } dup period(s) [{ lv_str_dedup }], |
+                        && |keep { ls_res-roles_keep_cnt }. Total active: { ls_res-assigned_cnt }.|.
+        ELSE.
+          ls_res-message = |Simulation OK: Would add { ls_res-roles_add_cnt } [{ lv_str_add }], |
+                        && |remove { ls_res-roles_del_cnt } [{ lv_str_del }], |
+                        && |keep { ls_res-roles_keep_cnt }. Total active: { ls_res-assigned_cnt }.|.
+        ENDIF.
       ENDIF.
 
       IF lt_miss_roles IS NOT INITIAL.
@@ -725,8 +804,21 @@ FORM process_assignments.
               wait = 'X'.
 
           ls_res-status  = gc_status_ok.
-          ls_res-action  = COND #( WHEN rb_sync = abap_true THEN 'SYNCHRONIZED' ELSE 'APPENDED' ).
-          ls_res-message = |Success: Added { ls_res-roles_add_cnt } [{ lv_str_add }], Removed { ls_res-roles_del_cnt } [{ lv_str_del }], Kept { ls_res-roles_keep_cnt }. Total active: { ls_res-assigned_cnt }.|.
+          IF ls_res-roles_add_cnt = 0 AND ls_res-roles_del_cnt = 0 AND lv_dedup_cnt > 0.
+            ls_res-action = 'DEDUPLICATED'.
+          ELSE.
+            ls_res-action = COND #( WHEN rb_sync = abap_true THEN 'SYNCHRONIZED' ELSE 'APPENDED' ).
+          ENDIF.
+          IF lv_dedup_cnt > 0.
+            ls_res-message = |Success: Added { ls_res-roles_add_cnt } [{ lv_str_add }], |
+                          && |Removed { ls_res-roles_del_cnt } [{ lv_str_del }], |
+                          && |Cleared { lv_dedup_cnt } dup period(s) [{ lv_str_dedup }], |
+                          && |Kept { ls_res-roles_keep_cnt }. Total active: { ls_res-assigned_cnt }.|.
+          ELSE.
+            ls_res-message = |Success: Added { ls_res-roles_add_cnt } [{ lv_str_add }], |
+                          && |Removed { ls_res-roles_del_cnt } [{ lv_str_del }], |
+                          && |Kept { ls_res-roles_keep_cnt }. Total active: { ls_res-assigned_cnt }.|.
+          ENDIF.
 
           IF lt_miss_roles IS NOT INITIAL.
             ls_res-status  = gc_status_warn.
@@ -875,6 +967,13 @@ FORM display_alv_results.
       lo_col->set_long_text( 'Roles Retained (Count)' ).
       lo_col->set_alignment( if_salv_c_alignment=>centered ).
 
+      " Duplicate Role Periods Cleared Count
+      lo_col ?= lo_cols->get_column( 'DUP_DEL_CNT' ).
+      lo_col->set_short_text( 'Dup Cnt' ).
+      lo_col->set_medium_text( 'Dups Cleared' ).
+      lo_col->set_long_text( 'Duplicate Periods Cleared' ).
+      lo_col->set_alignment( if_salv_c_alignment=>centered ).
+
       " Total Resulting Assigned Roles Count
       lo_col ?= lo_cols->get_column( 'ASSIGNED_CNT' ).
       lo_col->set_short_text( 'Active' ).
@@ -901,6 +1000,13 @@ FORM display_alv_results.
       lo_col->set_short_text( 'Retained' ).
       lo_col->set_medium_text( 'Retained Roles' ).
       lo_col->set_long_text( 'List of Roles Retained' ).
+      lo_col->set_output_length( 30 ).
+
+      " Deduplicated Roles List
+      lo_col ?= lo_cols->get_column( 'DUP_ROLES' ).
+      lo_col->set_short_text( 'Dedup' ).
+      lo_col->set_medium_text( 'Deduplicated Roles' ).
+      lo_col->set_long_text( 'Roles with Duplicate Periods Cleared' ).
       lo_col->set_output_length( 30 ).
 
       " Missing Roles
