@@ -36,9 +36,10 @@ Centralized monitoring, audit, and maintenance console for the **SAP Self-Servic
 | `s_date` | Select-Option | `sy-datum` | Filter by token creation date |
 | `s_user` | Select-Option | - | Filter by SAP username |
 | `p_act` | Dropdown | `'ALL'` | Filter by Action Type (`ALL`, `RESET`, `UNLOCK`) |
-| `p_stat` | Dropdown | `'ALL'` | Filter by Status (`ALL`, `PENDING`, `USED`, `EXPIRED`) |
-| `p_clean` | Checkbox | `' '` | Execute token cleanup routine |
-| `p_days` | Integer | `7` | Retention threshold in days for token purging |
+| `p_stat` | Dropdown | `'ALL'` | Filter by Effective Status (`ALL`, `PENDING`, `USED`, `EXPIRED`, `INVALID`) |
+| `p_clean` | Checkbox | `' '` | Execute token cleanup routine (purges `USED`, `EXPIRED`, `INVALID`, and overdue `PENDING` tokens older than `p_days`) |
+| `p_test` | Checkbox | `'X'` | Simulation Mode (preview cleanup count without deleting rows; requires `S_USER_GRP` `02`/`06` when unchecked) |
+| `p_days` | Integer | `7` | Retention threshold in days (`>= 1`) for token purging |
 
 ---
 

@@ -1,0 +1,7 @@
+﻿Username,Full Name,Email,Phone No.,Department,Function,Initial Password
+JOHND,John Doe,johnd@example.com,(84)999999999,"Finance, Tax & Treasury",VP Finance,NewPass@2026
+JANES,Jane Smith,janes@example.com,(84)999999999,Finance & Accounting,Lead Accountant,
+ALEXJ,Alex Johnson,not-a-valid-email,(1)9999999999,Controlling,Senior Controller,
+USER_VN04,Phạm Thị D,user_vn04@example.com,(84)999999104,Kế toán,Chuyên viên Thuế,
+OVERSIZED_USER_12345,Oversized Username,over@example.com,(84)999999999,Testing,QA,
+NO_NAME_USR,,noname@example.com,,Testing,QA,

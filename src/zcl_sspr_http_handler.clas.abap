@@ -6,23 +6,6 @@ CLASS zcl_sspr_http_handler DEFINITION
   PUBLIC SECTION.
     INTERFACES if_http_extension .
 
-    TYPES: BEGIN OF ty_token_record,
-             mandt        TYPE mandt,
-             token        TYPE c LENGTH 64,
-             bname        TYPE bapibname-bapibname,
-             email        TYPE string,
-             action_type  TYPE string,
-             status       TYPE string,
-             created_date TYPE dats,
-             created_time TYPE tims,
-             expires_date TYPE dats,
-             expires_time TYPE tims,
-             used_date    TYPE dats,
-             used_time    TYPE tims,
-             ip_address   TYPE string,
-             attempts     TYPE i,
-           END OF ty_token_record.
-
   PROTECTED SECTION.
   PRIVATE SECTION.
     METHODS:
@@ -64,13 +47,26 @@ CLASS zcl_sspr_http_handler DEFINITION
         RETURNING VALUE(html) TYPE string,
 
       render_message_page
-        IMPORTING server     TYPE REF TO if_http_server
-                  title      TYPE string
-                  type       TYPE string " 'success', 'error', 'info', 'warning'
-                  heading    TYPE string
-                  message    TYPE string
-                  detail     TYPE string OPTIONAL
-                  show_home  TYPE abap_bool DEFAULT abap_true,
+        IMPORTING server      TYPE REF TO if_http_server
+                  title       TYPE string
+                  type        TYPE string " 'success', 'error', 'info', 'warning'
+                  heading     TYPE string
+                  message     TYPE string
+                  detail      TYPE string OPTIONAL
+                  show_home   TYPE abap_bool DEFAULT abap_true
+                  status_code TYPE i DEFAULT 200,
+
+      is_same_origin_post
+        IMPORTING server        TYPE REF TO if_http_server
+        RETURNING VALUE(is_ok)  TYPE abap_bool,
+
+      is_trusted_proxy_ip
+        IMPORTING ip_str          TYPE string
+        RETURNING VALUE(trusted)  TYPE abap_bool,
+
+      increment_token_attempts
+        IMPORTING token_hash      TYPE zsspr_tokens-token
+        RETURNING VALUE(attempts) TYPE i,
 
       render_password_form
         IMPORTING server   TYPE REF TO if_http_server
@@ -137,11 +133,23 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
           lv_token  TYPE string,
           lv_action TYPE string.
 
-    lv_method = server->request->get_header_field( '~request_method' ).
+    lv_method = to_upper( server->request->get_header_field( '~request_method' ) ).
     lv_token  = server->request->get_form_field( 'token' ).
     lv_action = server->request->get_form_field( 'action' ).
 
     IF lv_method = 'POST'.
+      IF me->is_same_origin_post( server ) = abap_false.
+        me->render_message_page(
+          server      = server
+          title       = 'Forbidden'
+          type        = 'error'
+          heading     = 'Cross-Site Request Blocked'
+          message     = 'This request was rejected for security reasons. Please submit directly from the self-service portal.'
+          show_home   = abap_true
+          status_code = 403 ).
+        RETURN.
+      ENDIF.
+
       IF lv_action = 'request_token'.
         me->handle_request_token( server ).
       ELSEIF lv_action = 'set_password'.
@@ -150,19 +158,29 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
         me->handle_confirm_unlock( server ).
       ELSE.
         me->render_message_page(
-          server    = server
-          title     = 'Invalid Request'
-          type      = 'error'
-          heading   = 'Unsupported Action'
-          message   = 'The requested action is not recognized by the system.'
-          show_home = abap_true ).
+          server      = server
+          title       = 'Invalid Request'
+          type        = 'error'
+          heading     = 'Unsupported Action'
+          message     = 'The requested action is not recognized by the system.'
+          show_home   = abap_true
+          status_code = 400 ).
       ENDIF.
-    ELSE.
+    ELSEIF lv_method = 'GET'.
       IF lv_token IS NOT INITIAL.
         me->handle_token_action( server = server token = lv_token ).
       ELSE.
         me->handle_landing_page( server ).
       ENDIF.
+    ELSE.
+      me->render_message_page(
+        server      = server
+        title       = 'Method Not Allowed'
+        type        = 'error'
+        heading     = 'Method Not Allowed'
+        message     = 'Only GET and POST requests are supported.'
+        show_home   = abap_true
+        status_code = 405 ).
     ENDIF.
   ENDMETHOD.
 
@@ -175,11 +193,10 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
       WHERE mandt = @sy-mandt
       INTO @lv_client_text.
 
-    DATA(lv_client_desc) = COND string(
-      WHEN sy-mandt = '100' THEN |100 - Config. + ABAP|
-      WHEN sy-mandt = '110' THEN |110 - Test|
-      WHEN sy-mandt = '400' THEN |400 - Sandbox|
-      ELSE |{ sy-mandt } - { lv_client_text }| ).
+    DATA(lv_client_raw) = COND string(
+      WHEN lv_client_text IS NOT INITIAL THEN |{ sy-mandt } - { lv_client_text }|
+      ELSE |{ sy-mandt }| ).
+    DATA(lv_client_desc) = cl_http_utility=>escape_html( lv_client_raw ).
 
     lv_content =
       '<p class="desc">Enter your SAP username to receive a verification link.</p>' &&
@@ -236,8 +253,8 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
           lv_mail_body    TYPE string,
           ls_token_rec    TYPE zsspr_tokens.
 
-    lv_username = to_upper( server->request->get_form_field( 'username' ) ).
-    CONDENSE lv_username NO-GAPS.
+    DATA(lv_raw_user) = to_upper( server->request->get_form_field( 'username' ) ).
+    CONDENSE lv_raw_user NO-GAPS.
 
     lv_action_type = to_upper( server->request->get_form_field( 'action_type' ) ).
     IF lv_action_type <> 'UNLOCK'.
@@ -247,15 +264,30 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
     lv_client_ip = me->get_client_ip( server ).
 
     " 1. Basic validation (username must be 1..12 alphanumeric/underscore/hyphen characters)
-    IF lv_username IS INITIAL.
+    IF lv_raw_user IS INITIAL.
       me->render_message_page(
-        server  = server
-        title   = 'Error'
-        type    = 'warning'
-        heading = 'Missing Username'
-        message = 'Please enter your SAP username.' ).
+        server      = server
+        title       = 'Error'
+        type        = 'warning'
+        heading     = 'Missing Username'
+        message     = 'Please enter your SAP username.'
+        status_code = 400 ).
       RETURN.
     ENDIF.
+
+    FIND PCRE '^[A-Z0-9_-]{1,12}$' IN lv_raw_user.
+    IF sy-subrc <> 0.
+      me->render_message_page(
+        server      = server
+        title       = 'Invalid Username'
+        type        = 'warning'
+        heading     = 'Invalid Username Format'
+        message     = 'SAP username must be 1 to 12 letters, digits, underscores, or hyphens.'
+        status_code = 400 ).
+      RETURN.
+    ENDIF.
+
+    lv_username = lv_raw_user.
 
     " 2. Rate limiting: Check requests in the last 15 mins (handles midnight wrap-around)
     DATA: lv_recent_cnt TYPE i,
@@ -285,16 +317,17 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
     IF lv_recent_cnt >= 3.
       me->render_message_page(
-        server  = server
-        title   = 'Wait'
-        type    = 'warning'
-        heading = 'Too Many Requests'
-        message = 'Please wait a few minutes before trying again.' ).
+        server      = server
+        title       = 'Wait'
+        type        = 'warning'
+        heading     = 'Too Many Requests'
+        message     = 'Please wait a few minutes before trying again.'
+        status_code = 429 ).
       RETURN.
     ENDIF.
 
-    " Per-IP limit (max 10 requests per 15 min across all users)
-    IF lv_client_ip IS NOT INITIAL AND lv_client_ip <> '127.0.0.1'.
+    " Per-IP limit (max 10 requests per 15 min across all users; no loopback exemption)
+    IF lv_client_ip IS NOT INITIAL.
       IF sy-uzeit >= '001500'.
         SELECT COUNT( * ) FROM zsspr_tokens
           WHERE ip_address   = @lv_client_ip
@@ -311,11 +344,12 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
       IF lv_ip_cnt >= 10.
         me->render_message_page(
-          server  = server
-          title   = 'Wait'
-          type    = 'warning'
-          heading = 'Too Many Requests'
-          message = 'Too many requests from your network. Please wait a few minutes before trying again.' ).
+          server      = server
+          title       = 'Wait'
+          type        = 'warning'
+          heading     = 'Too Many Requests'
+          message     = 'Too many requests from your network. Please wait a few minutes before trying again.'
+          status_code = 429 ).
         RETURN.
       ENDIF.
     ENDIF.
@@ -502,10 +536,26 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
         '</div></body></html>'.
     ENDIF.
 
-    me->send_notification_email(
+    DATA(lv_sent_ok) = me->send_notification_email(
       recipient_email = lv_user_email
       subject         = lv_mail_subj
       html_content    = lv_mail_body ).
+
+    IF lv_sent_ok = abap_false.
+      UPDATE zsspr_tokens
+        SET status = 'INVALID'
+        WHERE token = @lv_token_hash.
+      COMMIT WORK.
+      me->render_message_page(
+        server      = server
+        title       = 'Delivery Error'
+        type        = 'error'
+        heading     = 'Email Delivery Failed'
+        message     = 'The verification email could not be sent right now. Please try again later or contact the IT Service Desk.'
+        show_home   = abap_true
+        status_code = 500 ).
+      RETURN.
+    ENDIF.
 
     DATA(lv_masked) = me->mask_email( lv_user_email ).
 
@@ -739,6 +789,24 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " Re-verify USR02 lock bitmask right before unlock (prevents TOCTOU admin-lock bypass)
+    DATA: lv_cur_uflag TYPE usr02-uflag.
+    SELECT SINGLE uflag FROM usr02
+      WHERE bname = @ls_token-bname
+      INTO @lv_cur_uflag.
+    IF sy-subrc <> 0 OR ( lv_cur_uflag MOD 128 ) >= 32.
+      UPDATE zsspr_tokens SET status = 'INVALID' WHERE token = @lv_token_hash.
+      COMMIT WORK.
+      me->render_message_page(
+        server      = server
+        title       = 'Administrator Lock Active'
+        type        = 'error'
+        heading     = 'Administrator Lock Active'
+        message     = 'This account has been locked by an administrator and cannot be unlocked via self-service. Please contact the IT Service Desk.'
+        status_code = 403 ).
+      RETURN.
+    ENDIF.
+
     " M4: Atomically claim the token before executing BAPI
     UPDATE zsspr_tokens
       SET status    = 'USED',
@@ -839,18 +907,17 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
     " 2. Verify passwords match
     IF lv_new_pwd IS INITIAL OR lv_new_pwd <> lv_confirm_pwd.
-      DATA(lv_att_1) = ls_token-attempts + 1.
-      UPDATE zsspr_tokens SET attempts = @lv_att_1 WHERE token = @lv_token_hash.
-      COMMIT WORK.
+      DATA(lv_att_1) = me->increment_token_attempts( lv_token_hash ).
       IF lv_att_1 >= 5.
         UPDATE zsspr_tokens SET status = 'EXPIRED' WHERE token = @lv_token_hash.
         COMMIT WORK.
         me->render_message_page(
-          server  = server
-          title   = 'Link Locked'
-          type    = 'error'
-          heading = 'Too Many Failed Attempts'
-          message = 'This reset link has been locked due to too many failed attempts. Please request a new one.' ).
+          server      = server
+          title       = 'Link Locked'
+          type        = 'error'
+          heading     = 'Too Many Failed Attempts'
+          message     = 'This reset link has been locked due to too many failed attempts. Please request a new one.'
+          status_code = 429 ).
         RETURN.
       ENDIF.
       me->render_password_form(
@@ -861,10 +928,10 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " 3. Password policy checks (at least 10 chars, uppercase, lowercase, number, special char)
+    " 3. Password policy checks (10..40 chars, uppercase, lowercase, number, special char)
     DATA: lv_pwd_ok TYPE abap_bool VALUE abap_true.
 
-    IF strlen( lv_new_pwd ) < 10.
+    IF strlen( lv_new_pwd ) < 10 OR strlen( lv_new_pwd ) > 40.
       lv_pwd_ok = abap_false.
     ENDIF.
 
@@ -885,25 +952,24 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
     ENDIF.
 
     IF lv_pwd_ok = abap_false.
-      DATA(lv_att_2) = ls_token-attempts + 1.
-      UPDATE zsspr_tokens SET attempts = @lv_att_2 WHERE token = @lv_token_hash.
-      COMMIT WORK.
+      DATA(lv_att_2) = me->increment_token_attempts( lv_token_hash ).
       IF lv_att_2 >= 5.
         UPDATE zsspr_tokens SET status = 'EXPIRED' WHERE token = @lv_token_hash.
         COMMIT WORK.
         me->render_message_page(
-          server  = server
-          title   = 'Link Locked'
-          type    = 'error'
-          heading = 'Too Many Failed Attempts'
-          message = 'This reset link has been locked due to too many failed attempts. Please request a new one.' ).
+          server      = server
+          title       = 'Link Locked'
+          type        = 'error'
+          heading     = 'Too Many Failed Attempts'
+          message     = 'This reset link has been locked due to too many failed attempts. Please request a new one.'
+          status_code = 429 ).
         RETURN.
       ENDIF.
       me->render_password_form(
         server  = server
         token   = lv_token
         bname   = ls_token-bname
-        err_msg = 'Password must have at least 10 characters, including uppercase, lowercase, numbers, and special characters.' ).
+        err_msg = 'Password must be 10 to 40 characters and include uppercase, lowercase, numbers, and special characters.' ).
       RETURN.
     ENDIF.
 
@@ -931,7 +997,8 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
           ls_pwdx       TYPE bapipwdx,
           lt_return     TYPE STANDARD TABLE OF bapiret2,
           lt_unlock_ret TYPE STANDARD TABLE OF bapiret2,
-          lv_errmsg     TYPE string.
+          lv_errmsg     TYPE string,
+          lv_one_msg    TYPE string.
 
     ls_pwd-bapipwd  = lv_new_pwd.
     ls_pwdx-bapipwd = 'X'.
@@ -949,38 +1016,54 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
     LOOP AT lt_return INTO DATA(ls_ret).
       IF ls_ret-type = 'E' OR ls_ret-type = 'A'.
         lv_has_err = abap_true.
-        IF lv_errmsg IS INITIAL.
-          lv_errmsg = ls_ret-message.
-        ELSE.
-          lv_errmsg = lv_errmsg && ' | ' && ls_ret-message.
+        lv_one_msg = ls_ret-message.
+        IF lv_one_msg IS INITIAL AND ls_ret-id IS NOT INITIAL.
+          MESSAGE ID ls_ret-id TYPE ls_ret-type NUMBER ls_ret-number
+            WITH ls_ret-message_v1 ls_ret-message_v2 ls_ret-message_v3 ls_ret-message_v4
+            INTO lv_one_msg.
+        ENDIF.
+        IF lv_one_msg IS NOT INITIAL.
+          IF lv_errmsg IS INITIAL.
+            lv_errmsg = lv_one_msg.
+          ELSE.
+            lv_errmsg = lv_errmsg && ' | ' && lv_one_msg.
+          ENDIF.
         ENDIF.
       ENDIF.
     ENDLOOP.
 
     IF lv_has_err = abap_true.
       CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-      DATA(lv_att_3) = ls_token-attempts + 1.
-      IF lv_att_3 >= 5.
+      DATA(lv_att_3) = me->increment_token_attempts( lv_token_hash ).
+      DATA(lv_now_expired) = abap_false.
+      IF ls_token-expires_date < sy-datum
+         OR ( ls_token-expires_date = sy-datum AND ls_token-expires_time < sy-uzeit ).
+        lv_now_expired = abap_true.
+      ENDIF.
+
+      IF lv_att_3 >= 5 OR lv_now_expired = abap_true.
         UPDATE zsspr_tokens
-          SET status   = 'EXPIRED',
-              attempts = @lv_att_3
+          SET status = 'EXPIRED'
           WHERE token = @lv_token_hash.
         COMMIT WORK.
         me->render_message_page(
-          server  = server
-          title   = 'Link Locked'
-          type    = 'error'
-          heading = 'Too Many Failed Attempts'
-          message = 'This reset link has been locked due to too many failed attempts. Please request a new one.' ).
+          server      = server
+          title       = 'Link Expired'
+          type        = 'error'
+          heading     = COND #( WHEN lv_att_3 >= 5 THEN 'Too Many Failed Attempts' ELSE 'Link Expired' )
+          message     = 'This reset link is no longer valid. Please request a new one.'
+          status_code = COND #( WHEN lv_att_3 >= 5 THEN 429 ELSE 400 ) ).
         RETURN.
       ELSE.
         UPDATE zsspr_tokens
           SET status    = 'PENDING',
               used_date = '00000000',
-              used_time = '000000',
-              attempts  = @lv_att_3
+              used_time = '000000'
           WHERE token = @lv_token_hash.
         COMMIT WORK.
+        IF lv_errmsg IS INITIAL.
+          lv_errmsg = 'Password did not meet SAP system policy requirements.'.
+        ENDIF.
         me->render_password_form(
           server  = server
           token   = lv_token
@@ -990,12 +1073,19 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
       ENDIF.
     ENDIF.
 
-    " 6. H4: Only unlock account AFTER password change succeeded (admin locks were already rejected)
-    CALL FUNCTION 'BAPI_USER_UNLOCK'
-      EXPORTING
-        username = ls_token-bname
-      TABLES
-        return   = lt_unlock_ret.
+    " 6. H4: Only unlock account AFTER password change succeeded AND only for wrong-logon locks (not admin locks)
+    DATA: lv_uflag_now TYPE usr02-uflag.
+    SELECT SINGLE uflag FROM usr02
+      WHERE bname = @ls_token-bname
+      INTO @lv_uflag_now.
+
+    IF sy-subrc = 0 AND lv_uflag_now >= 128 AND ( lv_uflag_now MOD 128 ) < 32.
+      CALL FUNCTION 'BAPI_USER_UNLOCK'
+        EXPORTING
+          username = ls_token-bname
+        TABLES
+          return   = lt_unlock_ret.
+    ENDIF.
 
     CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
       EXPORTING
@@ -1211,7 +1301,8 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
       IF lv_home_path IS INITIAL.
         lv_home_path = server->request->get_header_field( '~path' ).
       ENDIF.
-      IF lv_home_path IS INITIAL.
+      FIND PCRE '^/[A-Za-z0-9_/-]+$' IN lv_home_path.
+      IF sy-subrc <> 0.
         lv_home_path = '/reset'.
       ENDIF.
       lv_esc_url = cl_http_utility=>escape_html( lv_home_path ).
@@ -1228,7 +1319,10 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
       card_title = heading
       content    = lv_content ).
 
-    me->render_response( server = server body = lv_html ).
+    me->render_response(
+      server      = server
+      status_code = status_code
+      body        = lv_html ).
   ENDMETHOD.
 
 
@@ -1521,18 +1615,116 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
 
   METHOD render_response.
-    server->response->set_status( code = status_code reason = 'OK' ).
+    DATA(lv_reason) = SWITCH string( status_code
+      WHEN 200 THEN 'OK'
+      WHEN 400 THEN 'Bad Request'
+      WHEN 403 THEN 'Forbidden'
+      WHEN 405 THEN 'Method Not Allowed'
+      WHEN 429 THEN 'Too Many Requests'
+      WHEN 500 THEN 'Internal Server Error'
+      ELSE 'OK' ).
+
+    server->response->set_status( code = status_code reason = lv_reason ).
     server->response->set_header_field( name = 'content-type' value = content_type ).
     server->response->set_header_field( name = 'cache-control' value = 'no-store, no-cache, must-revalidate, max-age=0' ).
     server->response->set_header_field( name = 'pragma' value = 'no-cache' ).
     server->response->set_header_field( name = 'x-content-type-options' value = 'nosniff' ).
     server->response->set_header_field( name = 'x-frame-options' value = 'DENY' ).
-    server->response->set_header_field( name = 'referrer-policy' value = 'strict-origin-when-cross-origin' ).
+    server->response->set_header_field( name = 'referrer-policy' value = 'no-referrer' ).
     server->response->set_header_field( name = 'strict-transport-security' value = 'max-age=31536000; includeSubDomains' ).
     server->response->set_header_field(
       name  = 'content-security-policy'
       value = 'default-src ''none''; style-src ''unsafe-inline''; script-src ''unsafe-inline''; form-action ''self''; frame-ancestors ''none''; base-uri ''self''' ).
     server->response->set_cdata( body ).
+  ENDMETHOD.
+
+
+  METHOD is_same_origin_post.
+    DATA: lv_sec_site TYPE string,
+          lv_origin   TYPE string,
+          lv_orig_h   TYPE string,
+          lv_req_host TYPE string,
+          lv_dummy    TYPE string.
+
+    is_ok = abap_true.
+
+    " Modern browsers send Sec-Fetch-Site on every POST
+    lv_sec_site = to_lower( server->request->get_header_field( 'sec-fetch-site' ) ).
+    CONDENSE lv_sec_site NO-GAPS.
+    IF lv_sec_site IS NOT INITIAL AND lv_sec_site <> 'same-origin' AND lv_sec_site <> 'none'.
+      is_ok = abap_false.
+      RETURN.
+    ENDIF.
+
+    " Validate Origin header host against request host when present
+    lv_origin = to_lower( server->request->get_header_field( 'origin' ) ).
+    CONDENSE lv_origin NO-GAPS.
+    IF lv_origin IS NOT INITIAL AND lv_origin <> 'null'.
+      lv_orig_h = lv_origin.
+      REPLACE FIRST OCCURRENCE OF 'https://' IN lv_orig_h WITH ''.
+      REPLACE FIRST OCCURRENCE OF 'http://'  IN lv_orig_h WITH ''.
+      IF lv_orig_h CS '/'.
+        SPLIT lv_orig_h AT '/' INTO lv_orig_h lv_dummy.
+      ENDIF.
+      IF lv_orig_h CS ':'.
+        SPLIT lv_orig_h AT ':' INTO lv_orig_h lv_dummy.
+      ENDIF.
+
+      lv_req_host = to_lower( server->request->get_header_field( 'x-forwarded-host' ) ).
+      IF lv_req_host IS INITIAL.
+        lv_req_host = to_lower( server->request->get_header_field( 'host' ) ).
+      ENDIF.
+      IF lv_req_host CS ','.
+        SPLIT lv_req_host AT ',' INTO lv_req_host lv_dummy.
+      ENDIF.
+      IF lv_req_host CS ':'.
+        SPLIT lv_req_host AT ':' INTO lv_req_host lv_dummy.
+      ENDIF.
+      CONDENSE lv_req_host NO-GAPS.
+
+      IF lv_req_host IS NOT INITIAL AND lv_orig_h <> lv_req_host.
+        is_ok = abap_false.
+        RETURN.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD is_trusted_proxy_ip.
+    DATA: lv_ip TYPE string.
+    lv_ip = ip_str.
+    CONDENSE lv_ip NO-GAPS.
+
+    IF lv_ip IS INITIAL
+       OR lv_ip = '::1'
+       OR lv_ip CP '127.*'
+       OR lv_ip CP '10.*'
+       OR lv_ip CP '192.168.*'.
+      trusted = abap_true.
+      RETURN.
+    ENDIF.
+
+    FIND PCRE '^172\.(1[6-9]|2[0-9]|3[0-1])\.' IN lv_ip.
+    IF sy-subrc = 0.
+      trusted = abap_true.
+      RETURN.
+    ENDIF.
+
+    trusted = abap_false.
+  ENDMETHOD.
+
+
+  METHOD increment_token_attempts.
+    CLEAR attempts.
+    " Atomic SQL increment prevents read-modify-write race conditions
+    UPDATE zsspr_tokens
+      SET attempts = attempts + 1
+      WHERE token = @token_hash.
+    COMMIT WORK.
+
+    SELECT SINGLE attempts FROM zsspr_tokens
+      WHERE token = @token_hash
+      INTO @attempts.
   ENDMETHOD.
 
 
@@ -1599,73 +1791,127 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
 
   METHOD get_client_ip.
-    DATA: lv_xff  TYPE string,
-          lt_hops TYPE STANDARD TABLE OF string WITH EMPTY KEY.
+    DATA: lv_remote TYPE string,
+          lv_xff    TYPE string,
+          lt_hops   TYPE STANDARD TABLE OF string WITH EMPTY KEY.
 
-    " Behind SAP Web Dispatcher: the LAST X-Forwarded-For entry is the one appended by our own
-    " trusted proxy (the real TCP peer it saw). Earlier entries are client-supplied and spoofable.
-    lv_xff = server->request->get_header_field( 'x-forwarded-for' ).
-    IF lv_xff IS NOT INITIAL.
-      SPLIT lv_xff AT ',' INTO TABLE lt_hops.
-      IF lt_hops IS NOT INITIAL.
-        ip_str = lt_hops[ lines( lt_hops ) ].
+    lv_remote = server->request->get_header_field( '~remote_addr' ).
+    CONDENSE lv_remote NO-GAPS.
+
+    " Only trust forwarded headers when the TCP peer is a trusted internal proxy / Web Dispatcher
+    IF me->is_trusted_proxy_ip( lv_remote ) = abap_true.
+      lv_xff = server->request->get_header_field( 'x-forwarded-for' ).
+      IF lv_xff IS NOT INITIAL.
+        SPLIT lv_xff AT ',' INTO TABLE lt_hops.
+        IF lt_hops IS NOT INITIAL.
+          ip_str = lt_hops[ lines( lt_hops ) ].
+        ENDIF.
+        CONDENSE ip_str NO-GAPS.
       ENDIF.
-      CONDENSE ip_str NO-GAPS.
+
+      IF ip_str IS INITIAL.
+        ip_str = server->request->get_header_field( 'x-real-ip' ).
+        CONDENSE ip_str NO-GAPS.
+      ENDIF.
     ENDIF.
 
     IF ip_str IS INITIAL.
-      ip_str = server->request->get_header_field( 'x-real-ip' ).
-      CONDENSE ip_str NO-GAPS.
+      ip_str = lv_remote.
     ENDIF.
 
-    IF ip_str IS INITIAL.
-      ip_str = server->request->get_header_field( '~remote_addr' ).
-      CONDENSE ip_str NO-GAPS.
-    ENDIF.
-
-    " Validate IPv4/IPv6 characters
+    " Validate IPv4/IPv6 characters (fallback 'UNKNOWN' remains subject to IP rate limiting)
     FIND PCRE '^[0-9a-fA-F.:]+$' IN ip_str.
     IF sy-subrc <> 0 OR strlen( ip_str ) > 45.
-      ip_str = '127.0.0.1'.
+      ip_str = 'UNKNOWN'.
     ENDIF.
   ENDMETHOD.
 
 
   METHOD get_base_url.
-    DATA: lv_host      TYPE string,
-          lv_proto     TYPE string,
-          lv_path      TYPE string,
-          lv_dummy     TYPE string,
-          lv_port_part TYPE string.
+    DATA: lv_host       TYPE string,
+          lv_hdr_host   TYPE string,
+          lv_cfg_host   TYPE tvarvc-low,
+          lt_loc_hosts  TYPE STANDARD TABLE OF httpurlloc-host WITH EMPTY KEY,
+          lv_remote     TYPE string,
+          lv_proto      TYPE string,
+          lv_path       TYPE string,
+          lv_dummy      TYPE string,
+          lv_port_part  TYPE string,
+          lv_allowed    TYPE abap_bool.
 
-    " 1. Detect public Host (support Reverse Proxy / Web Dispatcher headers)
-    lv_host = server->request->get_header_field( 'x-forwarded-host' ).
+    " 1a. Optional administrator-configured canonical host in TVARVC (strongest anti-Host-Injection)
+    SELECT SINGLE low FROM tvarvc
+      WHERE name = 'ZSSPR_BASE_HOST'
+        AND type = 'P'
+      INTO @lv_cfg_host.
+    IF sy-subrc = 0 AND lv_cfg_host IS NOT INITIAL.
+      lv_host = lv_cfg_host.
+      CONDENSE lv_host NO-GAPS.
+    ENDIF.
+
+    " 1b. Read incoming proxy/host header for validation against server-side allowlist
     IF lv_host IS INITIAL.
-      lv_host = server->request->get_header_field( 'host' ).
-    ENDIF.
+      lv_remote = server->request->get_header_field( '~remote_addr' ).
+      CONDENSE lv_remote NO-GAPS.
 
-    " If multiple hosts in X-Forwarded-Host (comma-separated), take the first client host
-    IF lv_host CS ','.
-      SPLIT lv_host AT ',' INTO lv_host lv_dummy.
-    ENDIF.
-    CONDENSE lv_host NO-GAPS.
+      IF me->is_trusted_proxy_ip( lv_remote ) = abap_true.
+        lv_hdr_host = server->request->get_header_field( 'x-forwarded-host' ).
+      ENDIF.
+      IF lv_hdr_host IS INITIAL.
+        lv_hdr_host = server->request->get_header_field( 'host' ).
+      ENDIF.
+      IF lv_hdr_host CS ','.
+        SPLIT lv_hdr_host AT ',' INTO lv_hdr_host lv_dummy.
+      ENDIF.
+      CONDENSE lv_hdr_host NO-GAPS.
+      IF lv_hdr_host CS ':'.
+        SPLIT lv_hdr_host AT ':' INTO lv_hdr_host lv_port_part.
+      ENDIF.
+      lv_hdr_host = to_lower( lv_hdr_host ).
 
-    " Strip port from host if present (e.g., host:8443, host:443)
-    IF lv_host CS ':'.
-      SPLIT lv_host AT ':' INTO lv_host lv_port_part.
-    ENDIF.
-
-    " If host is still initial, lookup official public host from HTTPURLLOC
-    IF lv_host IS INITIAL.
-      SELECT SINGLE host FROM httpurlloc
-        WHERE ( applicatn = '/*' OR applicatn = '/SAP/BC/*' )
+      " Prefer SAP HTTPURLLOC allowlist when maintained
+      SELECT host FROM httpurlloc
+        WHERE ( applicatn = '/*' OR applicatn = '/SAP/BC/*' OR applicatn = '/RESET*' )
           AND host IS NOT INITIAL
-        INTO @lv_host.
+        INTO TABLE @lt_loc_hosts.
+
+      IF lt_loc_hosts IS NOT INITIAL.
+        LOOP AT lt_loc_hosts INTO DATA(lv_loc_h).
+          DATA(lv_loc_low) = to_lower( CONV string( lv_loc_h ) ).
+          CONDENSE lv_loc_low NO-GAPS.
+          IF lv_loc_low CS ':'.
+            SPLIT lv_loc_low AT ':' INTO lv_loc_low lv_port_part.
+          ENDIF.
+          IF lv_hdr_host IS NOT INITIAL AND lv_hdr_host = lv_loc_low.
+            lv_host    = lv_loc_low.
+            lv_allowed = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+        IF lv_allowed = abap_false.
+          lv_host = to_lower( CONV string( lt_loc_hosts[ 1 ] ) ).
+          CONDENSE lv_host NO-GAPS.
+          IF lv_host CS ':'.
+            SPLIT lv_host AT ':' INTO lv_host lv_port_part.
+          ENDIF.
+        ENDIF.
+      ELSEIF me->is_trusted_proxy_ip( lv_remote ) = abap_true AND lv_hdr_host IS NOT INITIAL.
+        " Behind trusted internal reverse proxy when HTTPURLLOC is not maintained
+        lv_host = lv_hdr_host.
+      ELSE.
+        " Direct connection: always use ICM ~server_name (never untrusted client Host header)
+        lv_host = server->request->get_header_field( '~server_name' ).
+      ENDIF.
     ENDIF.
 
     IF lv_host IS INITIAL.
       lv_host = server->request->get_header_field( '~server_name' ).
     ENDIF.
+
+    IF lv_host CS ':'.
+      SPLIT lv_host AT ':' INTO lv_host lv_port_part.
+    ENDIF.
+    CONDENSE lv_host NO-GAPS.
 
     " Strict validation: hostname must match alphanumeric domain pattern
     FIND PCRE '^[a-zA-Z0-9.-]+$' IN lv_host.
@@ -1676,12 +1922,13 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
     " 2. Protocol: Default to HTTPS for Web Dispatcher / reverse proxy
     lv_proto = 'https'.
 
-    " 3. Path: preserve external route (e.g. /reset or /sap/bc/z_sspr)
+    " 3. Path: preserve external route (strictly validated against path injection)
     lv_path = server->request->get_header_field( '~script_name' ).
     IF lv_path IS INITIAL.
       lv_path = server->request->get_header_field( '~path' ).
     ENDIF.
-    IF lv_path IS INITIAL.
+    FIND PCRE '^/[A-Za-z0-9_/-]+$' IN lv_path.
+    IF sy-subrc <> 0.
       lv_path = '/reset'.
     ENDIF.
 
@@ -1759,6 +2006,12 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
         addsmtp   = lt_smtp
         return    = lt_return.
 
+    LOOP AT lt_return INTO DATA(ls_det_ret) WHERE type CA 'EA'.
+      " Fail closed if user detail cannot be retrieved
+      is_dialog = abap_false.
+      RETURN.
+    ENDLOOP.
+
     " H1: Distinguish Administrator Locks (local_lock / glob_lock) from Wrong Logon Locks (wrng_logon)
     IF ls_islocked-local_lock = 'L' OR ls_islocked-local_lock = 'X'
        OR ls_islocked-glob_lock = 'L' OR ls_islocked-glob_lock = 'X'.
@@ -1797,8 +2050,10 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
     SPLIT email AT '@' INTO lv_user_part lv_dom_part.
     lv_len = strlen( lv_user_part ).
-    IF lv_len <= 2.
-      masked = lv_user_part && '@' && lv_dom_part.
+    IF lv_len = 0.
+      masked = '***@' && lv_dom_part.
+    ELSEIF lv_len <= 2.
+      masked = lv_user_part(1) && '***@' && lv_dom_part.
     ELSE.
       DATA(lv_last_idx) = lv_len - 1.
       masked = lv_user_part(1) && '***' && lv_user_part+lv_last_idx(1) && '@' && lv_dom_part.
@@ -1830,10 +2085,11 @@ CLASS ZCL_SSPR_HTTP_HANDLER IMPLEMENTATION.
 
         cl_bcs_convert=>string_to_solix(
           EXPORTING
-            iv_string = html_content
+            iv_string   = html_content
+            iv_codepage = '4110'
           IMPORTING
-            et_solix  = lt_body_solix
-            ev_size   = lv_body_size ).
+            et_solix    = lt_body_solix
+            ev_size     = lv_body_size ).
 
         lo_document = cl_document_bcs=>create_document(
                         i_type    = 'HTM'

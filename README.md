@@ -66,8 +66,7 @@ This repository connects AI coding assistants directly to live **SAP S/4HANA** a
 ├── src/                  # Production-ready ABAP source programs & classes
 │   ├── z_role_01_create_master.prog.abap    # Batch Master Role & Menu Creation
 │   ├── z_role_02_create_derive.prog.abap    # Batch Derived Role Inheritance
-│   ├── z_role_03a_update_org.prog.abap      # Batch Org Levels Maintenance
-│   ├── z_role_03a_update_org_fix.prog.abap  # Batch Fix & Rebind Org Level Variables ($VARBL)
+│   ├── z_role_03a_update_org.prog.abap      # Batch Org Levels Maintenance & $VARBL Repair
 │   ├── z_role_03b_update_object.prog.abap   # Batch Auth Objects Maintenance
 │   ├── z_role_03c_update_activity.prog.abap # Batch Activity Fields Maintenance
 │   ├── z_role_04_create_composite.prog.abap # Batch Composite Role Bundling
@@ -175,8 +174,7 @@ Deploy and activate ABAP programs selectively to the connected SAP system:
 | `npm run deploy:role:01` | `Z_ROLE_01_CREATE_MASTER` | Report | Batch Master Role & Menu Creation |
 | `npm run deploy:role:02` | `Z_ROLE_02_CREATE_DERIVE` | Report | Batch Derived Role Derivation |
 | `npm run deploy:role:03` | *03a, 03b & 03c Programs* | Bundle | Full Org, Object & Activity Maintenance |
-| `npm run deploy:role:03a` | `Z_ROLE_03A_UPDATE_ORG` | Report | Batch Organizational Levels Maintenance |
-| `npm run deploy:role:03a:fix` | `Z_ROLE_03A_UPDATE_ORG_FIX` | Report | Batch Fix & Rebind Org Level Variables ($VARBL) |
+| `npm run deploy:role:03a` | `Z_ROLE_03A_UPDATE_ORG` | Report | Batch Organizational Levels Maintenance & `$VARBL` Repair |
 | `npm run deploy:role:03b` | `Z_ROLE_03B_UPDATE_OBJECT` | Report | Batch Authorization Objects Maintenance |
 | `npm run deploy:role:03c` | `Z_ROLE_03C_UPDATE_ACTIVITY` | Report | Batch Authorization Activity Maintenance |
 | `npm run deploy:role:04` | `Z_ROLE_04_CREATE_COMPOSITE` | Report | Batch Composite Role Bundling |
@@ -240,8 +238,7 @@ All utilities feature:
 | :--- | :--- | :--- |
 | **`Z_ROLE_01_CREATE_MASTER`** | [`docs/Z_ROLE_01_CREATE_MASTER.md`](docs/Z_ROLE_01_CREATE_MASTER.md) | Mass creates Master Roles from CSV; builds menu folders; defaults Org Levels to `'-1'`; strips boilerplate PFCG comments. |
 | **`Z_ROLE_02_CREATE_DERIVE`** | [`docs/Z_ROLE_02_CREATE_DERIVE.md`](docs/Z_ROLE_02_CREATE_DERIVE.md) | Batch creates Derived Roles with `PARENT_AGR` link; inherits authorizations; initializes Org Levels to `'-1'`. |
-| **`Z_ROLE_03A_UPDATE_ORG`** | [`docs/Z_ROLE_03A_UPDATE_ORG.md`](docs/Z_ROLE_03A_UPDATE_ORG.md) | Maintains Org Levels (`AGR_1252`); strictly validates existing role org levels (skips unassigned); compiles authorization profiles in dark mode. |
-| **`Z_ROLE_03A_UPDATE_ORG_FIX`** | [`docs/Z_ROLE_03A_UPDATE_ORG_FIX.md`](docs/Z_ROLE_03A_UPDATE_ORG_FIX.md) | Diagnoses and repairs roles with Red traffic lights or "Manually" (`MODIFIED = 'U'/'M'`) statuses on Org Level fields; rebinds `$VARBL` (`MODIFIED = 'S'`, `NEU = 'O'`); auto-heals parent Master Roles. |
+| **`Z_ROLE_03A_UPDATE_ORG`** | [`docs/Z_ROLE_03A_UPDATE_ORG.md`](docs/Z_ROLE_03A_UPDATE_ORG.md) | Maintains Org Levels (`AGR_1252`) with **Two-Way Sync** or **Append Only**, plus an integrated **Repair `$VARBL` Bindings** mode (merged from `Z_ROLE_03A_UPDATE_ORG_FIX`) to heal broken `AGR_1251`/`AGR_1250` bindings and auto-heal parent Master Roles. |
 | **`Z_ROLE_03B_UPDATE_OBJECT`** | [`docs/Z_ROLE_03B_UPDATE_OBJECT.md`](docs/Z_ROLE_03B_UPDATE_OBJECT.md) | Mass updates Authorization Objects & Fields (`AGR_1251`); strictly checks object & field existence before update (zero foreign object injection); compiles profiles. |
 | **`Z_ROLE_03C_UPDATE_ACTIVITY`** | [`docs/Z_ROLE_03C_UPDATE_ACTIVITY.md`](docs/Z_ROLE_03C_UPDATE_ACTIVITY.md) | Mass updates Authorization Activity fields (`ACTVT`, `PS_ACTVT`); preserves non-target authorization fields under matching objects; compiles profiles. |
 | **`Z_ROLE_04_CREATE_COMPOSITE`** | [`docs/Z_ROLE_04_CREATE_COMPOSITE.md`](docs/Z_ROLE_04_CREATE_COMPOSITE.md) | Creates Composite Roles (`COLL_AGR = 'X'`); validates and assigns Single Roles atomically; isolates missing roles. |

@@ -1,19 +1,64 @@
 ﻿Role Name,Role Description,TCode
-Z_FI_PERIOD_CONTROL,GL Period Control,OB52
-Z_FI_PERIOD_CONTROL,GL Period Control,S_ALR_87003642
-Z_FI_GL_MASTER_MAINT,GL Master Data Maintenance,FS00
-Z_FI_GL_MASTER_MAINT,GL Master Data Maintenance,FSP0
-Z_FI_GL_MASTER_MAINT,GL Master Data Maintenance,FSS0
-Z_FI_JOURNAL_POST,General Ledger Journal Posting,F-02
-Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB01
-Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB02
-Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB03
-Z_FI_JOURNAL_POST,General Ledger Journal Posting,FB50
-Z_FI_JOURNAL_DISPLAY,General Ledger Journal Display,FB03
-Z_FI_JOURNAL_DISPLAY,General Ledger Journal Display,FBL3N
-Z_FI_JOURNAL_DISPLAY,General Ledger Journal Display,FS10N
-Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,F-53
-Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,FB02
-Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,FB03
-Z_FI_AP_INVOICE_PROCESS,Accounts Payable Invoice Processing,FB60
-Z_FI_GL_REPORTS_EMPTY,General Ledger Custom Reporting,N/A
+Z_FI_PERIOD_CONTROL,FI GL Period Control,OB52
+Z_FI_PERIOD_CONTROL,FI GL Period Control,S_ALR_87003642
+Z_FI_GL_MASTER_MAINT,FI GL Master Data Maintenance,FS00
+Z_FI_GL_MASTER_MAINT,FI GL Master Data Maintenance,FSP0
+Z_FI_GL_MASTER_MAINT,FI GL Master Data Maintenance,FSS0
+Z_FI_JOURNAL_POST,FI General Ledger Posting,F-02
+Z_FI_JOURNAL_POST,FI General Ledger Posting,FB01
+Z_FI_JOURNAL_POST,FI General Ledger Posting,FB02
+Z_FI_JOURNAL_POST,FI General Ledger Posting,FB03
+Z_FI_JOURNAL_POST,FI General Ledger Posting,FB50
+Z_FI_JOURNAL_DISPLAY,FI General Ledger Display,FB03
+Z_FI_JOURNAL_DISPLAY,FI General Ledger Display,FBL3N
+Z_FI_JOURNAL_DISPLAY,FI General Ledger Display,FS10N
+Z_FI_AP_INVOICE_PROC,FI AP Invoice & Payment,F-53
+Z_FI_AP_INVOICE_PROC,FI AP Invoice & Payment,FB02
+Z_FI_AP_INVOICE_PROC,FI AP Invoice & Payment,FB03
+Z_FI_AP_INVOICE_PROC,FI AP Invoice & Payment,FB60
+Z_FI_AP_INVOICE_PROC,FI AP Invoice & Payment,FB65
+Z_FI_AP_INVOICE_PROC,FI AP Invoice & Payment,FBL1N
+Z_FI_AR_INVOICE_PROC,FI AR Billing & Customer Clear,F-28
+Z_FI_AR_INVOICE_PROC,FI AR Billing & Customer Clear,FB70
+Z_FI_AR_INVOICE_PROC,FI AR Billing & Customer Clear,FB75
+Z_FI_AR_INVOICE_PROC,FI AR Billing & Customer Clear,FBL5N
+Z_FI_AR_INVOICE_PROC,FI AR Billing & Customer Clear,FD32
+Z_FI_ASSET_ACCOUNTING,FI-AA Fixed Asset Accounting,AFAB
+Z_FI_ASSET_ACCOUNTING,FI-AA Fixed Asset Accounting,AS01
+Z_FI_ASSET_ACCOUNTING,FI-AA Fixed Asset Accounting,AS02
+Z_FI_ASSET_ACCOUNTING,FI-AA Fixed Asset Accounting,AS03
+Z_FI_ASSET_ACCOUNTING,FI-AA Fixed Asset Accounting,AW01N
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KO01
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KO03
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KOB1
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KS01
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KS02
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KS03
+Z_CO_COST_CENTER,CO Cost Center & Internal Orders,KSB1
+Z_MM_PR_PROCESSING,MM Purchase Requisition Mgmt,ME51N
+Z_MM_PR_PROCESSING,MM Purchase Requisition Mgmt,ME52N
+Z_MM_PR_PROCESSING,MM Purchase Requisition Mgmt,ME53N
+Z_MM_PR_PROCESSING,MM Purchase Requisition Mgmt,ME54N
+Z_MM_PR_PROCESSING,MM Purchase Requisition Mgmt,ME5A
+Z_MM_PO_PROCESSING,MM Purchase Order & Release,ME21N
+Z_MM_PO_PROCESSING,MM Purchase Order & Release,ME22N
+Z_MM_PO_PROCESSING,MM Purchase Order & Release,ME23N
+Z_MM_PO_PROCESSING,MM Purchase Order & Release,ME29N
+Z_MM_PO_PROCESSING,MM Purchase Order & Release,ME2N
+Z_MM_INVENTORY_MGMT,MM Goods Movement & LIV,MB51
+Z_MM_INVENTORY_MGMT,MM Goods Movement & LIV,MB52
+Z_MM_INVENTORY_MGMT,MM Goods Movement & LIV,MIGO
+Z_MM_INVENTORY_MGMT,MM Goods Movement & LIV,MIR4
+Z_MM_INVENTORY_MGMT,MM Goods Movement & LIV,MIRO
+Z_MM_INVENTORY_MGMT,MM Goods Movement & LIV,MMBE
+Z_SD_ORDER_BILLING,SD Sales Order & Billing,VA01
+Z_SD_ORDER_BILLING,SD Sales Order & Billing,VA02
+Z_SD_ORDER_BILLING,SD Sales Order & Billing,VA03
+Z_SD_ORDER_BILLING,SD Sales Order & Billing,VF01
+Z_SD_ORDER_BILLING,SD Sales Order & Billing,VF03
+Z_SD_ORDER_BILLING,SD Sales Order & Billing,VL01N
+Z_PS_PROJECT_MGMT,PS Project Builder & Reports,CJ03
+Z_PS_PROJECT_MGMT,PS Project Builder & Reports,CJ20N
+Z_PS_PROJECT_MGMT,PS Project Builder & Reports,CJI3
+Z_PS_PROJECT_MGMT,PS Project Builder & Reports,CN41N
+Z_FI_GL_REPORTS_EMPTY,FI Custom Reporting (Empty Menu),N/A

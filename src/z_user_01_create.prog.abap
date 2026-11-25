@@ -29,8 +29,6 @@
 *&---------------------------------------------------------------------*
 REPORT z_user_01_create.
 
-TABLES: usr02.
-
 *----------------------------------------------------------------------*
 * 1. TYPES & DATA DEFINITIONS
 *----------------------------------------------------------------------*
@@ -38,13 +36,15 @@ TYPES: ty_bin_255      TYPE x LENGTH 255,
        ty_t_bapiparam1 TYPE STANDARD TABLE OF bapiparam1 WITH DEFAULT KEY.
 
 TYPES: BEGIN OF ty_user_csv,
-         username   TYPE bapibname-bapibname,
-         password   TYPE bapipwd-bapipwd,
-         fullname   TYPE string,
-         email      TYPE bapiaddr3-e_mail,
-         phone      TYPE bapiaddr3-tel1_numbr,
-         department TYPE bapiaddr3-department,
-         function   TYPE bapiaddr3-function,
+         raw_username  TYPE string,
+         username      TYPE bapibname-bapibname,
+         password      TYPE bapipwd-bapipwd,
+         fullname      TYPE string,
+         email         TYPE bapiaddr3-e_mail,
+         email_invalid TYPE abap_bool,
+         phone         TYPE bapiaddr3-tel1_numbr,
+         department    TYPE bapiaddr3-department,
+         function      TYPE bapiaddr3-function,
        END OF ty_user_csv.
 
 TYPES: BEGIN OF ty_alv_result,
@@ -258,6 +258,9 @@ AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_comp.
   PERFORM f4_company CHANGING p_comp.
 
 AT SELECTION-SCREEN.
+  IF p_gltgv IS NOT INITIAL AND p_gltgb IS NOT INITIAL AND p_gltgv > p_gltgb.
+    MESSAGE 'Valid From date cannot be later than Valid To date.' TYPE 'E'.
+  ENDIF.
   IF p_pfile IS INITIAL.
     CLEAR gv_loaded_pfile.
   ELSEIF p_pfile <> gv_loaded_pfile OR ( p_pid01 IS INITIAL AND p_pid02 IS INITIAL ).
@@ -501,6 +504,16 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM check_authority.
   " Check authorization for user administration (S_USER_GRP)
+  IF p_test = abap_true.
+    AUTHORITY-CHECK OBJECT 'S_USER_GRP'
+      ID 'CLASS' DUMMY
+      ID 'ACTVT' FIELD '03'. " Display
+    IF sy-subrc <> 0.
+      MESSAGE 'No display authorization for SAP user administration (S_USER_GRP ACTVT 03).' TYPE 'E'.
+    ENDIF.
+    RETURN.
+  ENDIF.
+
   AUTHORITY-CHECK OBJECT 'S_USER_GRP'
     ID 'CLASS' DUMMY
     ID 'ACTVT' FIELD '01'. " Create
@@ -508,7 +521,7 @@ FORM check_authority.
     AUTHORITY-CHECK OBJECT 'S_USER_GRP'
       ID 'CLASS' DUMMY
       ID 'ACTVT' FIELD '02'. " Change
-    IF sy-subrc <> 0 AND p_test = abap_false.
+    IF sy-subrc <> 0.
       MESSAGE 'No authorization to create or modify SAP users (object S_USER_GRP).' TYPE 'E'.
     ENDIF.
   ENDIF.
@@ -578,6 +591,9 @@ FORM read_local_csv_lines USING    iv_file  TYPE localfile
         binary_tab   = lt_binary_tab
       EXCEPTIONS
         OTHERS       = 1.
+    IF sy-subrc <> 0.
+      MESSAGE 'Failed to decode CSV file content (check UTF-8 encoding).' TYPE 'E'.
+    ENDIF.
   ENDIF.
 
   " Strip Byte Order Mark (BOM U+FEFF) if present
@@ -586,11 +602,12 @@ FORM read_local_csv_lines USING    iv_file  TYPE localfile
     lv_content = lv_content+1.
   ENDIF.
 
-  " Split by CR/LF or Newline
-  SPLIT lv_content AT cl_abap_char_utilities=>cr_lf INTO TABLE et_lines.
-  IF lines( et_lines ) <= 1.
-    SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE et_lines.
-  ENDIF.
+  " Normalize mixed line endings (CRLF / CR -> LF) before splitting
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf
+    IN lv_content WITH cl_abap_char_utilities=>newline.
+  REPLACE ALL OCCURRENCES OF |\r|
+    IN lv_content WITH cl_abap_char_utilities=>newline.
+  SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE et_lines.
 
   LOOP AT et_lines ASSIGNING FIELD-SYMBOL(<lv_line>).
     IF sy-tabix = 1 AND strlen( <lv_line> ) > 0 AND <lv_line>(1) = lv_bom.
@@ -657,9 +674,18 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
     ENDIF.
 
     IF lv_c1 IS NOT INITIAL.
-      CLEAR ls_user.
-      ls_user-username = lv_c1_up.
-      CONDENSE ls_user-username NO-GAPS.
+      DATA: lv_raw_user TYPE string,
+            lv_pwd_val  TYPE string,
+            lv_last_tok TYPE string,
+            lv_num_tok  TYPE i.
+
+      CLEAR: ls_user, lv_raw_user, lv_pwd_val, lv_last_tok, lv_num_tok.
+      lv_raw_user = lv_c1_up.
+      CONDENSE lv_raw_user NO-GAPS.
+      ls_user-raw_username = lv_raw_user.
+      IF strlen( lv_raw_user ) <= 12.
+        ls_user-username = lv_raw_user.
+      ENDIF.
 
       READ TABLE lt_tokens INTO ls_user-fullname   INDEX 2.
       READ TABLE lt_tokens INTO ls_user-email      INDEX 3.
@@ -667,23 +693,31 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
       READ TABLE lt_tokens INTO ls_user-department INDEX 5.
       READ TABLE lt_tokens INTO ls_user-function   INDEX 6.
 
-      " Read Initial Password from the last column of the file
-      DATA(lv_num_tokens) = lines( lt_tokens ).
+      " Read Initial Password from the mapped or last column (strictly check sy-subrc)
+      lv_num_tok = lines( lt_tokens ).
       IF lv_pwd_col_idx > 0.
-        READ TABLE lt_tokens INTO DATA(lv_pwd_val) INDEX lv_pwd_col_idx.
-        CONDENSE lv_pwd_val NO-GAPS.
-        ls_user-password = lv_pwd_val.
-      ELSEIF lv_num_tokens >= 7.
-        " No explicit header, read the last column (Col 7 or final non-empty token >= 7)
-        READ TABLE lt_tokens INTO DATA(lv_last_tok) INDEX lv_num_tokens.
-        CONDENSE lv_last_tok NO-GAPS.
-        IF lv_last_tok IS INITIAL AND lv_num_tokens > 7.
-          READ TABLE lt_tokens INTO lv_last_tok INDEX 7.
+        READ TABLE lt_tokens INTO lv_pwd_val INDEX lv_pwd_col_idx.
+        IF sy-subrc = 0.
+          CONDENSE lv_pwd_val NO-GAPS.
+          ls_user-password = lv_pwd_val.
+        ENDIF.
+      ELSEIF lv_num_tok >= 7.
+        " No explicit header: read last column (Col 7 or final non-empty token >= 7)
+        READ TABLE lt_tokens INTO lv_last_tok INDEX lv_num_tok.
+        IF sy-subrc = 0.
           CONDENSE lv_last_tok NO-GAPS.
+        ELSE.
+          CLEAR lv_last_tok.
+        ENDIF.
+        IF lv_last_tok IS INITIAL AND lv_num_tok > 7.
+          READ TABLE lt_tokens INTO lv_last_tok INDEX 7.
+          IF sy-subrc = 0.
+            CONDENSE lv_last_tok NO-GAPS.
+          ELSE.
+            CLEAR lv_last_tok.
+          ENDIF.
         ENDIF.
         ls_user-password = lv_last_tok.
-      ELSE.
-        CLEAR ls_user-password.
       ENDIF.
 
       APPEND ls_user TO gt_users.
@@ -700,31 +734,79 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM parse_csv_line USING    iv_line   TYPE string
                     CHANGING et_tokens TYPE string_table.
-  DATA: lv_len  TYPE i,
-        lv_in_q TYPE abap_bool VALUE abap_false,
-        lv_cur  TYPE string,
-        lv_char TYPE string.
+  DATA: lv_len      TYPE i,
+        lv_pos      TYPE i,
+        lv_in_q     TYPE abap_bool VALUE abap_false,
+        lv_cur      TYPE string,
+        lv_char     TYPE string,
+        lv_next     TYPE string,
+        lv_delim    TYPE c LENGTH 1,
+        lv_cnt_tab  TYPE i,
+        lv_cnt_semi TYPE i,
+        lv_cnt_com  TYPE i.
 
   CLEAR et_tokens.
 
   lv_len = strlen( iv_line ).
-  DO lv_len TIMES.
-    DATA(lv_idx) = sy-index - 1.
-    lv_char = substring( val = iv_line off = lv_idx len = 1 ).
 
+  " Pass 1: Detect primary delimiter outside quotes (TAB > ';' > ',')
+  lv_pos = 0.
+  lv_in_q = abap_false.
+  WHILE lv_pos < lv_len.
+    lv_char = substring( val = iv_line off = lv_pos len = 1 ).
     IF lv_char = '"'.
-      IF lv_in_q = abap_true.
-        lv_in_q = abap_false.
-      ELSE.
-        lv_in_q = abap_true.
+      IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
+        lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
+        IF lv_next = '"'.
+          lv_pos = lv_pos + 2.
+          CONTINUE.
+        ENDIF.
       ENDIF.
-    ELSEIF ( lv_char = ',' OR lv_char = ';' OR lv_char = cl_abap_char_utilities=>horizontal_tab ) AND lv_in_q = abap_false.
+      lv_in_q = xsdbool( lv_in_q = abap_false ).
+    ELSEIF lv_in_q = abap_false.
+      IF lv_char = cl_abap_char_utilities=>horizontal_tab.
+        lv_cnt_tab = lv_cnt_tab + 1.
+      ELSEIF lv_char = ';'.
+        lv_cnt_semi = lv_cnt_semi + 1.
+      ELSEIF lv_char = ','.
+        lv_cnt_com = lv_cnt_com + 1.
+      ENDIF.
+    ENDIF.
+    lv_pos = lv_pos + 1.
+  ENDWHILE.
+
+  IF lv_cnt_tab > 0.
+    lv_delim = cl_abap_char_utilities=>horizontal_tab.
+  ELSEIF lv_cnt_semi > 0 AND lv_cnt_semi >= lv_cnt_com.
+    lv_delim = ';'.
+  ELSE.
+    lv_delim = ','.
+  ENDIF.
+
+  " Pass 2: Tokenize with RFC 4180 escaped-quote support and space preservation
+  lv_pos = 0.
+  lv_in_q = abap_false.
+  CLEAR lv_cur.
+  WHILE lv_pos < lv_len.
+    lv_char = substring( val = iv_line off = lv_pos len = 1 ).
+    IF lv_char = '"'.
+      IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
+        lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
+        IF lv_next = '"'.
+          lv_cur = lv_cur && '"'.
+          lv_pos = lv_pos + 2.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      lv_in_q = xsdbool( lv_in_q = abap_false ).
+    ELSEIF lv_char = lv_delim AND lv_in_q = abap_false.
       APPEND lv_cur TO et_tokens.
       CLEAR lv_cur.
     ELSE.
-      CONCATENATE lv_cur lv_char INTO lv_cur.
+      lv_cur = lv_cur && lv_char.
     ENDIF.
-  ENDDO.
+    lv_pos = lv_pos + 1.
+  ENDWHILE.
   APPEND lv_cur TO et_tokens.
 
   " Clean quotes and trim outer spaces for each token
@@ -766,16 +848,47 @@ FORM process_users.
   CLEAR gt_results.
 
   LOOP AT gt_users INTO DATA(ls_user).
-    CLEAR: ls_res, lt_return, lv_errmsg, lv_has_err.
-
-    " Validate email: if invalid, automatically clear it
     DATA: lv_clean_email TYPE bapiaddr3-e_mail,
-          lv_email_valid TYPE abap_bool.
+          lv_email_valid TYPE abap_bool,
+          lv_email_note  TYPE string,
+          lv_pwd_from_file TYPE abap_bool,
+          lv_usr02_bname TYPE usr02-bname.
 
+    CLEAR: ls_res, lt_return, lv_errmsg, lv_has_err, lv_exists,
+           lv_clean_email, lv_email_valid, lv_email_note,
+           lv_pwd_from_file, lv_usr02_bname.
+
+    " Validation 1: Username must not be initial
+    IF ls_user-raw_username IS INITIAL.
+      ls_res-status  = gc_status_err.
+      ls_res-action  = 'ERROR'.
+      ls_res-message = 'Username is empty or missing.'.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
+
+    " Validation 2: Username max 12 characters (checked on raw string BEFORE CHAR12 truncation)
+    IF strlen( ls_user-raw_username ) > 12.
+      ls_res-status     = gc_status_err.
+      ls_res-action     = 'ERROR'.
+      ls_res-username   = ls_user-raw_username(12).
+      ls_res-fullname   = ls_user-fullname.
+      ls_res-email      = ls_user-email.
+      ls_res-phone      = ls_user-phone.
+      ls_res-department = ls_user-department.
+      ls_res-function   = ls_user-function.
+      ls_res-message    = 'Username exceeds SAP 12-character limit: ' && ls_user-raw_username.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
+
+    " Validate email: if invalid, ignore it without overwriting existing SAP email
     IF ls_user-email IS NOT INITIAL.
       PERFORM validate_email USING ls_user-email
                              CHANGING lv_clean_email lv_email_valid.
       IF lv_email_valid = abap_false.
+        lv_email_note = | [WARN: Invalid email '{ ls_user-email }' ignored]|.
+        ls_user-email_invalid = abap_true.
         CLEAR ls_user-email.
       ELSE.
         ls_user-email = lv_clean_email.
@@ -783,7 +896,7 @@ FORM process_users.
     ENDIF.
 
     " Check user existence in USR02
-    SELECT SINGLE bname FROM usr02 INTO @DATA(lv_usr02_bname)
+    SELECT SINGLE bname FROM usr02 INTO @lv_usr02_bname
       WHERE bname = @ls_user-username.
     IF sy-subrc = 0.
       lv_exists = abap_true.
@@ -792,7 +905,6 @@ FORM process_users.
     ENDIF.
 
     " Track whether initial password was supplied in the input file
-    DATA: lv_pwd_from_file TYPE abap_bool.
     IF ls_user-password IS NOT INITIAL.
       lv_pwd_from_file = abap_true.
     ELSE.
@@ -824,24 +936,6 @@ FORM process_users.
     ls_res-department = ls_user-department.
     ls_res-function   = ls_user-function.
 
-    " Validation 1: Username must not be initial
-    IF ls_user-username IS INITIAL.
-      ls_res-status  = gc_status_err.
-      ls_res-action  = 'ERROR'.
-      ls_res-message = 'Username is empty or missing.'.
-      APPEND ls_res TO gt_results.
-      CONTINUE.
-    ENDIF.
-
-    " Validation 2: Username max 12 characters (SAP User ID limit)
-    IF strlen( ls_user-username ) > 12.
-      ls_res-status  = gc_status_err.
-      ls_res-action  = 'ERROR'.
-      ls_res-message = 'Username exceeds SAP 12-character limit: ' && ls_user-username.
-      APPEND ls_res TO gt_results.
-      CONTINUE.
-    ENDIF.
-
     " Validation 3: Full Name must not be initial (BAPIADDR3-LASTNAME is mandatory)
     IF ls_user-fullname IS INITIAL.
       ls_res-status  = gc_status_err.
@@ -855,14 +949,14 @@ FORM process_users.
     IF lv_exists = abap_false.
       IF p_test = abap_true.
         " Simulation Mode: New user creation
-        ls_res-status  = gc_status_ok.
+        ls_res-status  = COND #( WHEN lv_email_note IS NOT INITIAL THEN gc_status_warn ELSE gc_status_ok ).
         ls_res-action  = 'SIM_NEW'.
         IF lv_pwd_from_file = abap_true.
           ls_res-message = 'Simulated: User will be created with initial password from file (' &&
-                           'Type: ' && p_ustyp && ', Valid: ' && p_gltgv && ' to ' && p_gltgb && ').'.
+                           'Type: ' && p_ustyp && ', Valid: ' && p_gltgv && ' to ' && p_gltgb && ').' && lv_email_note.
         ELSE.
           ls_res-message = 'Simulated: User will be created with auto-generated initial password (' &&
-                           'Type: ' && p_ustyp && ', Valid: ' && p_gltgv && ' to ' && p_gltgb && ').'.
+                           'Type: ' && p_ustyp && ', Valid: ' && p_gltgv && ' to ' && p_gltgb && ').' && lv_email_note.
         ENDIF.
         APPEND ls_res TO gt_results.
       ELSE.
@@ -874,23 +968,24 @@ FORM process_users.
                                        CHANGING lv_errmsg lv_has_err.
 
         IF lv_has_err = abap_true.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
           ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
-          ls_res-message = lv_errmsg.
+          ls_res-message = lv_errmsg && lv_email_note.
         ELSE.
           CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
             EXPORTING
               wait = 'X'.
 
-          ls_res-status  = gc_status_ok.
+          ls_res-status  = COND #( WHEN lv_email_note IS NOT INITIAL THEN gc_status_warn ELSE gc_status_ok ).
           ls_res-action  = 'CREATED'.
           IF lv_errmsg IS NOT INITIAL.
-            ls_res-message = 'User created successfully: ' && lv_errmsg.
+            ls_res-message = 'User created successfully: ' && lv_errmsg && lv_email_note.
           ELSE.
             IF lv_pwd_from_file = abap_true.
-              ls_res-message = 'User created successfully with initial password from file & details.'.
+              ls_res-message = 'User created successfully with initial password from file & details.' && lv_email_note.
             ELSE.
-              ls_res-message = 'User created successfully with auto-generated initial password & details.'.
+              ls_res-message = 'User created successfully with auto-generated initial password & details.' && lv_email_note.
             ENDIF.
           ENDIF.
         ENDIF.
@@ -903,7 +998,7 @@ FORM process_users.
         " User exists, but update flag is not selected -> Skip with Yellow warning
         ls_res-status  = gc_status_warn.
         ls_res-action  = 'SKIPPED'.
-        ls_res-message = 'User already exists in SAP. Check "Update Existing Users" to modify.'.
+        ls_res-message = 'User already exists in SAP. Check "Update Existing Users" to modify.' && lv_email_note.
         APPEND ls_res TO gt_results.
       ELSE.
         " Check if existing user details already match CSV (when password reset is not requested)
@@ -914,10 +1009,13 @@ FORM process_users.
               lt_scr_params TYPE ty_t_bapiparam1,
               lv_tgt_spdb   TYPE bapidefaul-spdb,
               lt_cur_ret    TYPE STANDARD TABLE OF bapiret2,
+              lv_cur_err    TYPE abap_bool,
+              lv_cur_msg    TYPE string,
               lv_usr_same   TYPE abap_bool,
               lv_tgt_last   TYPE bapiaddr3-lastname.
         CLEAR: ls_cur_addr, ls_cur_comp, ls_cur_def, lt_cur_params,
-               lt_scr_params, lv_tgt_spdb, lt_cur_ret, lv_usr_same, lv_tgt_last.
+               lt_scr_params, lv_tgt_spdb, lt_cur_ret, lv_cur_err,
+               lv_cur_msg, lv_usr_same, lv_tgt_last.
 
         IF strlen( ls_user-fullname ) > 40.
           lv_tgt_last = ls_user-fullname(40).
@@ -940,11 +1038,23 @@ FORM process_users.
               parameter1 = lt_cur_params
               return     = lt_cur_ret.
 
+          PERFORM format_return_messages USING lt_cur_ret
+                                         CHANGING lv_cur_msg lv_cur_err.
+          IF lv_cur_err = abap_true.
+            ls_res-status  = gc_status_err.
+            ls_res-action  = 'ERROR'.
+            ls_res-message = 'Failed to read existing user details: ' && lv_cur_msg.
+            APPEND ls_res TO gt_results.
+            CONTINUE.
+          ENDIF.
+
           lv_usr_same = abap_true.
           IF ls_cur_addr-lastname <> lv_tgt_last.
             lv_usr_same = abap_false.
           ENDIF.
-          IF ( p_sync = abap_true OR ls_user-email IS NOT INITIAL ) AND ls_cur_addr-e_mail <> ls_user-email.
+          IF ls_user-email_invalid = abap_false
+             AND ( p_sync = abap_true OR ls_user-email IS NOT INITIAL )
+             AND ls_cur_addr-e_mail <> ls_user-email.
             lv_usr_same = abap_false.
           ENDIF.
           IF ( p_sync = abap_true OR ls_user-phone IS NOT INITIAL ) AND ls_cur_addr-tel1_numbr <> ls_user-phone.
@@ -981,27 +1091,27 @@ FORM process_users.
         ENDIF.
 
         IF lv_usr_same = abap_true.
-          ls_res-status  = gc_status_ok.
+          ls_res-status  = COND #( WHEN lv_email_note IS NOT INITIAL THEN gc_status_warn ELSE gc_status_ok ).
           ls_res-action  = 'UP-TO-DATE'.
           IF p_test = abap_true.
-            ls_res-message = 'Simulated: User details, defaults & parameters match. No changes needed.'.
+            ls_res-message = 'Simulated: User details, defaults & parameters match. No changes needed.' && lv_email_note.
           ELSE.
-            ls_res-message = 'User details, defaults & parameters match. No changes needed.'.
+            ls_res-message = 'User details, defaults & parameters match. No changes needed.' && lv_email_note.
           ENDIF.
           APPEND ls_res TO gt_results.
 
         " Subcase B1: Simulation Mode
         ELSEIF p_test = abap_true.
-          ls_res-status  = gc_status_ok.
+          ls_res-status  = COND #( WHEN lv_email_note IS NOT INITIAL THEN gc_status_warn ELSE gc_status_ok ).
           ls_res-action  = 'SIM_UPD'.
           IF p_pwd = abap_true.
             IF lv_pwd_from_file = abap_true.
-              ls_res-message = 'Simulated: User details, defaults, parameters & password will be updated.'.
+              ls_res-message = 'Simulated: User details, defaults, parameters & password will be updated.' && lv_email_note.
             ELSE.
-              ls_res-message = 'Simulated: User details, defaults, parameters & auto password will be updated.'.
+              ls_res-message = 'Simulated: User details, defaults, parameters & auto password will be updated.' && lv_email_note.
             ENDIF.
           ELSE.
-            ls_res-message = 'Simulated: User details, defaults & parameters will be updated (Pwd unchanged).'.
+            ls_res-message = 'Simulated: User details, defaults & parameters will be updated (Pwd unchanged).' && lv_email_note.
           ENDIF.
           APPEND ls_res TO gt_results.
 
@@ -1015,27 +1125,28 @@ FORM process_users.
                                          CHANGING lv_errmsg lv_has_err.
 
           IF lv_has_err = abap_true.
+            CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
             ls_res-status  = gc_status_err.
             ls_res-action  = 'ERROR'.
-            ls_res-message = lv_errmsg.
+            ls_res-message = lv_errmsg && lv_email_note.
           ELSE.
             CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
               EXPORTING
                 wait = 'X'.
 
-            ls_res-status  = gc_status_ok.
+            ls_res-status  = COND #( WHEN lv_email_note IS NOT INITIAL THEN gc_status_warn ELSE gc_status_ok ).
             ls_res-action  = 'UPDATED'.
             IF lv_errmsg IS NOT INITIAL.
-              ls_res-message = 'User updated successfully: ' && lv_errmsg.
+              ls_res-message = 'User updated successfully: ' && lv_errmsg && lv_email_note.
             ELSE.
               IF p_pwd = abap_true.
                 IF lv_pwd_from_file = abap_true.
-                  ls_res-message = 'User updated successfully with password from file.'.
+                  ls_res-message = 'User updated successfully with password from file.' && lv_email_note.
                 ELSE.
-                  ls_res-message = 'User updated successfully with auto-generated password.'.
+                  ls_res-message = 'User updated successfully with auto-generated password.' && lv_email_note.
                 ENDIF.
               ELSE.
-                ls_res-message = 'User updated successfully (password unchanged).'.
+                ls_res-message = 'User updated successfully (password unchanged).' && lv_email_note.
               ENDIF.
             ENDIF.
           ENDIF.
@@ -1164,7 +1275,8 @@ FORM update_single_user USING    is_user   TYPE ty_user_csv
   ENDIF.
   ls_addressx-lastname = 'X'.
 
-  IF p_sync = abap_true OR is_user-email IS NOT INITIAL.
+  IF is_user-email_invalid = abap_false
+     AND ( p_sync = abap_true OR is_user-email IS NOT INITIAL ).
     ls_address-e_mail  = is_user-email.
     ls_addressx-e_mail = 'X'.
   ENDIF.
@@ -1200,6 +1312,11 @@ FORM update_single_user USING    is_user   TYPE ty_user_csv
         TABLES
           parameter1 = lt_cur_params
           return     = lt_get_ret.
+
+      LOOP AT lt_get_ret INTO DATA(ls_get_ret) WHERE type CA 'EA'.
+        et_return = lt_get_ret.
+        RETURN.
+      ENDLOOP.
 
       LOOP AT lt_scr_params INTO DATA(ls_scr_par).
         READ TABLE lt_cur_params ASSIGNING FIELD-SYMBOL(<ls_cur_par>)
@@ -1716,7 +1833,11 @@ CLASS lcl_alv_event_handler IMPLEMENTATION.
     READ TABLE gt_results INTO DATA(ls_row) INDEX row.
     IF sy-subrc = 0 AND column = 'USERNAME' AND ls_row-username IS NOT INITIAL.
       SET PARAMETER ID 'USR' FIELD ls_row-username.
-      CALL TRANSACTION 'SU01' AND SKIP FIRST SCREEN.
+      TRY.
+          CALL TRANSACTION 'SU01' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+        CATCH cx_sy_authorization_error.
+          MESSAGE 'No authorization to launch transaction SU01.' TYPE 'S' DISPLAY LIKE 'E'.
+      ENDTRY.
     ENDIF.
   ENDMETHOD.
 ENDCLASS.
@@ -1844,7 +1965,7 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
     RETURN.
   ENDIF.
 
-  " Attempt 2: High-entropy SAP-compliant fallback generator (12 characters)
+  " Attempt 2: CSPRNG-backed SAP-compliant fallback generator (12 characters)
   DATA: lv_uppers   TYPE string VALUE 'ABCDEFGHJKLMNPQRSTUVWXYZ',
         lv_lowers   TYPE string VALUE 'abcdefghijkmnpqrstuvwxyz',
         lv_digits   TYPE string VALUE '23456789',
@@ -1852,37 +1973,56 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
         lv_all      TYPE string,
         lv_res      TYPE string,
         lv_char     TYPE c LENGTH 1,
+        lv_sec_x    TYPE xstring,
+        lv_sec_pos  TYPE i,
         lo_rnd      TYPE REF TO cl_abap_random_int,
         lv_shuffled TYPE string,
         lv_rem_len  TYPE i,
-        lv_pick_pos TYPE i.
+        lv_pick_pos TYPE i,
+        lv_rval     TYPE i.
 
   lv_all = lv_uppers && lv_lowers && lv_digits && lv_spec.
 
-  TRY.
-      lo_rnd = cl_abap_random_int=>create(
-                 seed = cl_abap_random=>seed( )
-                 min  = 0
-                 max  = 999999 ).
-    CATCH cx_root.
-  ENDTRY.
+  CALL FUNCTION 'GENERATE_SEC_RANDOM'
+    EXPORTING
+      length         = 32
+    IMPORTING
+      random         = lv_sec_x
+    EXCEPTIONS
+      invalid_length = 1
+      no_memory      = 2
+      internal_error = 3
+      OTHERS         = 4.
+  IF sy-subrc <> 0.
+    CLEAR lv_sec_x.
+  ENDIF.
+
+  IF xstrlen( lv_sec_x ) < 24.
+    TRY.
+        lo_rnd = cl_abap_random_int=>create(
+                   seed = cl_abap_random=>seed( )
+                   min  = 0
+                   max  = 999999 ).
+      CATCH cx_root.
+    ENDTRY.
+  ENDIF.
 
   " Ensure at least 1 of each required character category
-  PERFORM pick_random_char USING lv_uppers lo_rnd CHANGING lv_char.
+  PERFORM pick_random_char USING lv_uppers lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
-  PERFORM pick_random_char USING lv_lowers lo_rnd CHANGING lv_char.
+  PERFORM pick_random_char USING lv_lowers lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
-  PERFORM pick_random_char USING lv_digits lo_rnd CHANGING lv_char.
+  PERFORM pick_random_char USING lv_digits lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
-  PERFORM pick_random_char USING lv_spec lo_rnd CHANGING lv_char.
+  PERFORM pick_random_char USING lv_spec lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
   " Fill remaining 8 characters
   DO 8 TIMES.
-    PERFORM pick_random_char USING lv_all lo_rnd CHANGING lv_char.
+    PERFORM pick_random_char USING lv_all lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
     lv_res = lv_res && lv_char.
   ENDDO.
 
@@ -1893,11 +2033,8 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
       lv_shuffled = lv_shuffled && lv_res.
       EXIT.
     ENDIF.
-    IF lo_rnd IS BOUND.
-      lv_pick_pos = lo_rnd->get_next( ) MOD lv_rem_len.
-    ELSE.
-      lv_pick_pos = ( sy-uzeit+4(2) + sy-index ) MOD lv_rem_len.
-    ENDIF.
+    PERFORM next_random_int USING lv_sec_x lo_rnd lv_rem_len CHANGING lv_sec_pos lv_rval.
+    lv_pick_pos = lv_rval.
     lv_char = substring( val = lv_res off = lv_pick_pos len = 1 ).
     lv_shuffled = lv_shuffled && lv_char.
     IF lv_pick_pos = 0.
@@ -1914,11 +2051,41 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
+*& Form next_random_int
+*&---------------------------------------------------------------------*
+FORM next_random_int USING    iv_sec_x  TYPE xstring
+                              io_rnd    TYPE REF TO cl_abap_random_int
+                              iv_mod    TYPE i
+                     CHANGING cv_pos    TYPE i
+                              ev_val    TYPE i.
+  DATA: lv_byte TYPE x LENGTH 1,
+        lv_int  TYPE i.
+
+  CLEAR ev_val.
+  IF iv_mod <= 1.
+    RETURN.
+  ENDIF.
+
+  IF xstrlen( iv_sec_x ) > cv_pos.
+    lv_byte = iv_sec_x+cv_pos(1).
+    cv_pos  = cv_pos + 1.
+    lv_int  = lv_byte.
+    ev_val  = lv_int MOD iv_mod.
+  ELSEIF io_rnd IS BOUND.
+    ev_val = io_rnd->get_next( ) MOD iv_mod.
+  ELSE.
+    MESSAGE 'Cryptographic random password generator unavailable.' TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
 *& Form pick_random_char
 *&---------------------------------------------------------------------*
-FORM pick_random_char USING    iv_pool TYPE string
-                               io_rnd  TYPE REF TO cl_abap_random_int
-                      CHANGING cv_char TYPE c.
+FORM pick_random_char USING    iv_pool  TYPE string
+                               iv_sec_x TYPE xstring
+                               io_rnd   TYPE REF TO cl_abap_random_int
+                      CHANGING cv_pos   TYPE i
+                               cv_char  TYPE c.
   DATA: lv_pool_len TYPE i,
         lv_off      TYPE i.
 
@@ -1928,11 +2095,6 @@ FORM pick_random_char USING    iv_pool TYPE string
     RETURN.
   ENDIF.
 
-  IF io_rnd IS BOUND.
-    lv_off = io_rnd->get_next( ) MOD lv_pool_len.
-  ELSE.
-    lv_off = ( sy-uzeit+4(2) + sy-index * 7 ) MOD lv_pool_len.
-  ENDIF.
-
+  PERFORM next_random_int USING iv_sec_x io_rnd lv_pool_len CHANGING cv_pos lv_off.
   cv_char = substring( val = iv_pool off = lv_off len = 1 ).
 ENDFORM.

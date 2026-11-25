@@ -5,30 +5,28 @@
 > **Org Levels Reference**: [`excel-templates/Org_Levels.csv`](../excel-templates/Org_Levels.csv)  
 > **Sample CSV**: [`excel-templates/converted/Template_Role_03a_Org_Levels_converted.csv`](../excel-templates/converted/Template_Role_03a_Org_Levels_converted.csv)
 
-Automates the mass maintenance and update of **Organizational Levels** (`AGR_1252`) across Single and Derived Roles directly from flat CSV data, restores variable bindings in `AGR_1251`, and regenerates authorization profiles in background mode.
+Automates the mass maintenance and update of **Organizational Levels** (`AGR_1252`) across Single and Derived Roles directly from flat CSV data (supporting both **Two-Way Sync** and **Append Only** modes), and integrates the **Repair `$VARBL` Bindings** workflow (formerly `Z_ROLE_03A_UPDATE_ORG_FIX`) to heal broken `AGR_1251`/`AGR_1250` bindings, auto-heal parent Master Roles, and regenerate authorization profiles in dark mode.
 
 ---
 
 ## 📌 Workflow
 
 ```
-[ Input CSV: Role Name, Org Variable ($VARBL), Org Value-Low, Org Value-High ]
-            │
-            ▼  Upload via GUI_UPLOAD (UTF-8)
-[ Validate Role Existence in AGR_DEFINE ]
-            │
-    ┌───────┴────────────────────────┐
-    ▼ (Role Exists in SAP)           ▼ (Role Does Not Exist)
-[ Process Org Level Updates ]        [ Report Error: @0A@ [ERR] ]
+[ Operation Mode Selection ]
+    ├─► Mode 1: Update Org Levels from CSV (rb_m_csv = 'X')
+    │     ├─► Two-Way Sync (rb_sync): Replace listed Org Levels with CSV values;
+    │     │     unlisted Org Levels -> '*' (if p_astnon = 'X') or '-1'
+    │     ├─► Append Only (rb_app): Merge CSV values into existing Org Levels
+    │     │     (never deletes existing values); fill empty/'-1' -> '*' if p_astnon = 'X'
+    │     ├─► Auto-Heal Parent Master Role & Rebind AGR_1251 -> $VARBL (p_fix51 = 'X')
+    │     └─► Dark Profile Generation (SUPRN_DARK_MANIPULATE_PROFILE) & Status Check
     │
-    ├─► Restore Variable Bindings in AGR_1251 (p_fix51 = 'X')
-    ├─► Save Org Values to AGR_1252 (PRGN_1252_SAVE_ORG_LEVELS)
-    ├─► Default Unlisted Org Levels to '*' (p_astnon = 'X')
-    ├─► Dark Profile Generation (SUPRN_DARK_MANIPULATE_PROFILE)
-    ├─► Status Verification (PRGN_CHECK_PROFILE_STATUS)
-    │     ├─► Green  ➔ @08@ [OK]
-    │     ├─► Yellow ➔ @09@ [WARN]
-    │     └─► Red    ➔ @0A@ [ERR]
+    └─► Mode 2: Repair $VARBL Bindings Only (rb_m_fix = 'X', merged from 03A_FIX)
+          ├─► Select target roles via Role Select-Option (s_role) and/or CSV file (p_file)
+          ├─► Auto-Heal Parent Master Role AGR_1251 -> $VARBL (p_parhea = 'X')
+          ├─► Rebind Target Role AGR_1251 -> $VARBL (MODIFIED='S', NEU='O'), fix AGR_1250
+          ├─► Preserve existing AGR_1252 values; set empty/'-1' -> '*' on Derived Roles
+          └─► Dark Profile Generation & Traffic-Light Verification
             │
             ▼
 [ Interactive ALV Cockpit with Hotspot Jump to PFCG ]
@@ -38,11 +36,13 @@ Automates the mass maintenance and update of **Organizational Levels** (`AGR_125
 
 ## ⚙️ Key Technical Features
 
-1. **Automatic Variable Normalization**: Supports variable formats like `$BUKRS`, `$WERKS`, or auto-prefixes missing `$` signs.
-2. **Variable Binding Restoration (`p_fix51 = 'X'`)**: Restores corrupted literal strings (such as `'-1'`) or mistakenly manual fields (`MODIFIED = 'U'`) in `AGR_1251` back to their dynamic Org Variable pointers (e.g. `$BUKRS`) with Standard status (`MODIFIED = 'S'`, `NEU = 'O'`), and restores `AGR_1250` authorization headers to Standard (`MODIFIED = 'S'`) using standard FMs `PRGN_1251_READ_FIELD_VALUES`, `PRGN_1251_SAVE_FIELD_VALUES`, `PRGN_1250_READ_AUTH_DATA`, and `PRGN_1250_SAVE_AUTH_DATA`.
-3. **Guaranteed Green Status (`p_astnon = 'X'`)**: Defaults secondary unmaintained Org Levels to `'*'` so profiles compile cleanly without yellow/red authorization warnings.
-4. **Standard Database Persistence**: Utilizes standard SAP function `PRGN_1252_SAVE_ORG_LEVELS` to guarantee data integrity across cluster tables.
-5. **Dark Profile Compilation**: Compiles profiles in the background and verifies the resulting traffic light status using `PRGN_CHECK_PROFILE_STATUS`.
+1. **Dual Operation Modes (`rb_m_csv` / `rb_m_fix`)**:
+   - **CSV Org Level Maintenance (`rb_m_csv`)**: Mass-update `AGR_1252` from normalized CSV with **Two-Way Sync (`rb_sync`)** or **Append Only (`rb_app`)**.
+   - **Repair `$VARBL` Bindings Only (`rb_m_fix`)**: Diagnose and repair roles with Red traffic lights or broken `"Manually"` (`MODIFIED = 'U'`) Org Level bindings directly by `s_role` range or CSV file without altering valid Org Level values.
+2. **Automatic Variable Normalization**: Supports `$BUKRS`, `$WERKS`, or auto-prefixes missing `$` signs, and applies SAP ALPHA zero-padding for numeric 10-char Cost Centers (`$KOSTL`) and Profit Centers (`$PRCTR`).
+3. **Variable Binding Restoration (`p_fix51 = 'X'`) & Parent Master Auto-Heal (`p_parhea = 'X'`)**: Restores broken literal strings or manual flags on Org Level fields in `AGR_1251` back to `$VARBL` (`MODIFIED = 'S'`, `NEU = 'O'`) and aligns `AGR_1250` headers via standard PFCG FMs (`PRGN_1251_*`, `PRGN_1250_*`).
+4. **Guaranteed Green Org Levels (`p_astnon = 'X'`)**: Defaults empty / unmaintained Org Levels (`AGR_1252`) to `'*'` on Derived Roles without wildcarding unrelated non-org authorization fields (`fill_fields_with_star = space`).
+5. **Standard Locking & Dark Profile Compilation**: Enforces per-role `S_USER_AGR` authority checks, `PRGN_ACTIVITY_GROUP_ENQUEUE` / `DEQUEUE` lifecycle, `PRGN_1252_SAVE_ORG_LEVELS`, `SUPRN_DARK_MANIPULATE_PROFILE`, and `PRGN_CHECK_PROFILE_STATUS`.
 
 ---
 
@@ -50,12 +50,17 @@ Automates the mass maintenance and update of **Organizational Levels** (`AGR_125
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `p_file` | `localfile` | Mandatory | Path to normalized CSV file |
-| `p_test` | `checkbox` | `'X'` | Simulation mode (test run without updating database) |
-| `p_genprf`| `checkbox` | `'X'` | Automatically regenerate authorization profiles |
-| `p_sync` | `checkbox` | `'X'` | **Sync Mode**: Reset unlisted Org Levels to template (`-1`) or wildcard (`*`) |
-| `p_astnon`| `checkbox` | `'X'` | Default unlisted Org Levels to `'*'` (Guaranteed Green) |
-| `p_fix51` | `checkbox` | `'X'` | Heal/restore corrupted Org Variable bindings in `AGR_1251` |
+| `rb_m_csv` | Radio (`MOD`) | `'X'` | Mode 1: Update Org Levels from CSV file |
+| `rb_m_fix` | Radio (`MOD`) | `' '` | Mode 2: Repair `$VARBL` bindings only (merged from `03A_FIX`) |
+| `p_file` | `localfile` | Optional* | Path to normalized CSV file (mandatory in CSV mode; optional in Repair mode) |
+| `s_role` | Select-Option | Optional* | Target Role range (used in Repair `$VARBL` mode) |
+| `p_test` | Checkbox | `'X'` | Simulation mode (validates all rules without updating database) |
+| `rb_sync` | Radio (`UPD`) | `'X'` | **Two-Way Sync**: Replace listed Org Levels; unlisted -> `'*'` (`p_astnon`) or `'-1'` |
+| `rb_app` | Radio (`UPD`) | `' '` | **Append Only**: Merge CSV values into existing Org Levels without deleting existing values |
+| `p_genprf` | Checkbox | `'X'` | Automatically regenerate authorization profiles |
+| `p_astnon` | Checkbox | `'X'` | Default unmaintained/empty Org Levels to `'*'` |
+| `p_fix51` | Checkbox | `'X'` | Heal/restore corrupted Org Variable bindings in `AGR_1251` |
+| `p_parhea` | Checkbox | `'X'` | Auto-heal parent Master Role `$VARBL` bindings before fixing Derived Roles |
 
 ---
 

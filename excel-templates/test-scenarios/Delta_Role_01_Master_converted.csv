@@ -1,0 +1,11 @@
+﻿Role Name,Role Description,TCode
+Z_FI_JOURNAL_POST,FI General Ledger Posting (Updated),FB01
+Z_FI_JOURNAL_POST,FI General Ledger Posting (Updated),FB02
+Z_FI_JOURNAL_POST,FI General Ledger Posting (Updated),FB03
+Z_FI_JOURNAL_POST,FI General Ledger Posting (Updated),FB50
+Z_FI_JOURNAL_POST,FI General Ledger Posting (Updated),FB65
+Z_FI_PERIOD_CONTROL,FI GL Period Control,OB52
+Z_FI_PERIOD_CONTROL,FI GL Period Control,S_ALR_87003642
+Z_FI_PERIOD_CONTROL,FI GL Period Control,Z_INVALID_TCODE_99
+Z_FI_COMP_CFO_1000,Should Be Rejected,FB03
+Z_ROLE_NAME_EXCEEDS_THIRTY_CHARS_01,Oversized Role Name Test,FB03

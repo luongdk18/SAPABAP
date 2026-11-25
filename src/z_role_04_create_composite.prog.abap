@@ -23,8 +23,6 @@
 *&---------------------------------------------------------------------*
 REPORT z_role_04_create_composite.
 
-TABLES: agr_define, agr_texts, agr_flags, agr_agrs.
-
 *----------------------------------------------------------------------*
 * 1. TYPES & DATA DEFINITIONS
 *----------------------------------------------------------------------*
@@ -65,7 +63,8 @@ CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
 
 DATA: gt_raw_rows        TYPE STANDARD TABLE OF ty_raw_row,
       gt_composite_roles TYPE STANDARD TABLE OF ty_composite_role,
-      gt_results         TYPE STANDARD TABLE OF ty_alv_result.
+      gt_results         TYPE STANDARD TABLE OF ty_alv_result,
+      gt_oversized_roles TYPE STANDARD TABLE OF string.
 
 *----------------------------------------------------------------------*
 * 2. SELECTION SCREEN
@@ -172,6 +171,12 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM check_authority.
   IF p_test = abap_true.
+    AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+      ID 'ACT_GROUP' DUMMY
+      ID 'ACTVT'     FIELD '03'.
+    IF sy-subrc <> 0.
+      MESSAGE 'No authorization to display roles (S_USER_AGR, ACTVT 03).' TYPE 'E'.
+    ENDIF.
     RETURN.
   ENDIF.
 
@@ -225,6 +230,7 @@ FORM read_csv_file USING iv_file TYPE localfile.
       filename                = lv_filepath
       filetype                = 'ASC'
       has_field_separator     = space
+      codepage                = '4110'
     CHANGING
       data_tab                = lt_file_records
     EXCEPTIONS
@@ -245,6 +251,12 @@ FORM read_csv_file USING iv_file TYPE localfile.
   CLEAR lv_line_idx.
   LOOP AT lt_file_records INTO lv_line.
     lv_line_idx = lv_line_idx + 1.
+    IF lv_line_idx = 1 AND strlen( lv_line ) >= 1.
+      IF lv_line(1) = cl_abap_char_utilities=>byte_order_mark_utf8.
+        lv_line = substring( val = lv_line off = 1 ).
+      ENDIF.
+    ENDIF.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_line WITH ''.
     IF lv_line IS INITIAL.
       CONTINUE.
     ENDIF.
@@ -297,28 +309,49 @@ FORM parse_csv_line USING    iv_line TYPE string
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
         lv_cur    TYPE string,
-        lv_char   TYPE string.
+        lv_char   TYPE string,
+        lv_next   TYPE string,
+        lv_idx    TYPE i,
+        lv_delim  TYPE c LENGTH 1.
 
   CLEAR: ev_col1, ev_col2, ev_col3.
 
+  IF iv_line CS cl_abap_char_utilities=>horizontal_tab.
+    lv_delim = cl_abap_char_utilities=>horizontal_tab.
+  ELSEIF iv_line CS ','.
+    lv_delim = ','.
+  ELSE.
+    lv_delim = ';'.
+  ENDIF.
+
   lv_len = strlen( iv_line ).
-  DO lv_len TIMES.
-    DATA(lv_idx) = sy-index - 1.
+  lv_idx = 0.
+  WHILE lv_idx < lv_len.
     lv_char = substring( val = iv_line off = lv_idx len = 1 ).
 
     IF lv_char = '"'.
       IF lv_in_q = abap_true.
+        IF lv_idx + 1 < lv_len.
+          lv_next = substring( val = iv_line off = lv_idx + 1 len = 1 ).
+          IF lv_next = '"'.
+            lv_cur = lv_cur && '"'.
+            lv_idx = lv_idx + 2.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
         lv_in_q = abap_false.
       ELSE.
         lv_in_q = abap_true.
       ENDIF.
-    ELSEIF ( lv_char = ',' OR lv_char = ';' OR lv_char = cl_abap_char_utilities=>horizontal_tab ) AND lv_in_q = abap_false.
+    ELSEIF lv_char = lv_delim AND lv_in_q = abap_false.
       APPEND lv_cur TO lt_tokens.
       CLEAR lv_cur.
     ELSE.
       lv_cur = lv_cur && lv_char.
     ENDIF.
-  ENDDO.
+
+    lv_idx = lv_idx + 1.
+  ENDWHILE.
   APPEND lv_cur TO lt_tokens.
 
   IF lines( lt_tokens ) >= 1.
@@ -338,20 +371,33 @@ ENDFORM.
 *& Form aggregate_input_data
 *&---------------------------------------------------------------------*
 FORM aggregate_input_data.
-  DATA: lv_c_role TYPE agr_name,
+  DATA: lv_c_raw  TYPE string,
+        lv_s_raw  TYPE string,
+        lv_c_role TYPE agr_name,
         lv_c_desc TYPE agr_title,
         lv_s_role TYPE agr_name.
 
-  CLEAR gt_composite_roles.
+  CLEAR: gt_composite_roles, gt_oversized_roles.
 
   LOOP AT gt_raw_rows INTO DATA(ls_raw).
-    lv_c_role = to_upper( condense( ls_raw-col1 ) ).
+    lv_c_raw  = to_upper( condense( ls_raw-col1 ) ).
     lv_c_desc = ls_raw-col2. " Exact spacing preserved
-    lv_s_role = to_upper( condense( ls_raw-col3 ) ).
+    lv_s_raw  = to_upper( condense( ls_raw-col3 ) ).
 
-    IF lv_c_role IS INITIAL.
+    IF lv_c_raw IS INITIAL.
       CONTINUE.
     ENDIF.
+
+    " Guard against silent >30-char truncation before assigning to TYPE agr_name
+    IF strlen( lv_c_raw ) > 30.
+      READ TABLE gt_oversized_roles WITH KEY table_line = lv_c_raw TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND lv_c_raw TO gt_oversized_roles.
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    lv_c_role = lv_c_raw.
 
     READ TABLE gt_composite_roles ASSIGNING FIELD-SYMBOL(<ls_comp>)
       WITH KEY role_name = lv_c_role.
@@ -362,16 +408,14 @@ FORM aggregate_input_data.
       ) TO gt_composite_roles ASSIGNING <ls_comp>.
     ENDIF.
 
-    " Populate description if previously initial
     IF <ls_comp>-role_desc IS INITIAL AND lv_c_desc IS NOT INITIAL.
       <ls_comp>-role_desc = lv_c_desc.
     ENDIF.
 
-    " Handle empty single role indicators (N/A, NA, -, NONE, space)
-    IF lv_s_role = 'N/A' OR lv_s_role = 'NA' OR lv_s_role = '-' OR lv_s_role = 'NONE' OR lv_s_role IS INITIAL.
+    IF lv_s_raw = 'N/A' OR lv_s_raw = 'NA' OR lv_s_raw = '-' OR lv_s_raw = 'NONE' OR lv_s_raw IS INITIAL.
       <ls_comp>-has_na = abap_true.
-    ELSE.
-      " Prevent duplicate single roles for the same composite role
+    ELSEIF strlen( lv_s_raw ) <= 30.
+      lv_s_role = lv_s_raw.
       READ TABLE <ls_comp>-single_roles WITH KEY table_line = lv_s_role
         TRANSPORTING NO FIELDS.
       IF sy-subrc <> 0.
@@ -397,40 +441,40 @@ FORM process_composite_roles.
         lt_del_txt      TYPE STANDARD TABLE OF agr_txt,
         lt_curr_agrs    TYPE STANDARD TABLE OF agr_agrs,
         lv_new_req      TYPE trkorr,
-        lv_missing_str  TYPE string.
+        lv_missing_str  TYPE string,
+        lv_colls_str    TYPE string,
+        lv_rc           TYPE sy-subrc,
+        lv_op_err       TYPE string,
+        lv_cur_desc     TYPE agr_title.
 
   CLEAR gt_results.
+
+  LOOP AT gt_oversized_roles INTO DATA(lv_bad_comp).
+    CLEAR ls_res.
+    ls_res-status         = gc_status_err.
+    ls_res-action         = 'ERROR'.
+    ls_res-composite_role = lv_bad_comp.
+    ls_res-message        = |Composite role name exceeds SAP 30-character limit: '{ lv_bad_comp }'.|.
+    APPEND ls_res TO gt_results.
+  ENDLOOP.
 
   LOOP AT gt_composite_roles INTO DATA(ls_comp).
     CLEAR: ls_res, lt_bapiret, lv_exists, lv_coll_flag, lv_dummy,
            lt_valid_sgl, lt_missing_sgl, lt_colls_sgl, lt_add_txt, lt_del_txt,
-           lt_curr_agrs, lv_new_req, lv_missing_str.
+           lt_curr_agrs, lv_new_req, lv_missing_str, lv_colls_str,
+           lv_rc, lv_op_err, lv_cur_desc.
 
     ls_res-composite_role = ls_comp-role_name.
     ls_res-role_desc      = ls_comp-role_desc.
     ls_res-roles_cnt      = lines( ls_comp-single_roles ).
 
     " -----------------------------------------------------------------
-    " 1. Validate Composite Role Name Length (SAP Max 30 chars)
+    " 2. Validate Existing Role Type in SAP & Per-Role Authority
     " -----------------------------------------------------------------
-    IF strlen( ls_comp-role_name ) > 30.
-      ls_res-status  = gc_status_err.
-      ls_res-action  = 'ERROR'.
-      ls_res-message = 'Composite role name exceeds maximum allowed length of 30 characters.'.
-      APPEND ls_res TO gt_results.
-      CONTINUE.
-    ENDIF.
-
-    " -----------------------------------------------------------------
-    " 2. Validate Existing Role Type in SAP
-    " -----------------------------------------------------------------
-    CLEAR lv_dummy.
     SELECT SINGLE agr_name FROM agr_define INTO lv_dummy
       WHERE agr_name = ls_comp-role_name.
     IF sy-subrc = 0.
       lv_exists = abap_true.
-
-      " Ensure the existing role is a composite role (COLL_AGR = 'X')
       SELECT SINGLE flag_value FROM agr_flags INTO lv_coll_flag
         WHERE agr_name = ls_comp-role_name AND flag_type = 'COLL_AGR'.
       IF sy-subrc <> 0 OR lv_coll_flag <> 'X'.
@@ -444,24 +488,41 @@ FORM process_composite_roles.
       lv_exists = abap_false.
     ENDIF.
 
+    DATA(lv_req_actvt) = COND activ_auth(
+      WHEN p_test = abap_true THEN '03'
+      WHEN lv_exists = abap_true THEN '02'
+      ELSE '01' ).
+    AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+      ID 'ACT_GROUP' FIELD ls_comp-role_name
+      ID 'ACTVT'     FIELD lv_req_actvt.
+    IF sy-subrc <> 0.
+      ls_res-status  = gc_status_err.
+      ls_res-action  = 'ERROR'.
+      ls_res-message = |No authorization for role '{ ls_comp-role_name }' (S_USER_AGR, ACTVT { lv_req_actvt }).|.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
+
     " -----------------------------------------------------------------
     " 3. Validate Single Roles in SAP (AGR_DEFINE & AGR_FLAGS)
     " -----------------------------------------------------------------
     IF ls_comp-single_roles IS NOT INITIAL AND p_chksgl = abap_true.
       LOOP AT ls_comp-single_roles INTO DATA(lv_chk_role).
+        IF lv_chk_role = ls_comp-role_name.
+          APPEND lv_chk_role TO lt_colls_sgl.
+          CONTINUE.
+        ENDIF.
         CLEAR lv_dummy.
         SELECT SINGLE agr_name FROM agr_define INTO lv_dummy
           WHERE agr_name = lv_chk_role.
         IF sy-subrc <> 0.
           APPEND lv_chk_role TO lt_missing_sgl.
         ELSE.
-          " Ensure assigned role is NOT itself a composite role (SAP restriction)
           CLEAR lv_coll_flag.
           SELECT SINGLE flag_value FROM agr_flags INTO lv_coll_flag
             WHERE agr_name = lv_chk_role AND flag_type = 'COLL_AGR'.
           IF sy-subrc = 0 AND lv_coll_flag = 'X'.
             APPEND lv_chk_role TO lt_colls_sgl.
-            APPEND lv_chk_role TO lt_missing_sgl.
           ELSE.
             APPEND lv_chk_role TO lt_valid_sgl.
           ENDIF.
@@ -470,21 +531,25 @@ FORM process_composite_roles.
 
       ls_res-valid_cnt = lines( lt_valid_sgl ).
 
-      " Build missing roles string
-      IF lt_missing_sgl IS NOT INITIAL.
-        LOOP AT lt_missing_sgl INTO DATA(lv_m).
-          IF lv_missing_str IS INITIAL.
-            lv_missing_str = lv_m.
-          ELSE.
-            CONCATENATE lv_missing_str ',' lv_m INTO lv_missing_str SEPARATED BY space.
-          ENDIF.
-        ENDLOOP.
-        ls_res-missing_roles = lv_missing_str.
-      ENDIF.
+      LOOP AT lt_missing_sgl INTO DATA(lv_m).
+        lv_missing_str = COND #( WHEN lv_missing_str IS INITIAL THEN lv_m ELSE lv_missing_str && ', ' && lv_m ).
+      ENDLOOP.
+      LOOP AT lt_colls_sgl INTO DATA(lv_c_ex).
+        lv_colls_str = COND #( WHEN lv_colls_str IS INITIAL THEN lv_c_ex ELSE lv_colls_str && ', ' && lv_c_ex ).
+      ENDLOOP.
+      ls_res-missing_roles = lv_missing_str.
 
     ELSEIF ls_comp-single_roles IS NOT INITIAL.
-      " If check is disabled, assume all single roles are valid
-      lt_valid_sgl = ls_comp-single_roles.
+      LOOP AT ls_comp-single_roles INTO lv_chk_role.
+        IF lv_chk_role = ls_comp-role_name.
+          APPEND lv_chk_role TO lt_colls_sgl.
+        ELSE.
+          APPEND lv_chk_role TO lt_valid_sgl.
+        ENDIF.
+      ENDLOOP.
+      LOOP AT lt_colls_sgl INTO lv_c_ex.
+        lv_colls_str = COND #( WHEN lv_colls_str IS INITIAL THEN lv_c_ex ELSE lv_colls_str && ', ' && lv_c_ex ).
+      ENDLOOP.
       ls_res-valid_cnt = lines( lt_valid_sgl ).
     ELSE.
       ls_res-valid_cnt = 0.
@@ -503,11 +568,9 @@ FORM process_composite_roles.
     CLEAR: lt_roles_to_add, lt_roles_to_del, lt_roles_keep,
            lv_str_add, lv_str_del, lv_str_keep.
 
-    " Read current single role assignments in AGR_AGRS
     SELECT * FROM agr_agrs INTO TABLE @lt_curr_agrs
       WHERE agr_name = @ls_comp-role_name.
 
-    " A. Roles to Add (in CSV valid list, not in SAP)
     LOOP AT lt_valid_sgl INTO DATA(lv_s_chk).
       READ TABLE lt_curr_agrs WITH KEY child_agr = lv_s_chk TRANSPORTING NO FIELDS.
       IF sy-subrc <> 0.
@@ -515,7 +578,6 @@ FORM process_composite_roles.
       ENDIF.
     ENDLOOP.
 
-    " B. Roles to Delete (in SAP, not in CSV valid list - when p_sync = 'X')
     IF p_sync = abap_true.
       LOOP AT lt_curr_agrs INTO DATA(ls_c_del).
         READ TABLE lt_valid_sgl WITH KEY table_line = ls_c_del-child_agr TRANSPORTING NO FIELDS.
@@ -523,17 +585,19 @@ FORM process_composite_roles.
           APPEND ls_c_del-child_agr TO lt_roles_to_del.
         ENDIF.
       ENDLOOP.
+      LOOP AT lt_curr_agrs INTO DATA(ls_c_keep).
+        READ TABLE lt_valid_sgl WITH KEY table_line = ls_c_keep-child_agr TRANSPORTING NO FIELDS.
+        IF sy-subrc = 0.
+          APPEND ls_c_keep-child_agr TO lt_roles_keep.
+        ENDIF.
+      ENDLOOP.
+    ELSE.
+      " Append mode: ALL existing assigned single roles are retained
+      LOOP AT lt_curr_agrs INTO ls_c_keep.
+        APPEND ls_c_keep-child_agr TO lt_roles_keep.
+      ENDLOOP.
     ENDIF.
 
-    " C. Roles to Keep
-    LOOP AT lt_curr_agrs INTO DATA(ls_c_keep).
-      READ TABLE lt_valid_sgl WITH KEY table_line = ls_c_keep-child_agr TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0.
-        APPEND ls_c_keep-child_agr TO lt_roles_keep.
-      ENDIF.
-    ENDLOOP.
-
-    " Format counts and string summaries
     ls_res-roles_add_cnt  = lines( lt_roles_to_add ).
     ls_res-roles_del_cnt  = lines( lt_roles_to_del ).
     ls_res-roles_keep_cnt = lines( lt_roles_keep ).
@@ -596,6 +660,10 @@ FORM process_composite_roles.
         ls_res-status  = gc_status_warn.
         ls_res-message = |Warning: { lines( lt_missing_sgl ) } role(s) missing in SAP: [{ lv_missing_str }]. { ls_res-message }|.
       ENDIF.
+      IF lt_colls_sgl IS NOT INITIAL.
+        ls_res-status  = gc_status_warn.
+        ls_res-message = |Warning: { lines( lt_colls_sgl ) } composite/self role(s) excluded (cannot nest): [{ lv_colls_str }]. { ls_res-message }|.
+      ENDIF.
 
       ls_res-assigned_cnt = lines( lt_curr_agrs ).
       APPEND ls_res TO gt_results.
@@ -605,6 +673,7 @@ FORM process_composite_roles.
     " -----------------------------------------------------------------
     " 6. Real Execution: Role Shell Creation / Updating
     " -----------------------------------------------------------------
+    DATA(lv_desc_changed) = abap_false.
     IF lv_exists = abap_true.
       IF p_upd = abap_false.
         ls_res-status       = gc_status_warn.
@@ -615,16 +684,25 @@ FORM process_composite_roles.
         CONTINUE.
       ENDIF.
 
-      " Update Description in AGR_TEXTS (preserving exact spacing, standard FM)
-      PERFORM set_role_description USING ls_comp-role_name ls_comp-role_desc.
+      " Update description ONLY when non-empty and changed (never wipe existing description!)
+      IF ls_comp-role_desc IS NOT INITIAL.
+        SELECT SINGLE text FROM agr_texts INTO @lv_cur_desc
+          WHERE agr_name = @ls_comp-role_name AND spras = @sy-langu AND line = '00000'.
+        IF sy-subrc <> 0 OR lv_cur_desc <> ls_comp-role_desc.
+          PERFORM set_role_description USING ls_comp-role_name ls_comp-role_desc.
+          lv_desc_changed = abap_true.
+        ENDIF.
+      ENDIF.
       ls_res-action = 'UPDATED'.
 
     ELSE.
-      " Create New Composite Role via PRGN_RFC_CREATE_AGR_MULTIPLE
+      DATA(lv_create_desc) = COND agr_title(
+        WHEN ls_comp-role_desc IS NOT INITIAL THEN ls_comp-role_desc
+        ELSE ls_comp-role_name ).
       CALL FUNCTION 'PRGN_RFC_CREATE_AGR_MULTIPLE'
         EXPORTING
           activity_group                = ls_comp-role_name
-          activity_group_text           = ls_comp-role_desc
+          activity_group_text           = lv_create_desc
           collective_agr                = 'X'
           no_dialog                     = 'X'
         TABLES
@@ -638,27 +716,27 @@ FORM process_composite_roles.
           error_when_creating_actgroup  = 6
           not_authorized                = 7
           OTHERS                        = 8.
+      lv_rc = sy-subrc.
 
-      IF sy-subrc <> 0.
+      IF lv_rc <> 0.
         ls_res-status = gc_status_err.
         ls_res-action = 'ERROR'.
         PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
         IF ls_res-message IS INITIAL.
-          ls_res-message = |Failed to create composite role shell (sy-subrc = { sy-subrc }).|.
+          ls_res-message = |Failed to create composite role shell (sy-subrc = { lv_rc }).|.
         ENDIF.
         APPEND ls_res TO gt_results.
         CONTINUE.
       ENDIF.
 
-      PERFORM set_role_description USING ls_comp-role_name ls_comp-role_desc.
+      PERFORM set_role_description USING ls_comp-role_name lv_create_desc.
       COMMIT WORK AND WAIT.
       ls_res-action = 'CREATED'.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 7. Two-Way Synchronize Single Roles
+    " 7. Two-Way Synchronize Single Roles (strictly check errors!)
     " -----------------------------------------------------------------
-    " A. Delete surplus single roles (in SAP but not in CSV)
     IF p_sync = abap_true AND lt_roles_to_del IS NOT INITIAL.
       CLEAR: lt_del_txt, lt_bapiret.
       LOOP AT lt_roles_to_del INTO DATA(lv_del_r).
@@ -674,11 +752,18 @@ FORM process_composite_roles.
           activity_groups    = lt_del_txt
           return             = lt_bapiret
         EXCEPTIONS
-          OTHERS             = 0.
+          OTHERS             = 1.
+      lv_rc = sy-subrc.
+      DATA(lv_del_err) = ``.
+      PERFORM format_bapi_message USING lt_bapiret CHANGING lv_del_err.
+      IF lv_rc <> 0 OR line_exists( lt_bapiret[ type = 'E' ] ) OR line_exists( lt_bapiret[ type = 'A' ] ).
+        lv_op_err = COND #( WHEN lv_del_err IS NOT INITIAL
+                            THEN |Remove failed: { lv_del_err }|
+                            ELSE |PRGN_RFC_DEL_AGRS_IN_COLL_AGR failed (sy-subrc = { lv_rc }).| ).
+      ENDIF.
     ENDIF.
 
-    " B. Add missing single roles (in CSV, not in SAP)
-    IF lt_roles_to_add IS NOT INITIAL.
+    IF lv_op_err IS INITIAL AND lt_roles_to_add IS NOT INITIAL.
       CLEAR: lt_add_txt, lt_bapiret.
       LOOP AT lt_roles_to_add INTO DATA(lv_add_r).
         APPEND VALUE agr_txt( agr_name = lv_add_r ) TO lt_add_txt.
@@ -700,22 +785,40 @@ FORM process_composite_roles.
           not_authorized                = 5
           authority_incomplete          = 6
           OTHERS                        = 7.
+      lv_rc = sy-subrc.
+      DATA(lv_add_err) = ``.
+      PERFORM format_bapi_message USING lt_bapiret CHANGING lv_add_err.
+      IF lv_rc <> 0 OR line_exists( lt_bapiret[ type = 'E' ] ) OR line_exists( lt_bapiret[ type = 'A' ] ).
+        lv_op_err = COND #( WHEN lv_add_err IS NOT INITIAL
+                            THEN |Add failed: { lv_add_err }|
+                            ELSE |PRGN_RFC_ADD_AGRS_TO_COLL_AGR failed (sy-subrc = { lv_rc }).| ).
+      ENDIF.
     ENDIF.
 
-    " Update role timestamp in AGR_DEFINE
-    CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
-      EXPORTING
-        activity_group = ls_comp-role_name
-      EXCEPTIONS
-        OTHERS         = 0.
-    COMMIT WORK AND WAIT.
+    IF lv_op_err IS NOT INITIAL.
+      ROLLBACK WORK.
+      ls_res-status  = gc_status_err.
+      ls_res-action  = 'ERROR'.
+      ls_res-message = lv_op_err.
+      SELECT COUNT(*) FROM agr_agrs INTO @ls_res-assigned_cnt
+        WHERE agr_name = @ls_comp-role_name.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
 
-    " Count final assigned single roles
+    IF lv_is_up_to_date = abap_false OR lv_desc_changed = abap_true.
+      CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+        EXPORTING
+          activity_group = ls_comp-role_name
+        EXCEPTIONS
+          OTHERS         = 0.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+
     SELECT COUNT(*) FROM agr_agrs INTO @ls_res-assigned_cnt
       WHERE agr_name = @ls_comp-role_name.
 
-    " Set execution status
-    IF lv_is_up_to_date = abap_true.
+    IF lv_is_up_to_date = abap_true AND lv_desc_changed = abap_false.
       ls_res-status  = gc_status_ok.
       ls_res-action  = 'UP-TO-DATE'.
       ls_res-message = |Composite role up-to-date. All { ls_res-roles_keep_cnt } single roles match CSV.|.
@@ -728,6 +831,10 @@ FORM process_composite_roles.
     IF lt_missing_sgl IS NOT INITIAL.
       ls_res-status  = gc_status_warn.
       ls_res-message = |Warning: { lines( lt_missing_sgl ) } role(s) missing from SAP: [{ lv_missing_str }]. { ls_res-message }|.
+    ENDIF.
+    IF lt_colls_sgl IS NOT INITIAL.
+      ls_res-status  = gc_status_warn.
+      ls_res-message = |Warning: { lines( lt_colls_sgl ) } composite/self role(s) excluded (cannot nest): [{ lv_colls_str }]. { ls_res-message }|.
     ENDIF.
 
     APPEND ls_res TO gt_results.
@@ -787,8 +894,12 @@ CLASS lcl_alv_event_handler IMPLEMENTATION.
   METHOD on_link_click.
     READ TABLE gt_results INTO DATA(ls_row) INDEX row.
     IF sy-subrc = 0 AND column = 'COMPOSITE_ROLE' AND ls_row-composite_role IS NOT INITIAL.
-      SET PARAMETER ID 'AGR' FIELD ls_row-composite_role.
-      CALL TRANSACTION 'PFCG' AND SKIP FIRST SCREEN.
+      TRY.
+          SET PARAMETER ID 'AGR' FIELD ls_row-composite_role.
+          CALL TRANSACTION 'PFCG' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+        CATCH cx_sy_authorization_error.
+          MESSAGE 'No authorization to open transaction PFCG.' TYPE 'S' DISPLAY LIKE 'E'.
+      ENDTRY.
     ENDIF.
   ENDMETHOD.
 ENDCLASS.
@@ -930,7 +1041,7 @@ FORM display_alv_results.
 
       lo_alv->display( ).
 
-    CATCH cx_salv_msg cx_salv_not_found.
-      MESSAGE 'Error rendering ALV report display.' TYPE 'E'.
+    CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx_salv).
+      MESSAGE lx_salv->get_text( ) TYPE 'E'.
   ENDTRY.
 ENDFORM.

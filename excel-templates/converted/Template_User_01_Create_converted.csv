@@ -1,8 +1,17 @@
 ﻿Username,Full Name,Email,Phone No.,Department,Function,Initial Password
-JOHND,John Doe,johnd@example.com,(84)999999999,Finance & Accounting,Finance Controller,InitPass@2026
+JOHND,John Doe,johnd@example.com,(84)999999999,Finance & Accounting,Chief Financial Officer,InitPass@2026
 JANES,Jane Smith,janes@example.com,(84)999999999,Finance & Accounting,Senior Accountant,
-ALEXJ,Alex Johnson,alexj@example.com,(1)9999999999,PMU,Project Director,Alex#2026Secure
-MICHAELB,Michael Brown,,(84)999999999,PMU,Civil Engineer,
+ALEXJ,Alex Johnson,alexj@example.com,(1)9999999999,Controlling,Financial Controller,Alex#2026Secure
+MICHAELB,Michael Brown,,(84)999999999,Procurement,Purchasing Manager,
 EMILYD,Emily Davis,emilyd,,Administration,HR Specialist,
-DAVIDW,David Wilson,davidw@example.com,(84)999999999,Operations,OM,DavidW!2026
-EMPTY_USER,Empty User,empty_user@example.com,,Testing,Tester,
+DAVIDW,David Wilson,davidw@example.com,(84)999999999,Warehouse Operations,Warehouse Lead,DavidW!2026
+SARAHM,Sarah Miller,sarahm@example.com,(84)999999001,Sales & Distribution,Sales Executive,
+ROBERTT,Robert Taylor,robertt@example.com,(84)999999002,PMU,Project Director,RobT@2026Pwd
+LISAA,Lisa Anderson,lisaa@example.com,(84)999999003,Internal Audit,Senior Auditor,
+THOMASW,Thomas White,thomasw@example.com,(84)999999004,Finance & Accounting,Branch Accountant,ThomW#2026
+ANNAC,Anna Clark,annac@example.com,(84)999999005,Procurement,Senior Buyer,
+CHRISM,Chris Martin,chrism@example.com,(84)999999006,Sales & Distribution,Billing Specialist,
+USER_VN01,Nguyễn Văn A,user_vn01@example.com,(84)999999101,Kế toán,Kế toán trưởng,VietA@2026Pass
+USER_VN02,Trần Thị B,user_vn02@example.com,(84)999999102,Mua hàng,Chuyên viên Mua hàng,
+USER_VN03,Lê Văn C,user_vn03@example.com,(84)999999103,Kinh doanh,Trưởng phòng Kinh doanh,
+EMPTY_USER,Empty User,empty_user@example.com,,Testing,QA Tester,

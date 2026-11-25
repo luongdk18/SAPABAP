@@ -14,8 +14,8 @@ In SAP authorization management, distinguishing between Organizational Levels (s
 
 This utility scans:
 1. **`TOBJ`**: Authorization Objects and their assigned fields (`FIEL1` .. `FIEL0`) and Object Class (`OCLSS`).
-2. **`TOBJT`**: Authorization Object texts in English (`LANGU = 'E'`).
-3. **`TOBCT`**: Authorization Class texts in English (`LANGU = 'E'`).
+2. **`TOBJT`**: Authorization Object texts in the selected language `p_langu` (default `'E'`, with automatic fallback to `'E'`).
+3. **`TOBCT`**: Authorization Class texts in the selected language `p_langu` (default `'E'`, with automatic fallback to `'E'`).
 
 The resulting data stream is formatted with `###` delimiters, enabling the generation and periodic refresh of the reference catalog [`excel-templates/Object_Levels.csv`](../excel-templates/Object_Levels.csv) (13,400+ standard SAP object-field definitions).
 

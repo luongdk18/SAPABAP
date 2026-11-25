@@ -62,9 +62,10 @@ CONSTANTS: gc_status_ok   TYPE char12 VALUE '@08@ [OK]',
            gc_status_warn TYPE char12 VALUE '@09@ [WARN]',
            gc_status_err  TYPE char12 VALUE '@0A@ [ERR]'.
 
-DATA: gt_raw_rows    TYPE STANDARD TABLE OF ty_raw_row,
-      gt_assignments TYPE STANDARD TABLE OF ty_user_assignment,
-      gt_results     TYPE STANDARD TABLE OF ty_alv_result.
+DATA: gt_raw_rows        TYPE STANDARD TABLE OF ty_raw_row,
+      gt_assignments     TYPE STANDARD TABLE OF ty_user_assignment,
+      gt_results         TYPE STANDARD TABLE OF ty_alv_result,
+      gt_oversized_users TYPE STANDARD TABLE OF string.
 
 *----------------------------------------------------------------------*
 * 2. SELECTION SCREEN
@@ -191,21 +192,44 @@ ENDFORM.
 *& Form check_authority
 *&---------------------------------------------------------------------*
 FORM check_authority.
-  " Check authorization for role assignment to users (S_USER_AGR / S_USER_GRP)
+  IF p_test = abap_true.
+    AUTHORITY-CHECK OBJECT 'S_USER_GRP'
+      ID 'CLASS' DUMMY
+      ID 'ACTVT' FIELD '03'.
+    IF sy-subrc <> 0.
+      MESSAGE 'No authorization to display users (S_USER_GRP, ACTVT 03).' TYPE 'E'.
+    ENDIF.
+    AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+      ID 'ACT_GROUP' DUMMY
+      ID 'ACTVT'     FIELD '03'.
+    IF sy-subrc <> 0.
+      MESSAGE 'No authorization to display roles (S_USER_AGR, ACTVT 03).' TYPE 'E'.
+    ENDIF.
+    RETURN.
+  ENDIF.
+
+  " Live execution requires both role assignment (S_USER_AGR 22/02) and user group maintenance (S_USER_GRP 22/02)
   AUTHORITY-CHECK OBJECT 'S_USER_AGR'
     ID 'ACT_GROUP' DUMMY
-    ID 'ACTVT'     FIELD '22'. " Assign
+    ID 'ACTVT'     FIELD '22'.
   IF sy-subrc <> 0.
     AUTHORITY-CHECK OBJECT 'S_USER_AGR'
       ID 'ACT_GROUP' DUMMY
-      ID 'ACTVT'     FIELD '02'. " Change
+      ID 'ACTVT'     FIELD '02'.
     IF sy-subrc <> 0.
-      AUTHORITY-CHECK OBJECT 'S_USER_GRP'
-        ID 'CLASS' DUMMY
-        ID 'ACTVT' FIELD '02'.
-      IF sy-subrc <> 0 AND p_test = abap_false.
-        MESSAGE 'No authorization to assign roles to users (S_USER_AGR / S_USER_GRP).' TYPE 'E'.
-      ENDIF.
+      MESSAGE 'No authorization to assign roles (S_USER_AGR, ACTVT 22/02).' TYPE 'E'.
+    ENDIF.
+  ENDIF.
+
+  AUTHORITY-CHECK OBJECT 'S_USER_GRP'
+    ID 'CLASS' DUMMY
+    ID 'ACTVT' FIELD '22'.
+  IF sy-subrc <> 0.
+    AUTHORITY-CHECK OBJECT 'S_USER_GRP'
+      ID 'CLASS' DUMMY
+      ID 'ACTVT' FIELD '02'.
+    IF sy-subrc <> 0.
+      MESSAGE 'No authorization to maintain user role assignments (S_USER_GRP, ACTVT 22/02).' TYPE 'E'.
     ENDIF.
   ENDIF.
 ENDFORM.
@@ -277,6 +301,9 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
         binary_tab   = lt_binary_tab
       EXCEPTIONS
         OTHERS       = 1.
+    IF sy-subrc <> 0.
+      MESSAGE 'Failed to decode CSV binary content.' TYPE 'E'.
+    ENDIF.
   ENDIF.
 
   " Strip Byte Order Mark (BOM U+FEFF) if present
@@ -285,11 +312,11 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
     lv_content = lv_content+1.
   ENDIF.
 
-  " Split by CR/LF or Newline
-  SPLIT lv_content AT cl_abap_char_utilities=>cr_lf INTO TABLE lt_lines.
-  IF lines( lt_lines ) <= 1.
-    SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
-  ENDIF.
+  " Normalize mixed CRLF/LF line endings cleanly
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN lv_content
+    WITH cl_abap_char_utilities=>newline.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_content WITH ''.
+  SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
 
   CLEAR: gt_raw_rows, lv_line_idx.
 
@@ -350,28 +377,49 @@ FORM parse_csv_line USING    iv_line TYPE string
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
         lv_cur    TYPE string,
-        lv_char   TYPE string.
+        lv_char   TYPE string,
+        lv_next   TYPE string,
+        lv_idx    TYPE i,
+        lv_delim  TYPE c LENGTH 1.
 
   CLEAR: ev_col1, ev_col2.
 
+  IF iv_line CS cl_abap_char_utilities=>horizontal_tab.
+    lv_delim = cl_abap_char_utilities=>horizontal_tab.
+  ELSEIF iv_line CS ','.
+    lv_delim = ','.
+  ELSE.
+    lv_delim = ';'.
+  ENDIF.
+
   lv_len = strlen( iv_line ).
-  DO lv_len TIMES.
-    DATA(lv_idx) = sy-index - 1.
+  lv_idx = 0.
+  WHILE lv_idx < lv_len.
     lv_char = substring( val = iv_line off = lv_idx len = 1 ).
 
     IF lv_char = '"'.
       IF lv_in_q = abap_true.
+        IF lv_idx + 1 < lv_len.
+          lv_next = substring( val = iv_line off = lv_idx + 1 len = 1 ).
+          IF lv_next = '"'.
+            lv_cur = lv_cur && '"'.
+            lv_idx = lv_idx + 2.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
         lv_in_q = abap_false.
       ELSE.
         lv_in_q = abap_true.
       ENDIF.
-    ELSEIF ( lv_char = ',' OR lv_char = ';' OR lv_char = cl_abap_char_utilities=>horizontal_tab ) AND lv_in_q = abap_false.
+    ELSEIF lv_char = lv_delim AND lv_in_q = abap_false.
       APPEND lv_cur TO lt_tokens.
       CLEAR lv_cur.
     ELSE.
-      CONCATENATE lv_cur lv_char INTO lv_cur.
+      lv_cur = lv_cur && lv_char.
     ENDIF.
-  ENDDO.
+
+    lv_idx = lv_idx + 1.
+  ENDWHILE.
   APPEND lv_cur TO lt_tokens.
 
   READ TABLE lt_tokens INTO ev_col1 INDEX 1.
@@ -386,12 +434,16 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM clean_cell CHANGING cv_val TYPE string.
   CONDENSE cv_val.
-  IF strlen( cv_val ) >= 2 AND cv_val(1) = '"' AND cv_val+sy-fdpos(1) = '"'.
-    DATA(lv_inner_len) = strlen( cv_val ) - 2.
-    IF lv_inner_len > 0.
-      cv_val = cv_val+1(lv_inner_len).
-    ELSE.
-      CLEAR cv_val.
+  DATA(lv_len) = strlen( cv_val ).
+  IF lv_len >= 2.
+    DATA(lv_last_off) = lv_len - 1.
+    IF cv_val(1) = '"' AND substring( val = cv_val off = lv_last_off len = 1 ) = '"'.
+      DATA(lv_inner_len) = lv_len - 2.
+      IF lv_inner_len > 0.
+        cv_val = substring( val = cv_val off = 1 len = lv_inner_len ).
+      ELSE.
+        CLEAR cv_val.
+      ENDIF.
     ENDIF.
   ENDIF.
   CONDENSE cv_val.
@@ -401,32 +453,46 @@ ENDFORM.
 *& Form aggregate_input_data
 *&---------------------------------------------------------------------*
 FORM aggregate_input_data.
-  DATA: ls_assign TYPE ty_user_assignment,
-        lv_uname  TYPE bapibname-bapibname,
-        lv_role   TYPE agr_name.
+  DATA: ls_assign    TYPE ty_user_assignment,
+        lv_uname_raw TYPE string,
+        lv_role_raw  TYPE string,
+        lv_uname     TYPE bapibname-bapibname,
+        lv_role      TYPE agr_name.
 
-  CLEAR gt_assignments.
+  CLEAR: gt_assignments, gt_oversized_users.
 
   LOOP AT gt_raw_rows INTO DATA(ls_raw).
-    CLEAR: lv_uname, lv_role.
+    CLEAR: lv_uname_raw, lv_role_raw, lv_uname, lv_role.
 
-    lv_uname = to_upper( ls_raw-username ).
-    CONDENSE lv_uname NO-GAPS.
+    lv_uname_raw = to_upper( ls_raw-username ).
+    CONDENSE lv_uname_raw NO-GAPS.
 
-    lv_role = to_upper( ls_raw-role ).
-    CONDENSE lv_role NO-GAPS.
+    lv_role_raw = to_upper( ls_raw-role ).
+    CONDENSE lv_role_raw NO-GAPS.
 
-    IF lv_uname IS INITIAL.
+    IF lv_uname_raw IS INITIAL.
       CONTINUE.
     ENDIF.
+
+    " Guard against silent >12-char truncation (which would hit wrong user in Two-Way Sync!)
+    IF strlen( lv_uname_raw ) > 12.
+      READ TABLE gt_oversized_users WITH KEY table_line = lv_uname_raw TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND lv_uname_raw TO gt_oversized_users.
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    lv_uname = lv_uname_raw.
 
     READ TABLE gt_assignments ASSIGNING FIELD-SYMBOL(<fs_assign>)
       WITH KEY username = lv_uname.
 
     IF sy-subrc = 0.
-      IF lv_role = 'N/A' OR lv_role IS INITIAL.
+      IF lv_role_raw = 'N/A' OR lv_role_raw IS INITIAL.
         <fs_assign>-has_na = abap_true.
-      ELSE.
+      ELSEIF strlen( lv_role_raw ) <= 30.
+        lv_role = lv_role_raw.
         READ TABLE <fs_assign>-roles TRANSPORTING NO FIELDS
           WITH KEY table_line = lv_role.
         IF sy-subrc <> 0.
@@ -436,9 +502,10 @@ FORM aggregate_input_data.
     ELSE.
       CLEAR ls_assign.
       ls_assign-username = lv_uname.
-      IF lv_role = 'N/A' OR lv_role IS INITIAL.
+      IF lv_role_raw = 'N/A' OR lv_role_raw IS INITIAL.
         ls_assign-has_na = abap_true.
-      ELSE.
+      ELSEIF strlen( lv_role_raw ) <= 30.
+        lv_role = lv_role_raw.
         APPEND lv_role TO ls_assign-roles.
       ENDIF.
       APPEND ls_assign TO gt_assignments.
@@ -472,6 +539,16 @@ FORM process_assignments.
         lv_str_missing  TYPE string.
 
   CLEAR gt_results.
+
+  " Report oversized (>12 char) CSV usernames explicitly without touching truncated SAP accounts
+  LOOP AT gt_oversized_users INTO DATA(lv_bad_user).
+    CLEAR ls_res.
+    ls_res-status   = gc_status_err.
+    ls_res-action   = 'ERROR'.
+    ls_res-username = lv_bad_user.
+    ls_res-message  = |Username exceeds SAP 12-character limit: { lv_bad_user }|.
+    APPEND ls_res TO gt_results.
+  ENDLOOP.
 
   LOOP AT gt_assignments INTO DATA(ls_assign).
     CLEAR: ls_res, lt_valid_roles, lt_miss_roles, lt_actgroups, lt_dedup_act,
@@ -795,6 +872,7 @@ FORM process_assignments.
                                        CHANGING lv_errmsg lv_has_err.
 
         IF lv_has_err = abap_true.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
           ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           ls_res-message = lv_errmsg.
@@ -877,8 +955,12 @@ CLASS lcl_alv_event_handler IMPLEMENTATION.
   METHOD on_link_click.
     READ TABLE gt_results INTO DATA(ls_row) INDEX row.
     IF sy-subrc = 0 AND column = 'USERNAME' AND ls_row-username IS NOT INITIAL.
-      SET PARAMETER ID 'USR' FIELD ls_row-username.
-      CALL TRANSACTION 'SU01' AND SKIP FIRST SCREEN.
+      TRY.
+          SET PARAMETER ID 'USR' FIELD ls_row-username.
+          CALL TRANSACTION 'SU01' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+        CATCH cx_sy_authorization_error.
+          MESSAGE 'No authorization to open transaction SU01.' TYPE 'S' DISPLAY LIKE 'E'.
+      ENDTRY.
     ENDIF.
   ENDMETHOD.
 ENDCLASS.

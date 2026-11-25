@@ -3,7 +3,9 @@
 *&---------------------------------------------------------------------*
 *& Exports all Authorization Objects & Fields from TOBJ, TOBJT, TOBCT
 *&---------------------------------------------------------------------*
-REPORT z_export_obj_levels LINE-SIZE 1023.
+REPORT z_export_obj_levels LINE-SIZE 1023 NO STANDARD PAGE HEADING.
+
+PARAMETERS: p_langu TYPE sy-langu DEFAULT 'E'.
 
 TYPES: BEGIN OF ty_tobj,
          objct TYPE tobj-objct,
@@ -22,31 +24,63 @@ TYPES: BEGIN OF ty_tobj,
          ctext TYPE tobct-ctext,
        END OF ty_tobj.
 
-DATA: lt_tobj TYPE STANDARD TABLE OF ty_tobj.
+DATA: lt_tobj   TYPE STANDARD TABLE OF ty_tobj,
+      lt_f      TYPE STANDARD TABLE OF xufield,
+      lv_idx    TYPE i,
+      lv_fname  TYPE char10,
+      lv_fval   TYPE string.
 
-SELECT t~objct, t~fiel1, t~fiel2, t~fiel3, t~fiel4, t~fiel5, t~fiel6, t~fiel7, t~fiel8, t~fiel9, t~fiel0,
-       t~oclss, j~ttext, c~ctext
-  FROM tobj AS t
-  LEFT OUTER JOIN tobjt AS j ON j~object = t~objct AND j~langu = 'E'
-  LEFT OUTER JOIN tobct AS c ON c~oclss = t~oclss AND c~langu = 'E'
-  ORDER BY t~objct
-  INTO TABLE @lt_tobj.
+FIELD-SYMBOLS: <lv_fld> TYPE any.
 
-LOOP AT lt_tobj INTO DATA(ls_t).
-  DATA: lt_f TYPE STANDARD TABLE OF xufield.
-  CLEAR lt_f.
-  IF ls_t-fiel1 IS NOT INITIAL AND ls_t-fiel1 <> 'dummyfield'. APPEND ls_t-fiel1 TO lt_f. ENDIF.
-  IF ls_t-fiel2 IS NOT INITIAL AND ls_t-fiel2 <> 'dummyfield'. APPEND ls_t-fiel2 TO lt_f. ENDIF.
-  IF ls_t-fiel3 IS NOT INITIAL AND ls_t-fiel3 <> 'dummyfield'. APPEND ls_t-fiel3 TO lt_f. ENDIF.
-  IF ls_t-fiel4 IS NOT INITIAL AND ls_t-fiel4 <> 'dummyfield'. APPEND ls_t-fiel4 TO lt_f. ENDIF.
-  IF ls_t-fiel5 IS NOT INITIAL AND ls_t-fiel5 <> 'dummyfield'. APPEND ls_t-fiel5 TO lt_f. ENDIF.
-  IF ls_t-fiel6 IS NOT INITIAL AND ls_t-fiel6 <> 'dummyfield'. APPEND ls_t-fiel6 TO lt_f. ENDIF.
-  IF ls_t-fiel7 IS NOT INITIAL AND ls_t-fiel7 <> 'dummyfield'. APPEND ls_t-fiel7 TO lt_f. ENDIF.
-  IF ls_t-fiel8 IS NOT INITIAL AND ls_t-fiel8 <> 'dummyfield'. APPEND ls_t-fiel8 TO lt_f. ENDIF.
-  IF ls_t-fiel9 IS NOT INITIAL AND ls_t-fiel9 <> 'dummyfield'. APPEND ls_t-fiel9 TO lt_f. ENDIF.
-  IF ls_t-fiel0 IS NOT INITIAL AND ls_t-fiel0 <> 'dummyfield'. APPEND ls_t-fiel0 TO lt_f. ENDIF.
+INITIALIZATION.
+  %_p_langu_%_app_%-text = 'Description Language'.
 
-  LOOP AT lt_f INTO DATA(lv_f).
-    WRITE: / ls_t-objct, '###', lv_f, '###', ls_t-oclss, '###', ls_t-ttext, '###', ls_t-ctext.
+START-OF-SELECTION.
+  AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+    ID 'ACT_GROUP' DUMMY
+    ID 'ACTVT'     FIELD '03'.
+  IF sy-subrc <> 0.
+    AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+      ID 'ACTVT' FIELD '03'
+      ID 'TABLE' FIELD 'TOBJ'.
+    IF sy-subrc <> 0.
+      MESSAGE 'No authorization to export authorization catalog (S_USER_AGR or S_TABU_NAM 03).' TYPE 'E'.
+    ENDIF.
+  ENDIF.
+
+  SELECT t~objct, t~fiel1, t~fiel2, t~fiel3, t~fiel4, t~fiel5,
+         t~fiel6, t~fiel7, t~fiel8, t~fiel9, t~fiel0,
+         t~oclss,
+         coalesce( j1~ttext, j2~ttext ) AS ttext,
+         coalesce( c1~ctext, c2~ctext ) AS ctext
+    FROM tobj AS t
+    LEFT OUTER JOIN tobjt AS j1 ON j1~object = t~objct AND j1~langu = @p_langu
+    LEFT OUTER JOIN tobjt AS j2 ON j2~object = t~objct AND j2~langu = 'E'
+    LEFT OUTER JOIN tobct AS c1 ON c1~oclss  = t~oclss AND c1~langu = @p_langu
+    LEFT OUTER JOIN tobct AS c2 ON c2~oclss  = t~oclss AND c2~langu = 'E'
+    ORDER BY t~objct
+    INTO TABLE @lt_tobj.
+
+  IF lt_tobj IS INITIAL.
+    MESSAGE 'No authorization objects found in table TOBJ.' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_tobj INTO DATA(ls_t).
+    CLEAR lt_f.
+    DO 10 TIMES.
+      lv_idx = sy-index MOD 10.
+      lv_fname = |FIEL{ lv_idx }|.
+      ASSIGN COMPONENT lv_fname OF STRUCTURE ls_t TO <lv_fld>.
+      IF sy-subrc = 0 AND <lv_fld> IS NOT INITIAL.
+        lv_fval = to_upper( condense( CONV string( <lv_fld> ) ) ).
+        IF lv_fval <> 'DUMMYFIELD'.
+          APPEND <lv_fld> TO lt_f.
+        ENDIF.
+      ENDIF.
+    ENDDO.
+
+    LOOP AT lt_f INTO DATA(lv_f).
+      WRITE: / ls_t-objct, '###', lv_f, '###', ls_t-oclss, '###', ls_t-ttext, '###', ls_t-ctext.
+    ENDLOOP.
   ENDLOOP.
-ENDLOOP.
