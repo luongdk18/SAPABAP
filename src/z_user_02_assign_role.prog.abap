@@ -34,9 +34,10 @@ TYPES: BEGIN OF ty_raw_row,
        END OF ty_raw_row.
 
 TYPES: BEGIN OF ty_user_assignment,
-         username TYPE bapibname-bapibname,
-         has_na   TYPE abap_bool,
-         roles    TYPE STANDARD TABLE OF agr_name WITH DEFAULT KEY,
+         username  TYPE bapibname-bapibname,
+         has_na    TYPE abap_bool,
+         roles     TYPE STANDARD TABLE OF agr_name WITH DEFAULT KEY,
+         bad_roles TYPE string_table,
        END OF ty_user_assignment.
 
 TYPES: BEGIN OF ty_alv_result,
@@ -84,8 +85,8 @@ SELECTION-SCREEN BEGIN OF BLOCK b_proc WITH FRAME TITLE b_tit2.
 SELECTION-SCREEN END OF BLOCK b_proc.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_date WITH FRAME TITLE b_tit3.
-  PARAMETERS: p_from TYPE bapiagr-from_dat DEFAULT sy-datum,
-              p_to   TYPE bapiagr-to_dat   DEFAULT '99991231'.
+  PARAMETERS: p_from TYPE bapiagr-from_dat DEFAULT sy-datum OBLIGATORY,
+              p_to   TYPE bapiagr-to_dat   DEFAULT '99991231' OBLIGATORY.
 SELECTION-SCREEN END OF BLOCK b_date.
 
 *----------------------------------------------------------------------*
@@ -109,7 +110,8 @@ AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
   PERFORM f4_file_open CHANGING p_file.
 
 AT SELECTION-SCREEN ON p_file.
-  PERFORM validate_filename USING p_file.
+  DATA lv_file_ok TYPE abap_bool.
+  PERFORM validate_filename USING p_file abap_false CHANGING lv_file_ok.
 
 AT SELECTION-SCREEN.
   IF p_from IS NOT INITIAL AND p_to IS NOT INITIAL AND p_from > p_to.
@@ -132,7 +134,8 @@ START-OF-SELECTION.
 FORM f4_file_open CHANGING cv_file TYPE localfile.
   DATA: lt_filetable TYPE filetable,
         ls_file      TYPE file_table,
-        lv_rc        TYPE i.
+        lv_rc        TYPE i,
+        lv_ok        TYPE abap_bool.
 
   cl_gui_frontend_services=>file_open_dialog(
     EXPORTING
@@ -151,8 +154,12 @@ FORM f4_file_open CHANGING cv_file TYPE localfile.
   IF sy-subrc = 0 AND lv_rc > 0.
     READ TABLE lt_filetable INTO ls_file INDEX 1.
     IF sy-subrc = 0.
-      cv_file = ls_file-filename.
-      PERFORM validate_filename USING cv_file.
+      DATA lv_picked TYPE localfile.
+      lv_picked = ls_file-filename.
+      PERFORM validate_filename USING lv_picked abap_true CHANGING lv_ok.
+      IF lv_ok = abap_true.
+        cv_file = lv_picked.
+      ENDIF.
     ENDIF.
   ENDIF.
 ENDFORM.
@@ -160,10 +167,14 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *& Form validate_filename
 *&---------------------------------------------------------------------*
-FORM validate_filename USING iv_file TYPE localfile.
+FORM validate_filename USING    iv_file   TYPE localfile
+                                iv_in_pov TYPE abap_bool
+                       CHANGING ev_ok     TYPE abap_bool.
   DATA: lv_fname TYPE string,
+        lv_msg   TYPE string,
         lt_parts TYPE STANDARD TABLE OF string.
 
+  ev_ok = abap_true.
   IF iv_file IS INITIAL.
     RETURN.
   ENDIF.
@@ -177,14 +188,27 @@ FORM validate_filename USING iv_file TYPE localfile.
 
   DATA(lv_up) = to_upper( condense( lv_fname ) ).
   IF strlen( lv_up ) <= 4 OR NOT ( lv_up CP '*.CSV' ).
-    MESSAGE |Invalid file '{ lv_fname }'. Expected CSV file (*_02_Assign_converted.csv).| TYPE 'E'.
+    ev_ok  = abap_false.
+    lv_msg = |Invalid file '{ lv_fname }'. Expected CSV file (*_02_Assign_converted.csv).|.
+    IF iv_in_pov = abap_true.
+      MESSAGE lv_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_msg TYPE 'E'.
+    ENDIF.
+    RETURN.
   ENDIF.
 
   IF NOT ( lv_up CS '02_ASSIGN' OR lv_up CS 'USER_02' OR lv_up CS 'ASSIGN_ROLE' OR lv_up CS '_ASSIGN' )
      OR lv_up CS '01_MASTER' OR lv_up CS '02_DERIVE' OR lv_up CS '03A_ORG'
      OR lv_up CS '03B_AUTH' OR lv_up CS '03B_OBJECT' OR lv_up CS '03C_ACTIVITY'
      OR lv_up CS '04_COMPOSITE' OR lv_up CS '01_CREATE'.
-    MESSAGE |Invalid file '{ lv_fname }' for Z_USER_02_ASSIGN_ROLE. Expected '*_02_Assign_converted.csv'.| TYPE 'E'.
+    ev_ok  = abap_false.
+    lv_msg = |Invalid file '{ lv_fname }' for Z_USER_02_ASSIGN_ROLE. Expected '*_02_Assign_converted.csv'.|.
+    IF iv_in_pov = abap_true.
+      MESSAGE lv_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_msg TYPE 'E'.
+    ENDIF.
   ENDIF.
 ENDFORM.
 
@@ -312,40 +336,50 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
     lv_content = lv_content+1.
   ENDIF.
 
-  " Normalize mixed CRLF/LF line endings cleanly
+  " Normalize mixed CRLF/CR/LF line endings cleanly
   REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN lv_content
     WITH cl_abap_char_utilities=>newline.
-  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_content WITH ''.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_content
+    WITH cl_abap_char_utilities=>newline.
   SPLIT lv_content AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
 
+  DATA: lv_file_delim TYPE c LENGTH 1 VALUE ',',
+        lv_delim_set  TYPE abap_bool VALUE abap_false.
   CLEAR: gt_raw_rows, lv_line_idx.
 
   LOOP AT lt_lines INTO lv_line.
-    lv_line_idx = lv_line_idx + 1.
+    " Strip BOM from line 1 before empty-line check
+    IF sy-tabix = 1 AND strlen( lv_line ) > 0 AND lv_line(1) = lv_bom.
+      lv_line = lv_line+1.
+    ENDIF.
     IF lv_line IS INITIAL.
       CONTINUE.
     ENDIF.
+    lv_line_idx = lv_line_idx + 1.
 
-    " Strip BOM from line 1 if still present
-    IF lv_line_idx = 1 AND strlen( lv_line ) > 0 AND lv_line(1) = lv_bom.
-      lv_line = lv_line+1.
+    IF lv_delim_set = abap_false.
+      PERFORM detect_csv_delimiter USING lv_line CHANGING lv_file_delim.
+      lv_delim_set = abap_true.
     ENDIF.
 
     CLEAR: lv_c1, lv_c2.
-    PERFORM parse_csv_line USING lv_line
+    PERFORM parse_csv_line USING lv_line lv_file_delim
                            CHANGING lv_c1 lv_c2.
 
-    " Validate & skip header row
+    " Validate & skip header row (strict tokens so headerless rows like USER01,Z_ROLE_MM_1000 are NOT skipped!)
     DATA(lv_c1_up) = to_upper( lv_c1 ).
     DATA(lv_c2_up) = to_upper( lv_c2 ).
     IF lv_line_idx = 1.
       DATA(lv_hdr_line) = to_upper( lv_line ).
       IF lv_hdr_line CS 'FULL NAME' OR lv_hdr_line CS 'EMAIL' OR lv_hdr_line CS 'DEPARTMENT'
          OR lv_hdr_line CS 'TCODE' OR lv_hdr_line CS 'ORG_LEVEL' OR lv_hdr_line CS 'OBJECT-FIELD'
-         OR lv_hdr_line CS 'VALUE-LOW' OR lv_hdr_line CS 'COMPOSITE' OR lv_hdr_line CS 'MASTER ROLE'.
+         OR lv_hdr_line CS 'VALUE-LOW' OR lv_hdr_line CS 'COMPOSITE ROLE' OR lv_hdr_line CS 'MASTER ROLE'.
         MESSAGE 'Invalid CSV header for Z_USER_02_ASSIGN_ROLE. Expected: Username, Role.' TYPE 'E'.
       ENDIF.
-      IF lv_c1_up CS 'USER' OR lv_c2_up CS 'ROLE'.
+      IF lv_c1_up = 'USERNAME' OR lv_c1_up = 'USER NAME' OR lv_c1_up = 'USER'
+         OR lv_c1_up = 'USER ID' OR lv_c1_up = 'BNAME'
+         OR lv_c2_up = 'ROLE' OR lv_c2_up = 'ROLE NAME' OR lv_c2_up = 'ROLE_NAME'
+         OR lv_c2_up = 'AGR_NAME'.
         CONTINUE.
       ENDIF.
     ENDIF.
@@ -368,11 +402,60 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
+*& Form detect_csv_delimiter
+*&---------------------------------------------------------------------*
+FORM detect_csv_delimiter USING    iv_line  TYPE string
+                          CHANGING ev_delim TYPE c.
+  DATA: lv_len      TYPE i,
+        lv_pos      TYPE i,
+        lv_in_q     TYPE abap_bool VALUE abap_false,
+        lv_char     TYPE string,
+        lv_next     TYPE string,
+        lv_cnt_tab  TYPE i,
+        lv_cnt_semi TYPE i,
+        lv_cnt_com  TYPE i.
+
+  lv_len = strlen( iv_line ).
+  lv_pos = 0.
+  WHILE lv_pos < lv_len.
+    lv_char = substring( val = iv_line off = lv_pos len = 1 ).
+    IF lv_char = '"'.
+      IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
+        lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
+        IF lv_next = '"'.
+          lv_pos = lv_pos + 2.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      lv_in_q = xsdbool( lv_in_q = abap_false ).
+    ELSEIF lv_in_q = abap_false.
+      IF lv_char = cl_abap_char_utilities=>horizontal_tab.
+        lv_cnt_tab = lv_cnt_tab + 1.
+      ELSEIF lv_char = ';'.
+        lv_cnt_semi = lv_cnt_semi + 1.
+      ELSEIF lv_char = ','.
+        lv_cnt_com = lv_cnt_com + 1.
+      ENDIF.
+    ENDIF.
+    lv_pos = lv_pos + 1.
+  ENDWHILE.
+
+  IF lv_cnt_tab > 0.
+    ev_delim = cl_abap_char_utilities=>horizontal_tab.
+  ELSEIF lv_cnt_semi > 0 AND lv_cnt_semi >= lv_cnt_com.
+    ev_delim = ';'.
+  ELSE.
+    ev_delim = ','.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
 *& Form parse_csv_line
 *&---------------------------------------------------------------------*
-FORM parse_csv_line USING    iv_line TYPE string
-                    CHANGING ev_col1 TYPE string
-                             ev_col2 TYPE string.
+FORM parse_csv_line USING    iv_line  TYPE string
+                             iv_delim TYPE c
+                    CHANGING ev_col1  TYPE string
+                             ev_col2  TYPE string.
   DATA: lt_tokens TYPE STANDARD TABLE OF string,
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
@@ -384,12 +467,9 @@ FORM parse_csv_line USING    iv_line TYPE string
 
   CLEAR: ev_col1, ev_col2.
 
-  IF iv_line CS cl_abap_char_utilities=>horizontal_tab.
-    lv_delim = cl_abap_char_utilities=>horizontal_tab.
-  ELSEIF iv_line CS ','.
+  lv_delim = iv_delim.
+  IF lv_delim IS INITIAL.
     lv_delim = ','.
-  ELSE.
-    lv_delim = ';'.
   ENDIF.
 
   lv_len = strlen( iv_line ).
@@ -434,19 +514,6 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM clean_cell CHANGING cv_val TYPE string.
   CONDENSE cv_val.
-  DATA(lv_len) = strlen( cv_val ).
-  IF lv_len >= 2.
-    DATA(lv_last_off) = lv_len - 1.
-    IF cv_val(1) = '"' AND substring( val = cv_val off = lv_last_off len = 1 ) = '"'.
-      DATA(lv_inner_len) = lv_len - 2.
-      IF lv_inner_len > 0.
-        cv_val = substring( val = cv_val off = 1 len = lv_inner_len ).
-      ELSE.
-        CLEAR cv_val.
-      ENDIF.
-    ENDIF.
-  ENDIF.
-  CONDENSE cv_val.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
@@ -489,9 +556,16 @@ FORM aggregate_input_data.
       WITH KEY username = lv_uname.
 
     IF sy-subrc = 0.
-      IF lv_role_raw = 'N/A' OR lv_role_raw IS INITIAL.
+      IF lv_role_raw = 'N/A'.
         <fs_assign>-has_na = abap_true.
-      ELSEIF strlen( lv_role_raw ) <= 30.
+      ELSEIF lv_role_raw IS INITIAL.
+        " Blank role cell must NEVER set has_na (avoid accidental mass revocation in Sync mode)
+      ELSEIF strlen( lv_role_raw ) > 30.
+        READ TABLE <fs_assign>-bad_roles TRANSPORTING NO FIELDS WITH KEY table_line = lv_role_raw.
+        IF sy-subrc <> 0.
+          APPEND lv_role_raw TO <fs_assign>-bad_roles.
+        ENDIF.
+      ELSE.
         lv_role = lv_role_raw.
         READ TABLE <fs_assign>-roles TRANSPORTING NO FIELDS
           WITH KEY table_line = lv_role.
@@ -502,9 +576,13 @@ FORM aggregate_input_data.
     ELSE.
       CLEAR ls_assign.
       ls_assign-username = lv_uname.
-      IF lv_role_raw = 'N/A' OR lv_role_raw IS INITIAL.
+      IF lv_role_raw = 'N/A'.
         ls_assign-has_na = abap_true.
-      ELSEIF strlen( lv_role_raw ) <= 30.
+      ELSEIF lv_role_raw IS INITIAL.
+        " Blank role cell kept empty without setting has_na
+      ELSEIF strlen( lv_role_raw ) > 30.
+        APPEND lv_role_raw TO ls_assign-bad_roles.
+      ELSE.
         lv_role = lv_role_raw.
         APPEND lv_role TO ls_assign-roles.
       ENDIF.
@@ -589,6 +667,19 @@ FORM process_assignments.
       CONTINUE.
     ENDIF.
 
+    " Validation 3b: Abort if any CSV role exceeds SAP 30-char limit (prevents silent drop / Sync wipe)
+    IF ls_assign-bad_roles IS NOT INITIAL.
+      DATA(lv_bad_r_str) = REDUCE string(
+        INIT s = `` FOR br IN ls_assign-bad_roles
+        NEXT s = COND #( WHEN s IS INITIAL THEN br ELSE |{ s }, { br }| ) ).
+      ls_res-status        = gc_status_err.
+      ls_res-action        = 'ERROR'.
+      ls_res-missing_roles = lv_bad_r_str.
+      ls_res-message       = |Aborted: Role name(s) exceed SAP 30-char limit: [{ lv_bad_r_str }].|.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
+
     " Validate roles existence in AGR_DEFINE (if p_chkrol is active)
     IF p_chkrol = abap_true.
       LOOP AT ls_assign-roles INTO DATA(lv_role).
@@ -621,7 +712,7 @@ FORM process_assignments.
       IF ls_assign-has_na = abap_false.
         ls_res-status  = gc_status_warn.
         ls_res-action  = 'WARNING'.
-        ls_res-message = 'No role entries found for this user in CSV file.'.
+        ls_res-message = 'No valid role entries found for this user (blank cell ignored; use explicit "N/A" to revoke all in Sync mode).'.
         APPEND ls_res TO gt_results.
         CONTINUE.
       ENDIF.
@@ -632,22 +723,30 @@ FORM process_assignments.
       ls_res-message = 'All specified roles are missing from SAP repository (AGR_DEFINE).'.
       APPEND ls_res TO gt_results.
       CONTINUE.
+    ELSEIF rb_sync = abap_true AND p_chkrol = abap_true AND lt_miss_roles IS NOT INITIAL.
+      " Sync Safety: Never execute Two-Way Sync if any CSV role is missing in SAP (avoids unintended revocations)
+      ls_res-status  = gc_status_err.
+      ls_res-action  = 'ERROR'.
+      ls_res-message = |Two-Way Sync aborted: { lines( lt_miss_roles ) } role(s) missing in SAP [{ lv_str_missing }]. Existing assignments preserved.|.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
     ENDIF.
 
-    " Read current direct roles from AGR_USERS (col_flag = space)
+    " Read current direct, non-HR-Org, non-excluded roles from AGR_USERS
     SELECT agr_name, from_dat, to_dat FROM agr_users
       INTO TABLE @DATA(lt_existing_roles)
-      WHERE uname = @ls_assign-username
-        AND col_flag = @space.
+      WHERE uname    = @ls_assign-username
+        AND col_flag = @space
+        AND org_flag = @space
+        AND exclude  = @space.
 
-    " Calculate Diff: ADD, DEL, KEEP (respecting existing active/overlapping validity periods)
-    " 1. Roles to Add: in CSV valid list, with NO existing valid/overlapping period for [p_from, p_to]
+    " Calculate Diff: ADD, DEL, KEEP (require FULL coverage of [p_from, p_to])
+    " 1. Roles to Add: in CSV valid list, with NO existing period fully covering [p_from, p_to]
     DATA: lv_has_valid_period TYPE abap_bool.
     LOOP AT lt_valid_roles INTO DATA(lv_vrole).
       lv_has_valid_period = abap_false.
       LOOP AT lt_existing_roles INTO DATA(ls_ex_chk) WHERE agr_name = lv_vrole.
-        " Existing assignment already covers or overlaps the target validity period (e.g. earlier from_dat still valid)
-        IF ls_ex_chk-from_dat <= p_to AND ls_ex_chk-to_dat >= p_from.
+        IF ls_ex_chk-from_dat <= p_from AND ls_ex_chk-to_dat >= p_to.
           lv_has_valid_period = abap_true.
           EXIT.
         ENDIF.
@@ -672,13 +771,14 @@ FORM process_assignments.
       ENDLOOP.
     ENDIF.
 
-    " 3. Roles to Keep (deduplicated; preserves existing active/valid period assignments)
+    " 3. Roles to Keep (deduplicated; preserves existing covering periods and future renewals)
     IF rb_sync = abap_true.
-      " In Sync mode: keep roles present in both SAP (with valid period) and CSV
+      " In Sync mode: keep roles present in both SAP (covering [p_from, p_to] OR disjoint future > p_to) and CSV
       LOOP AT lt_existing_roles INTO DATA(ls_exist_keep).
         READ TABLE lt_valid_roles TRANSPORTING NO FIELDS
           WITH KEY table_line = ls_exist_keep-agr_name.
-        IF sy-subrc = 0 AND ls_exist_keep-from_dat <= p_to AND ls_exist_keep-to_dat >= p_from.
+        IF sy-subrc = 0 AND ( ( ls_exist_keep-from_dat <= p_from AND ls_exist_keep-to_dat >= p_to )
+                              OR ls_exist_keep-from_dat > p_to ).
           READ TABLE lt_roles_keep TRANSPORTING NO FIELDS
             WITH KEY table_line = ls_exist_keep-agr_name.
           IF sy-subrc <> 0.
@@ -687,7 +787,7 @@ FORM process_assignments.
         ENDIF.
       ENDLOOP.
     ELSE.
-      " In Append mode: keep all existing roles (excluding expired ones being re-added)
+      " In Append mode: keep all existing roles (excluding those being extended/re-added)
       LOOP AT lt_existing_roles INTO DATA(ls_exist_app).
         READ TABLE lt_roles_to_add TRANSPORTING NO FIELDS
           WITH KEY table_line = ls_exist_app-agr_name.
@@ -702,13 +802,14 @@ FORM process_assignments.
     ENDIF.
 
     " Build target lt_actgroups table for standard BAPI
-    " CRITICAL: Always preserve original (from_dat, to_dat) of existing valid periods so
-    " BAPI_USER_ACTGROUPS_ASSIGN does not split/duplicate assignments when p_from > existing from_dat!
+    " CRITICAL: Always preserve original (from_dat, to_dat) of existing covering periods and
+    " future renewals so pre-approved future validity periods are never wiped in Sync!
     IF rb_sync = abap_true.
       LOOP AT lt_existing_roles INTO DATA(ls_sync_row).
         READ TABLE lt_valid_roles TRANSPORTING NO FIELDS
           WITH KEY table_line = ls_sync_row-agr_name.
-        IF sy-subrc = 0 AND ls_sync_row-from_dat <= p_to AND ls_sync_row-to_dat >= p_from.
+        IF sy-subrc = 0 AND ( ( ls_sync_row-from_dat <= p_from AND ls_sync_row-to_dat >= p_to )
+                              OR ls_sync_row-from_dat > p_to ).
           CLEAR ls_actgroup.
           ls_actgroup-agr_name = ls_sync_row-agr_name.
           ls_actgroup-from_dat = ls_sync_row-from_dat.
@@ -732,7 +833,7 @@ FORM process_assignments.
         ls_actgroup-to_dat   = ls_exist_row-to_dat.
         APPEND ls_actgroup TO lt_actgroups.
       ENDLOOP.
-      " Only append roles that do NOT already have an active/valid period
+      " Only append roles that do NOT already fully cover [p_from, p_to]
       LOOP AT lt_roles_to_add INTO DATA(lv_add_app).
         CLEAR ls_actgroup.
         ls_actgroup-agr_name = lv_add_app.
@@ -745,27 +846,36 @@ FORM process_assignments.
     SORT lt_actgroups BY agr_name from_dat to_dat.
     DELETE ADJACENT DUPLICATES FROM lt_actgroups COMPARING agr_name from_dat to_dat.
 
-    " Optional Deduplication: Clear duplicate validity periods for the same role
-    " Retention rule: Always keep the longest & oldest period per role
-    " (highest to_dat first to retain active/unlimited periods, then earliest from_dat)
+    " Optional Deduplication: Coalesce overlapping/adjacent? -> strictly overlapping periods
+    " into [min(from_dat)..max(to_dat)] per role while preserving disjoint future renewals!
     IF p_dedup = abap_true.
-      SORT lt_actgroups BY agr_name ASCENDING to_dat DESCENDING from_dat ASCENDING.
-      CLEAR: lt_dedup_act, lv_prev_agr.
-      LOOP AT lt_actgroups INTO DATA(ls_act_chk).
-        IF ls_act_chk-agr_name = lv_prev_agr.
-          lv_dedup_cnt = lv_dedup_cnt + 1.
-          READ TABLE lt_roles_dedup TRANSPORTING NO FIELDS
-            WITH KEY table_line = ls_act_chk-agr_name.
-          IF sy-subrc <> 0.
-            APPEND ls_act_chk-agr_name TO lt_roles_dedup.
+      SORT lt_actgroups BY agr_name ASCENDING from_dat ASCENDING to_dat ASCENDING.
+      CLEAR lt_dedup_act.
+      LOOP AT lt_actgroups INTO DATA(ls_in_ag).
+        DATA(lv_d_cnt) = lines( lt_dedup_act ).
+        IF lv_d_cnt > 0.
+          ASSIGN lt_dedup_act[ lv_d_cnt ] TO FIELD-SYMBOL(<ls_last_ag>).
+          IF <ls_last_ag>-agr_name = ls_in_ag-agr_name
+             AND ls_in_ag-from_dat <= <ls_last_ag>-to_dat.
+            IF ls_in_ag-to_dat > <ls_last_ag>-to_dat.
+              <ls_last_ag>-to_dat = ls_in_ag-to_dat.
+            ENDIF.
+            lv_dedup_cnt = lv_dedup_cnt + 1.
+            READ TABLE lt_roles_dedup TRANSPORTING NO FIELDS
+              WITH KEY table_line = ls_in_ag-agr_name.
+            IF sy-subrc <> 0.
+              APPEND ls_in_ag-agr_name TO lt_roles_dedup.
+            ENDIF.
+            CONTINUE.
           ENDIF.
-        ELSE.
-          APPEND ls_act_chk TO lt_dedup_act.
-          lv_prev_agr = ls_act_chk-agr_name.
         ENDIF.
+        APPEND ls_in_ag TO lt_dedup_act.
       ENDLOOP.
       lt_actgroups = lt_dedup_act.
     ENDIF.
+
+    SORT lt_actgroups BY agr_name from_dat to_dat.
+    DELETE ADJACENT DUPLICATES FROM lt_actgroups COMPARING agr_name from_dat to_dat.
 
     " Format counts and string summaries
     ls_res-roles_add_cnt  = lines( lt_roles_to_add ).
@@ -810,17 +920,34 @@ FORM process_assignments.
     ENDLOOP.
     ls_res-dup_roles = lv_str_dedup.
 
-    " Determine whether anything actually changed
-    " If no roles are added/removed/deduplicated and existing valid periods are preserved, skip BAPI call
+    " Exact set equality check between final lt_actgroups and existing AGR_USERS rows
+    " (prevents redundant no-op BAPI writes and false 'Added' reports when deduplicated away)
+    SORT lt_existing_roles BY agr_name from_dat to_dat.
+    DELETE ADJACENT DUPLICATES FROM lt_existing_roles COMPARING agr_name from_dat to_dat.
+
     DATA: lv_is_up_to_date TYPE abap_bool.
-    IF lt_roles_to_add IS INITIAL AND lt_roles_to_del IS INITIAL AND lv_dedup_cnt = 0.
-      IF rb_app = abap_true OR lines( lt_actgroups ) = lines( lt_existing_roles ).
-        lv_is_up_to_date = abap_true.
-      ELSE.
-        lv_is_up_to_date = abap_false.
-      ENDIF.
+    IF lines( lt_actgroups ) = lines( lt_existing_roles ).
+      lv_is_up_to_date = abap_true.
+      LOOP AT lt_actgroups INTO DATA(ls_cmp_a).
+        READ TABLE lt_existing_roles TRANSPORTING NO FIELDS
+          WITH KEY agr_name = ls_cmp_a-agr_name
+                   from_dat = ls_cmp_a-from_dat
+                   to_dat   = ls_cmp_a-to_dat
+          BINARY SEARCH.
+        IF sy-subrc <> 0.
+          lv_is_up_to_date = abap_false.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
     ELSE.
       lv_is_up_to_date = abap_false.
+    ENDIF.
+
+    IF lv_is_up_to_date = abap_true.
+      ls_res-roles_add_cnt = 0.
+      ls_res-roles_del_cnt = 0.
+      ls_res-dup_del_cnt   = 0.
+      CLEAR: ls_res-roles_add, ls_res-roles_del, ls_res-dup_roles.
     ENDIF.
 
     " Simulation Mode (Test Run)
@@ -954,7 +1081,8 @@ ENDCLASS.
 CLASS lcl_alv_event_handler IMPLEMENTATION.
   METHOD on_link_click.
     READ TABLE gt_results INTO DATA(ls_row) INDEX row.
-    IF sy-subrc = 0 AND column = 'USERNAME' AND ls_row-username IS NOT INITIAL.
+    IF sy-subrc = 0 AND column = 'USERNAME'
+       AND ls_row-username IS NOT INITIAL AND ls_row-action <> 'ERROR'.
       TRY.
           SET PARAMETER ID 'USR' FIELD ls_row-username.
           CALL TRANSACTION 'SU01' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.

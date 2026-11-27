@@ -250,31 +250,49 @@ FORM read_csv_file USING iv_file TYPE localfile.
     MESSAGE 'Failed to read CSV file from client workstation.' TYPE 'E'.
   ENDIF.
 
+  DATA(lv_utf8_bom) = cl_abap_conv_in_ce=>uccp( 'FEFF' ).
+  DATA: lv_file_delim      TYPE c LENGTH 1 VALUE ',',
+        lv_delim_set       TYPE abap_bool VALUE abap_false,
+        lv_first_non_empty TYPE abap_bool VALUE abap_false.
+
   LOOP AT lt_lines INTO DATA(lv_line).
     DATA(lv_tabix) = sy-tabix.
-    IF lv_tabix = 1 AND strlen( lv_line ) >= 1.
-      IF lv_line(1) = cl_abap_char_utilities=>byte_order_mark_utf8.
-        lv_line = substring( val = lv_line off = 1 ).
-      ENDIF.
+    IF lv_tabix = 1 AND lv_line IS NOT INITIAL AND lv_line(1) = lv_utf8_bom.
+      SHIFT lv_line LEFT BY 1 PLACES.
     ENDIF.
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_line WITH ''.
+    IF lv_line IS INITIAL.
+      CONTINUE.
+    ENDIF.
+
+    IF lv_delim_set = abap_false.
+      PERFORM detect_csv_delimiter USING lv_line CHANGING lv_file_delim.
+      lv_delim_set = abap_true.
+    ENDIF.
 
     CLEAR ls_raw.
-    PERFORM parse_csv_line USING lv_line
+    PERFORM parse_csv_line USING lv_line lv_file_delim
                            CHANGING ls_raw-col1 ls_raw-col2 ls_raw-col3.
 
-    IF lv_tabix = 1.
-      DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
-      DATA(lv_c2_up) = to_upper( ls_raw-col2 ).
-      DATA(lv_c3_up) = to_upper( ls_raw-col3 ).
+    DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
+    DATA(lv_c2_up) = to_upper( ls_raw-col2 ).
+    DATA(lv_c3_up) = to_upper( ls_raw-col3 ).
+
+    IF lv_first_non_empty = abap_false.
+      lv_first_non_empty = abap_true.
       IF lv_c2_up = 'DERIVED ROLE' OR lv_c2_up = 'ORG_LEVEL' OR lv_c2_up = 'OBJECT-FIELD'
          OR lv_c3_up = 'VALUE-LOW' OR lv_c1_up = 'COMPOSITE ROLE' OR lv_c1_up = 'COMPOSITE ROLE NAME'
          OR lv_c3_up = 'SINGLE ROLE' OR lv_c1_up = 'USERNAME'.
         MESSAGE 'Invalid CSV header for Z_ROLE_01_CREATE_MASTER. Expected: Role Name, Role Description, TCode.' TYPE 'E'.
       ENDIF.
-      IF lv_c1_up = 'ROLE' OR lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME' OR lv_c1_up = 'ROLE ID'.
+      IF lv_c1_up = 'ROLE' OR lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME'
+         OR lv_c1_up = 'ROLE ID' OR lv_c1_up = 'MASTER ROLE' OR lv_c1_up = 'MASTER_ROLE'.
         CONTINUE.
       ENDIF.
+    ENDIF.
+    IF lv_c1_up = 'ROLE' OR lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME'
+       OR lv_c1_up = 'ROLE ID' OR lv_c1_up = 'MASTER ROLE' OR lv_c1_up = 'MASTER_ROLE'.
+      CONTINUE.
     ENDIF.
 
     IF ls_raw-col1 IS NOT INITIAL.
@@ -287,12 +305,61 @@ FORM read_csv_file USING iv_file TYPE localfile.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
+*& Form detect_csv_delimiter
+*&---------------------------------------------------------------------*
+FORM detect_csv_delimiter USING    iv_line  TYPE string
+                          CHANGING ev_delim TYPE c.
+  DATA: lv_len      TYPE i,
+        lv_pos      TYPE i,
+        lv_in_q     TYPE abap_bool VALUE abap_false,
+        lv_char     TYPE string,
+        lv_next     TYPE string,
+        lv_cnt_tab  TYPE i,
+        lv_cnt_semi TYPE i,
+        lv_cnt_com  TYPE i.
+
+  lv_len = strlen( iv_line ).
+  lv_pos = 0.
+  WHILE lv_pos < lv_len.
+    lv_char = substring( val = iv_line off = lv_pos len = 1 ).
+    IF lv_char = '"'.
+      IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
+        lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
+        IF lv_next = '"'.
+          lv_pos = lv_pos + 2.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      lv_in_q = xsdbool( lv_in_q = abap_false ).
+    ELSEIF lv_in_q = abap_false.
+      IF lv_char = cl_abap_char_utilities=>horizontal_tab.
+        lv_cnt_tab = lv_cnt_tab + 1.
+      ELSEIF lv_char = ';'.
+        lv_cnt_semi = lv_cnt_semi + 1.
+      ELSEIF lv_char = ','.
+        lv_cnt_com = lv_cnt_com + 1.
+      ENDIF.
+    ENDIF.
+    lv_pos = lv_pos + 1.
+  ENDWHILE.
+
+  IF lv_cnt_tab > 0.
+    ev_delim = cl_abap_char_utilities=>horizontal_tab.
+  ELSEIF lv_cnt_semi > 0 AND lv_cnt_semi >= lv_cnt_com.
+    ev_delim = ';'.
+  ELSE.
+    ev_delim = ','.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
 *& Form parse_csv_line
 *&---------------------------------------------------------------------*
-FORM parse_csv_line USING    iv_line TYPE string
-                    CHANGING ev_col1 TYPE string
-                             ev_col2 TYPE string
-                             ev_col3 TYPE string.
+FORM parse_csv_line USING    iv_line  TYPE string
+                             iv_delim TYPE c
+                    CHANGING ev_col1  TYPE string
+                             ev_col2  TYPE string
+                             ev_col3  TYPE string.
   DATA: lt_tokens TYPE STANDARD TABLE OF string,
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
@@ -304,12 +371,9 @@ FORM parse_csv_line USING    iv_line TYPE string
 
   CLEAR: ev_col1, ev_col2, ev_col3.
 
-  IF iv_line CS cl_abap_char_utilities=>horizontal_tab.
-    lv_delim = cl_abap_char_utilities=>horizontal_tab.
-  ELSEIF iv_line CS ','.
+  lv_delim = iv_delim.
+  IF lv_delim IS INITIAL.
     lv_delim = ','.
-  ELSE.
-    lv_delim = ';'.
   ENDIF.
 
   lv_len = strlen( iv_line ).
@@ -389,11 +453,7 @@ FORM aggregate_and_validate_data.
 
     lv_agr_name = lv_agr_raw.
 
-    IF lv_role_dsc IS INITIAL.
-      lv_role_dsc = lv_agr_name.
-    ENDIF.
-
-    " Maintain Role Header
+    " Maintain Role Header (preserve blank CSV description so existing role texts are not overwritten)
     READ TABLE gt_roles ASSIGNING FIELD-SYMBOL(<ls_r>)
       WITH KEY agr_name = lv_agr_name.
     IF sy-subrc <> 0.
@@ -502,7 +562,12 @@ FORM process_role_generation.
         lv_parent_chk     TYPE agr_name,
         lv_coll_chk       TYPE char01,
         lv_adj_sum        TYPE string,
-        lv_adj_roles      TYPE string.
+        lv_adj_roles      TYPE string,
+        lv_gen_err        TYPE string,
+        lv_desc_warn      TYPE string,
+        lv_create_desc    TYPE agr_title,
+        lv_cur_desc       TYPE agr_title,
+        lv_desc_changed   TYPE abap_bool.
 
   LOOP AT gt_oversized_roles INTO DATA(lv_bad_role).
     CLEAR ls_res.
@@ -516,11 +581,15 @@ FORM process_role_generation.
   LOOP AT gt_roles INTO DATA(ls_role).
     CLEAR: ls_res, lt_nodes, lt_texts, lt_bapiret, lv_tcd_list, lv_invalid_cnt,
            lv_invalid_list, lv_valid_cnt, lv_adj_sum, lv_adj_roles,
-           lv_err_flag, lv_rc, lv_parent_chk, lv_coll_chk.
+           lv_err_flag, lv_rc, lv_parent_chk, lv_coll_chk, lv_gen_err, lv_desc_warn,
+           lv_create_desc, lv_cur_desc, lv_desc_changed.
 
+    lv_create_desc     = COND agr_title( WHEN ls_role-role_desc IS NOT INITIAL
+                                         THEN ls_role-role_desc
+                                         ELSE ls_role-agr_name ).
     ls_res-agr_name    = ls_role-agr_name.
     ls_res-role_desc   = ls_role-role_desc.
-    ls_res-folder_name = ls_role-role_desc.
+    ls_res-folder_name = lv_create_desc.
 
     " Categorize TCodes into valid vs invalid
     LOOP AT gt_tcodes INTO DATA(ls_tc) WHERE agr_name = ls_role-agr_name.
@@ -552,8 +621,37 @@ FORM process_role_generation.
       ls_res-tcode_cnt = lv_valid_cnt. " Number of VALID TCodes assigned to the role
     ENDIF.
 
-    " Check if role already exists in SAP & guard against Composite / Derived roles
+    " Check if role already exists in SAP & enforce S_USER_AGR BEFORE disclosing metadata
     CLEAR: lv_dummy_agr, lv_parent_chk, lv_coll_chk.
+    IF p_test = abap_true.
+      AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+        ID 'ACT_GROUP' FIELD ls_role-agr_name
+        ID 'ACTVT'     FIELD '03'.
+      IF sy-subrc <> 0.
+        ls_res-status  = gc_status_err.
+        ls_res-action  = 'ERROR'.
+        ls_res-message = |No authorization for role '{ ls_role-agr_name }' (S_USER_AGR, ACTVT 03).|.
+        APPEND ls_res TO gt_results.
+        CONTINUE.
+      ENDIF.
+    ELSE.
+      AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+        ID 'ACT_GROUP' FIELD ls_role-agr_name
+        ID 'ACTVT'     FIELD '02'.
+      IF sy-subrc <> 0.
+        AUTHORITY-CHECK OBJECT 'S_USER_AGR'
+          ID 'ACT_GROUP' FIELD ls_role-agr_name
+          ID 'ACTVT'     FIELD '01'.
+        IF sy-subrc <> 0.
+          ls_res-status  = gc_status_err.
+          ls_res-action  = 'ERROR'.
+          ls_res-message = |No authorization for role '{ ls_role-agr_name }' (S_USER_AGR, ACTVT 01/02).|.
+          APPEND ls_res TO gt_results.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
     SELECT SINGLE agr_name, parent_agr FROM agr_define
       INTO ( @lv_dummy_agr, @lv_parent_chk )
       WHERE agr_name = @ls_role-agr_name.
@@ -579,7 +677,7 @@ FORM process_role_generation.
       lv_exists = abap_false.
     ENDIF.
 
-    " Per-role authority check
+    " Exact per-role authority check (ACTVT 02 existing / 01 create)
     DATA(lv_req_actvt) = COND activ_auth(
       WHEN p_test = abap_true THEN '03'
       WHEN lv_exists = abap_true THEN '02'
@@ -593,6 +691,25 @@ FORM process_role_generation.
       ls_res-message = |No authorization for role '{ ls_role-agr_name }' (S_USER_AGR, ACTVT { lv_req_actvt }).|.
       APPEND ls_res TO gt_results.
       CONTINUE.
+    ENDIF.
+
+    " S_USER_TCD check for brand-new roles BEFORE menu/role creation (Simulation & Live)
+    IF lv_exists = abap_false AND lv_valid_cnt > 0.
+      DATA(lv_tcd_err_new) = ``.
+      LOOP AT gt_tcodes INTO ls_tc WHERE agr_name = ls_role-agr_name AND is_valid = abap_true.
+        AUTHORITY-CHECK OBJECT 'S_USER_TCD' ID 'TCD' FIELD ls_tc-tcode.
+        IF sy-subrc <> 0.
+          lv_tcd_err_new = |Missing S_USER_TCD authorization for TCode '{ ls_tc-tcode }'.|.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF lv_tcd_err_new IS NOT INITIAL.
+        ls_res-status  = gc_status_err.
+        ls_res-action  = 'ERROR'.
+        ls_res-message = lv_tcd_err_new.
+        APPEND ls_res TO gt_results.
+        CONTINUE.
+      ENDIF.
     ENDIF.
 
     " -----------------------------------------------------------------
@@ -612,7 +729,7 @@ FORM process_role_generation.
       DATA(ls_folder_txt) = VALUE smencust(
         spras     = sy-langu
         object_id = '00001'
-        text      = ls_role-role_desc
+        text      = lv_create_desc
       ).
       APPEND ls_folder_txt TO lt_texts.
 
@@ -650,6 +767,15 @@ FORM process_role_generation.
       ENDLOOP.
     ENDIF.
 
+    " Check whether description differs on an existing role
+    IF lv_exists = abap_true AND ls_role-role_desc IS NOT INITIAL.
+      SELECT SINGLE text FROM agr_texts INTO @lv_cur_desc
+        WHERE agr_name = @ls_role-agr_name AND spras = @sy-langu AND line = '00000'.
+      IF sy-subrc <> 0 OR lv_cur_desc <> ls_role-role_desc.
+        lv_desc_changed = abap_true.
+      ENDIF.
+    ENDIF.
+
     " -----------------------------------------------------------------
     " Branch 1: SIMULATION MODE (TEST RUN)
     " -----------------------------------------------------------------
@@ -661,7 +787,7 @@ FORM process_role_generation.
         IF p_upd = abap_true.
           " Check existing TCodes in role from agr_tcodes
           SELECT tcode FROM agr_tcodes INTO TABLE @DATA(lt_sim_curr_tcds)
-            WHERE agr_name = @ls_role-agr_name AND type = 'TR'.
+            WHERE agr_name = @ls_role-agr_name AND type = 'TR' AND exclude = @space.
 
           CLEAR: lt_tcodes_to_add, lt_tcodes_to_del, lt_tcodes_to_keep,
                  lv_str_add, lv_str_del, lv_str_keep.
@@ -703,28 +829,64 @@ FORM process_role_generation.
           ls_res-tcodes_add = lv_str_add.
           ls_res-tcodes_del = lv_str_del.
 
+          " Pre-check S_USER_TCD for TCodes to add in Simulation
+          DATA(lv_tcd_err_sim) = ``.
+          LOOP AT lt_tcodes_to_add INTO DATA(ls_sim_add_chk).
+            AUTHORITY-CHECK OBJECT 'S_USER_TCD' ID 'TCD' FIELD ls_sim_add_chk-tcode.
+            IF sy-subrc <> 0.
+              lv_tcd_err_sim = |Missing S_USER_TCD authorization to add TCode '{ ls_sim_add_chk-tcode }'.|.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+          IF lv_tcd_err_sim IS NOT INITIAL.
+            ls_res-status  = gc_status_err.
+            ls_res-action  = 'ERROR'.
+            ls_res-message = lv_tcd_err_sim.
+            APPEND ls_res TO gt_results.
+            CONTINUE.
+          ENDIF.
+
+          " Guard: block Two-Way Sync removal when CSV has invalid TCodes
+          IF p_sync = abap_true AND lt_tcodes_to_del IS NOT INITIAL AND lv_invalid_cnt > 0.
+            ls_res-status  = gc_status_err.
+            ls_res-action  = 'ERROR'.
+            ls_res-message = |Two-Way Sync aborted to prevent unintended TCode removal: CSV has { lv_invalid_cnt } invalid TCode(s) [{ lv_invalid_list }].|.
+            APPEND ls_res TO gt_results.
+            CONTINUE.
+          ENDIF.
+
           IF lt_tcodes_to_add IS INITIAL AND lt_tcodes_to_del IS INITIAL.
-            ls_res-status  = gc_status_ok.
-            ls_res-action  = 'UP-TO-DATE'.
-            ls_res-message = |Simulation: Role menu already up-to-date with { lines( lt_tcodes_to_keep ) } valid TCodes. No changes needed.|.
+            IF lv_desc_changed = abap_true.
+              ls_res-status  = gc_status_ok.
+              ls_res-action  = 'SIMULATED'.
+              ls_res-message = |Simulation OK: Role menu up-to-date ({ lines( lt_tcodes_to_keep ) } valid TCodes); would update role description.|.
+            ELSE.
+              ls_res-status  = gc_status_ok.
+              ls_res-action  = 'UP-TO-DATE'.
+              ls_res-message = |Simulation: Role menu already up-to-date with { lines( lt_tcodes_to_keep ) } valid TCodes. No changes needed.|.
+            ENDIF.
           ELSE.
             ls_res-status  = gc_status_ok.
             ls_res-action  = 'SIMULATED'.
-            ls_res-message = |Simulation OK: Would add { lines( lt_tcodes_to_add ) } [{ lv_str_add }], remove { lines( lt_tcodes_to_del ) } [{ lv_str_del }], keep { lines( lt_tcodes_to_keep ) } TCode(s).|.
-          ENDIF.
+            ls_res-message = |Simulation OK: Would add { lines( lt_tcodes_to_add ) } [{ lv_str_add }], remove { lines( lt_tcodes_to_del ) } [{ lv_str_del }], keep { lines( lt_tcodes_to_keep ) } TCode(s); existing orgs preserved.|.
 
-          IF p_adjder = abap_true.
-            SELECT agr_name FROM agr_define INTO TABLE @DATA(lt_sim_der)
-              WHERE parent_agr = @ls_role-agr_name
-              ORDER BY agr_name.
-            IF lt_sim_der IS NOT INITIAL.
-              DATA(lv_sim_der_str) = ``.
-              LOOP AT lt_sim_der INTO DATA(ls_sd).
-                IF lv_sim_der_str IS INITIAL. lv_sim_der_str = ls_sd-agr_name.
-                ELSE. CONCATENATE lv_sim_der_str ',' ls_sd-agr_name INTO lv_sim_der_str SEPARATED BY space. ENDIF.
-              ENDLOOP.
-              ls_res-derived_roles = lv_sim_der_str.
-              ls_res-message = |{ ls_res-message } Would adjust { lines( lt_sim_der ) } child derived role(s) [{ lv_sim_der_str }] (preserving org levels).|.
+            IF p_adjder = abap_true.
+              SELECT agr_name FROM agr_define INTO TABLE @DATA(lt_sim_der)
+                WHERE parent_agr = @ls_role-agr_name
+                ORDER BY agr_name.
+              IF lt_sim_der IS NOT INITIAL.
+                DATA(lv_sim_der_str) = ``.
+                LOOP AT lt_sim_der INTO DATA(ls_sd).
+                  IF lv_sim_der_str IS INITIAL. lv_sim_der_str = ls_sd-agr_name.
+                  ELSE. CONCATENATE lv_sim_der_str ',' ls_sd-agr_name INTO lv_sim_der_str SEPARATED BY space. ENDIF.
+                ENDLOOP.
+                ls_res-derived_roles = lv_sim_der_str.
+                ls_res-message = |{ ls_res-message } Would adjust { lines( lt_sim_der ) } child derived role(s) [{ lv_sim_der_str }] (preserving org levels).|.
+                IF p_genprf = abap_false.
+                  ls_res-status  = gc_status_warn.
+                  ls_res-message = |{ ls_res-message } Note: Auto-Generate Auth Profiles is off; child auth merge requires profile rebuild.|.
+                ENDIF.
+              ENDIF.
             ENDIF.
           ENDIF.
 
@@ -756,7 +918,7 @@ FORM process_role_generation.
           ENDIF.
         ELSE.
           ls_res-action  = 'SIMULATED'.
-          ls_res-message = |Simulation OK: Would create Master role with folder '{ ls_role-role_desc }' and { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
+          ls_res-message = |Simulation OK: Would create Master role with folder '{ lv_create_desc }' and { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
           IF lv_invalid_cnt > 0.
             ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
@@ -775,10 +937,11 @@ FORM process_role_generation.
       " 2A. CREATE NEW MASTER ROLE
       IF lv_valid_cnt = 0.
         " Role has no valid TCodes (e.g. N/A or all were invalid in TSTC)
+        CLEAR lt_bapiret.
         CALL FUNCTION 'PRGN_RFC_CREATE_AGR_MULTIPLE'
           EXPORTING
             activity_group      = ls_role-agr_name
-            activity_group_text = ls_role-role_desc
+            activity_group_text = lv_create_desc
             no_dialog           = 'X'
           TABLES
             return              = lt_bapiret
@@ -786,10 +949,17 @@ FORM process_role_generation.
             OTHERS              = 1.
         lv_rc = sy-subrc.
 
-        IF lv_rc = 0.
-          PERFORM set_org_levels_default USING ls_role-agr_name.
+        DATA(lv_crt_m_err) = xsdbool( lv_rc <> 0 ).
+        LOOP AT lt_bapiret INTO DATA(ls_cm_chk) WHERE type CA 'EAX'.
+          lv_crt_m_err = abap_true.
+          EXIT.
+        ENDLOOP.
 
-          PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
+        IF lv_crt_m_err = abap_false.
+          PERFORM set_org_levels_default USING ls_role-agr_name abap_false abap_false CHANGING lv_gen_err.
+
+          PERFORM set_role_description USING ls_role-agr_name lv_create_desc abap_false
+                                       CHANGING lv_desc_warn.
           COMMIT WORK AND WAIT.
 
           ls_res-action = 'CREATED'.
@@ -800,8 +970,15 @@ FORM process_role_generation.
             ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: Role created without TCodes (N/A); Org levels defaulted to '-1'.|.
           ENDIF.
+          IF lv_gen_err IS NOT INITIAL.
+            ls_res-message = |{ ls_res-message } Org warning: { lv_gen_err }|.
+          ENDIF.
+          IF lv_desc_warn IS NOT INITIAL.
+            ls_res-message = |{ ls_res-message } Description warning: { lv_desc_warn }|.
+          ENDIF.
         ELSE.
           ROLLBACK WORK.
+          CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
           ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
@@ -813,7 +990,7 @@ FORM process_role_generation.
       ELSE.
         " Role has at least 1 valid TCode -> Create role with folder and valid TCodes
         DATA: lv_only_tc TYPE char01 VALUE space.
-        CLEAR lv_only_tc.
+        CLEAR: lv_only_tc, lt_bapiret.
         IF p_genprf = abap_false.
           lv_only_tc = 'X'.
         ENDIF.
@@ -821,9 +998,9 @@ FORM process_role_generation.
         CALL FUNCTION 'PRGN_RFC_CREATE_ACTIVITY_GROUP'
           EXPORTING
             activity_group                = ls_role-agr_name
-            activity_group_text           = ls_role-role_desc
+            activity_group_text           = lv_create_desc
             org_levels_with_star          = space   " Master role: DO NOT fill orgs with '*'
-            unmaintained_fields_with_star = 'X'
+            unmaintained_fields_with_star = space
             only_tcode_assignment         = lv_only_tc
             no_dialog                     = 'X'
           TABLES
@@ -846,30 +1023,56 @@ FORM process_role_generation.
             OTHERS                        = 13.
         lv_rc = sy-subrc.
 
-        IF lv_rc = 0 OR lv_rc = 11 OR lv_rc = 12.
+        DATA(lv_crt_ag_err) = abap_false.
+        IF lv_rc <> 0 AND lv_rc <> 11 AND lv_rc <> 12.
+          lv_crt_ag_err = abap_true.
+        ELSEIF lv_rc = 0.
+          LOOP AT lt_bapiret INTO DATA(ls_ca_chk) WHERE type CA 'EAX'.
+            lv_crt_ag_err = abap_true.
+            EXIT.
+          ENDLOOP.
+        ENDIF.
+
+        IF lv_crt_ag_err = abap_false.
           IF p_genprf = abap_true.
-            PERFORM generate_master_role_profile USING ls_role-agr_name abap_false.
+            DATA(lv_need_reb) = xsdbool( lv_rc = 11 ).
+            PERFORM generate_master_role_profile USING ls_role-agr_name lv_need_reb abap_false CHANGING lv_gen_err.
           ELSE.
-            PERFORM set_org_levels_default USING ls_role-agr_name.
+            PERFORM set_org_levels_default USING ls_role-agr_name abap_false abap_false CHANGING lv_gen_err.
           ENDIF.
 
-          PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
+          PERFORM set_role_description USING ls_role-agr_name lv_create_desc abap_false
+                                       CHANGING lv_desc_warn.
           COMMIT WORK AND WAIT.
 
-          ls_res-status  = gc_status_ok.
+          ls_res-status  = COND #( WHEN lv_gen_err IS NOT INITIAL OR lv_desc_warn IS NOT INITIAL
+                                   THEN gc_status_warn ELSE gc_status_ok ).
           ls_res-action  = 'CREATED'.
-          ls_res-message = |Master role created. Folder '{ ls_role-role_desc }' populated with { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
+          IF lv_gen_err IS INITIAL.
+            ls_res-message = |Master role created. Folder '{ lv_create_desc }' populated with { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
+          ELSE.
+            ls_res-message = |Master role created. Folder '{ lv_create_desc }' populated with { lv_valid_cnt } valid TCodes. Profile/Org warning: { lv_gen_err }|.
+          ENDIF.
+          IF lv_desc_warn IS NOT INITIAL.
+            ls_res-message = |{ ls_res-message } Description warning: { lv_desc_warn }|.
+          ENDIF.
           IF lv_invalid_cnt > 0.
             ls_res-status  = gc_status_warn.
             ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
           ENDIF.
         ELSE.
           ROLLBACK WORK.
+          CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
           ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
           IF ls_res-message IS INITIAL.
             ls_res-message = |Role creation failed with exception sy-subrc = { lv_rc }.|.
+          ENDIF.
+          SELECT SINGLE agr_name FROM agr_define INTO @DATA(lv_shell_chk)
+            WHERE agr_name = @ls_role-agr_name.
+          IF sy-subrc = 0.
+            ls_res-message = |{ ls_res-message } (Note: role shell already committed by SAP RFC).|.
           ENDIF.
         ENDIF.
       ENDIF.
@@ -884,9 +1087,23 @@ FORM process_role_generation.
           ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
         ENDIF.
       ELSE.
-        " Read current menu nodes & current TCodes from agr_tcodes (strictly check load error!)
+        " TOCTOU Prevention (HIGH-03): Enqueue role BEFORE reading existing menu hierarchy
         CLEAR: lt_curr_nodes, lt_curr_texts, lt_tcodes_to_add, lt_tcodes_to_del, lt_tcodes_to_keep,
                lv_str_add, lv_str_del, lv_str_keep.
+
+        CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+          EXPORTING
+            activity_group = ls_role-agr_name
+            no_dialog      = 'X'
+          EXCEPTIONS
+            OTHERS         = 1.
+        IF sy-subrc <> 0.
+          ls_res-status  = gc_status_err.
+          ls_res-action  = 'ERROR'.
+          ls_res-message = |Role '{ ls_role-agr_name }' is locked before menu read (rc={ sy-subrc }).|.
+          APPEND ls_res TO gt_results.
+          CONTINUE.
+        ENDIF.
 
         CALL FUNCTION 'PRGN_STRU_LOAD_NODES'
           EXPORTING
@@ -898,6 +1115,11 @@ FORM process_role_generation.
             OTHERS         = 1.
         lv_rc = sy-subrc.
         IF lv_rc <> 0.
+          CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+            EXPORTING
+              activity_group = ls_role-agr_name
+            EXCEPTIONS
+              OTHERS         = 0.
           ls_res-status  = gc_status_err.
           ls_res-action  = 'ERROR'.
           ls_res-message = |Failed to load existing menu nodes for '{ ls_role-agr_name }' (sy-subrc = { lv_rc }); aborted to prevent overwrite.|.
@@ -906,7 +1128,7 @@ FORM process_role_generation.
         ENDIF.
 
         SELECT tcode FROM agr_tcodes INTO TABLE @DATA(lt_curr_tcds)
-          WHERE agr_name = @ls_role-agr_name AND type = 'TR'.
+          WHERE agr_name = @ls_role-agr_name AND type = 'TR' AND exclude = @space.
 
         " 1. Identify TCodes to Add vs Keep from CSV
         LOOP AT gt_tcodes INTO DATA(ls_chk_tc) WHERE agr_name = ls_role-agr_name AND is_valid = abap_true.
@@ -944,47 +1166,202 @@ FORM process_role_generation.
         ls_res-tcodes_add = lv_str_add.
         ls_res-tcodes_del = lv_str_del.
 
+        " Guard: enforce S_USER_TCD on all TCodes to add before saving menu
+        DATA(lv_tcd_err_live) = ``.
+        LOOP AT lt_tcodes_to_add INTO DATA(ls_live_add_chk).
+          AUTHORITY-CHECK OBJECT 'S_USER_TCD' ID 'TCD' FIELD ls_live_add_chk-tcode.
+          IF sy-subrc <> 0.
+            lv_tcd_err_live = |Missing S_USER_TCD authorization to add TCode '{ ls_live_add_chk-tcode }'.|.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+        IF lv_tcd_err_live IS NOT INITIAL.
+          CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+            EXPORTING
+              activity_group = ls_role-agr_name
+            EXCEPTIONS
+              OTHERS         = 0.
+          ls_res-status  = gc_status_err.
+          ls_res-action  = 'ERROR'.
+          ls_res-message = lv_tcd_err_live.
+          APPEND ls_res TO gt_results.
+          CONTINUE.
+        ENDIF.
+
+        " Guard: block Two-Way Sync removal when CSV has invalid TCodes
+        IF p_sync = abap_true AND lt_tcodes_to_del IS NOT INITIAL AND lv_invalid_cnt > 0.
+          CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+            EXPORTING
+              activity_group = ls_role-agr_name
+            EXCEPTIONS
+              OTHERS         = 0.
+          ls_res-status  = gc_status_err.
+          ls_res-action  = 'ERROR'.
+          ls_res-message = |Two-Way Sync aborted to prevent unintended TCode removal: CSV has { lv_invalid_cnt } invalid TCode(s) [{ lv_invalid_list }].|.
+          APPEND ls_res TO gt_results.
+          CONTINUE.
+        ENDIF.
+
         " 3. Case A: Role had no menu at all currently
         IF lt_curr_nodes IS INITIAL.
           IF lv_valid_cnt = 0.
-            PERFORM set_org_levels_default USING ls_role-agr_name.
-            COMMIT WORK AND WAIT.
-            ls_res-status  = gc_status_warn.
-            ls_res-action  = 'UP-TO-DATE'.
-            ls_res-message = 'Role exists without menu and no valid TCodes in CSV. Up-to-date; Org levels defaulted to -1.'.
-          ELSE.
-            " Create initial menu
-            CALL FUNCTION 'PRGN_RFC_CHANGE_TRANSACTIONS'
+            CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
               EXPORTING
-                activity_group          = ls_role-agr_name
-                no_dialog               = 'X'
-              TABLES
-                hierarchy_nodes         = lt_nodes
-                hierarchy_texts         = lt_texts
-                return                  = lt_bapiret
+                activity_group = ls_role-agr_name
               EXCEPTIONS
-                OTHERS                  = 1.
+                OTHERS         = 0.
+            IF lv_desc_changed = abap_true.
+              PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc abap_true
+                                           CHANGING lv_desc_warn.
+              IF lv_desc_warn IS NOT INITIAL.
+                ls_res-status  = gc_status_err.
+                ls_res-action  = 'ERROR'.
+                ls_res-message = |Failed to update role description: { lv_desc_warn }|.
+              ELSE.
+                CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+                  EXPORTING
+                    activity_group = ls_role-agr_name
+                    no_commit      = 'X'
+                  EXCEPTIONS
+                    OTHERS         = 0.
+                COMMIT WORK AND WAIT.
+                ls_res-status  = gc_status_ok.
+                ls_res-action  = 'UPDATED'.
+                ls_res-message = 'Role had no menu and no valid TCodes; updated role description.'.
+              ENDIF.
+            ELSE.
+              ls_res-status  = gc_status_warn.
+              ls_res-action  = 'UP-TO-DATE'.
+              ls_res-message = 'Role exists without menu and no valid TCodes in CSV. No changes applied.'.
+            ENDIF.
+            IF lv_invalid_cnt > 0.
+              IF ls_res-status = gc_status_ok.
+                ls_res-status = gc_status_warn.
+              ENDIF.
+              ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
+            ENDIF.
+          ELSE.
+            " Create initial menu via PRGN_STRU_SAVE_NODES (agr_shier/agr_shiert) under continuous lock
+            DATA: lt_init_nodes TYPE STANDARD TABLE OF agr_shier,
+                  lt_init_texts TYPE STANDARD TABLE OF agr_shiert,
+                  lv_init_id    TYPE menu_num_8,
+                  lv_init_sort  TYPE menu_num_8.
+            CLEAR: lt_init_nodes, lt_init_texts, lv_init_sort.
+            lv_init_id = 1.
+
+            APPEND VALUE agr_shier(
+              object_id  = lv_init_id
+              parent_id  = 0
+              menu_level = 1
+              sort_order = 10
+              folder     = 'X'
+            ) TO lt_init_nodes.
+
+            DATA(ls_init_ftxt) = VALUE agr_shiert(
+              object_id = lv_init_id
+              spras     = sy-langu
+              text      = lv_create_desc
+            ).
+            APPEND ls_init_ftxt TO lt_init_texts.
+            IF sy-langu NE 'E'.
+              ls_init_ftxt-spras = 'E'.
+              APPEND ls_init_ftxt TO lt_init_texts.
+            ENDIF.
+
+            LOOP AT gt_tcodes INTO DATA(ls_init_tc)
+              WHERE agr_name = ls_role-agr_name AND is_valid = abap_true.
+              lv_init_id   = lv_init_id + 1.
+              lv_init_sort = lv_init_sort + 10.
+              DATA(ls_init_node) = VALUE agr_shier(
+                object_id  = lv_init_id
+                parent_id  = 1
+                menu_level = 2
+                sort_order = lv_init_sort
+              ).
+              CLEAR ls_stck.
+              ls_stck-reporttype   = 'TR'.
+              ls_stck-report       = ls_init_tc-tcode.
+              ls_init_node-string1 = ls_stck.
+              APPEND ls_init_node TO lt_init_nodes.
+
+              DATA(ls_init_ttxt) = VALUE agr_shiert(
+                object_id = lv_init_id
+                spras     = sy-langu
+                text      = ls_init_tc-ttext
+              ).
+              APPEND ls_init_ttxt TO lt_init_texts.
+              IF sy-langu NE 'E'.
+                ls_init_ttxt-spras = 'E'.
+                APPEND ls_init_ttxt TO lt_init_texts.
+              ENDIF.
+            ENDLOOP.
+
+            CLEAR: lv_err_flag, lt_bapiret.
+            CALL FUNCTION 'PRGN_STRU_SAVE_NODES'
+              EXPORTING
+                activity_group    = ls_role-agr_name
+                use_global_tables = space
+                enqueue           = space
+              IMPORTING
+                error_flag        = lv_err_flag
+              TABLES
+                menu_hierarchy    = lt_init_nodes
+                menu_texts        = lt_init_texts
+                return            = lt_bapiret
+              EXCEPTIONS
+                not_authorized          = 1
+                activity_group_enqueued = 2
+                OTHERS                  = 3.
             lv_rc = sy-subrc.
 
-            IF lv_rc = 0.
+            CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+              EXPORTING
+                activity_group = ls_role-agr_name
+              EXCEPTIONS
+                OTHERS         = 0.
+
+            IF lv_rc = 0 AND lv_err_flag IS INITIAL.
               IF p_genprf = abap_true.
-                PERFORM generate_master_role_profile USING ls_role-agr_name abap_true.
+                PERFORM generate_master_role_profile USING ls_role-agr_name abap_true abap_true CHANGING lv_gen_err.
               ELSE.
-                PERFORM set_org_levels_default USING ls_role-agr_name.
+                PERFORM set_org_levels_default USING ls_role-agr_name abap_false abap_true CHANGING lv_gen_err.
               ENDIF.
-              PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
+              IF lv_desc_changed = abap_true.
+                PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc abap_true
+                                             CHANGING lv_desc_warn.
+              ENDIF.
               COMMIT WORK AND WAIT.
 
-              IF p_adjder = abap_true.
-                PERFORM adjust_derived_roles USING ls_role-agr_name CHANGING lv_adj_roles lv_adj_sum.
+              DATA: lv_adj_err_cnt TYPE i,
+                    lv_der_cnt_skp TYPE i.
+              CLEAR: lv_adj_err_cnt, lv_der_cnt_skp.
+              IF p_adjder = abap_true AND p_genprf = abap_true AND lv_gen_err IS INITIAL.
+                PERFORM adjust_derived_roles USING ls_role-agr_name CHANGING lv_adj_roles lv_adj_sum lv_adj_err_cnt.
                 ls_res-derived_roles = lv_adj_roles.
+              ELSEIF p_adjder = abap_true.
+                SELECT COUNT(*) FROM agr_define INTO @lv_der_cnt_skp
+                  WHERE parent_agr = @ls_role-agr_name.
               ENDIF.
 
-              ls_res-status  = gc_status_ok.
+              ls_res-status  = COND #( WHEN lv_adj_err_cnt > 0 OR lv_gen_err IS NOT INITIAL
+                                            OR lv_desc_warn IS NOT INITIAL OR lv_der_cnt_skp > 0
+                                       THEN gc_status_warn ELSE gc_status_ok ).
               ls_res-action  = 'UPDATED'.
-              ls_res-message = |Role had no menu. Created menu folder '{ ls_role-role_desc }' with { lv_valid_cnt } valid TCodes; Org levels defaulted to '-1'.|.
+              IF lv_gen_err IS INITIAL.
+                ls_res-message = |Role had no menu. Created menu folder '{ lv_create_desc }' with { lv_valid_cnt } valid TCodes; unmaintained org levels defaulted to '-1'.|.
+              ELSE.
+                ls_res-message = |Role had no menu. Created menu folder '{ lv_create_desc }' with { lv_valid_cnt } valid TCodes. Profile/Org warning: { lv_gen_err }|.
+              ENDIF.
+              IF lv_desc_warn IS NOT INITIAL.
+                ls_res-message = |{ ls_res-message } Description warning: { lv_desc_warn }|.
+              ENDIF.
               IF lv_adj_sum IS NOT INITIAL.
                 CONCATENATE ls_res-message lv_adj_sum INTO ls_res-message SEPARATED BY space.
+              ENDIF.
+              IF lv_der_cnt_skp > 0 AND p_genprf = abap_true.
+                ls_res-message = |{ ls_res-message } Skipped adjusting { lv_der_cnt_skp } derived role(s) due to Master profile/org failure.|.
+              ELSEIF lv_der_cnt_skp > 0.
+                ls_res-message = |{ ls_res-message } Skipped adjusting { lv_der_cnt_skp } derived role(s): requires Auto-Generate Auth Profiles = 'X' before derivation.|.
               ENDIF.
               IF lv_invalid_cnt > 0.
                 ls_res-status  = gc_status_warn.
@@ -992,11 +1369,12 @@ FORM process_role_generation.
               ENDIF.
             ELSE.
               ROLLBACK WORK.
+              CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
               ls_res-status  = gc_status_err.
               ls_res-action  = 'ERROR'.
               PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
               IF ls_res-message IS INITIAL.
-                ls_res-message = |Failed to initialize role menu (sy-subrc = { lv_rc }).|.
+                ls_res-message = |Failed to initialize role menu (rc={ lv_rc }, flag={ lv_err_flag }).|.
               ENDIF.
             ENDIF.
           ENDIF.
@@ -1004,34 +1382,44 @@ FORM process_role_generation.
         " 4. Case B: Role already has menu structure
         ELSE.
           IF lt_tcodes_to_add IS INITIAL AND lt_tcodes_to_del IS INITIAL.
-            " Completely matched, nothing to change
-            IF p_genprf = abap_true.
-              PERFORM generate_master_role_profile USING ls_role-agr_name abap_false.
+            CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+              EXPORTING
+                activity_group = ls_role-agr_name
+              EXCEPTIONS
+                OTHERS         = 0.
+            IF lv_desc_changed = abap_true.
+              PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc abap_true
+                                           CHANGING lv_desc_warn.
+              IF lv_desc_warn IS NOT INITIAL.
+                ls_res-status  = gc_status_err.
+                ls_res-action  = 'ERROR'.
+                ls_res-message = |Failed to update role description: { lv_desc_warn }|.
+              ELSE.
+                CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+                  EXPORTING
+                    activity_group = ls_role-agr_name
+                    no_commit      = 'X'
+                  EXCEPTIONS
+                    OTHERS         = 0.
+                COMMIT WORK AND WAIT.
+                ls_res-status  = gc_status_ok.
+                ls_res-action  = 'UPDATED'.
+                ls_res-message = |Updated role description (kept { lines( lt_tcodes_to_keep ) } valid TCodes).|.
+              ENDIF.
             ELSE.
-              PERFORM set_org_levels_default USING ls_role-agr_name.
-            ENDIF.
-            PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
-            COMMIT WORK AND WAIT.
-
-            IF p_adjder = abap_true.
-              PERFORM adjust_derived_roles USING ls_role-agr_name CHANGING lv_adj_roles lv_adj_sum.
-              ls_res-derived_roles = lv_adj_roles.
-            ENDIF.
-
-            ls_res-status  = gc_status_ok.
-            ls_res-action  = 'UP-TO-DATE'.
-            ls_res-message = |Role menu up-to-date. All { lines( lt_tcodes_to_keep ) } valid TCodes already match exactly. Org levels defaulted to '-1'.|.
-            IF lv_adj_sum IS NOT INITIAL.
-              CONCATENATE ls_res-message lv_adj_sum INTO ls_res-message SEPARATED BY space.
+              ls_res-status  = gc_status_ok.
+              ls_res-action  = 'UP-TO-DATE'.
+              ls_res-message = |Role menu up-to-date. All { lines( lt_tcodes_to_keep ) } valid TCodes already match exactly. No changes needed.|.
             ENDIF.
             IF lv_invalid_cnt > 0.
-              ls_res-status  = gc_status_warn.
+              IF ls_res-status = gc_status_ok.
+                ls_res-status = gc_status_warn.
+              ENDIF.
               ls_res-message = |Warning: { lv_invalid_cnt } TCode(s) not in TSTC: [{ lv_invalid_list }] (excluded). { ls_res-message }|.
             ENDIF.
 
           ELSE.
             " Changes exist: Add missing TCodes and/or Remove surplus TCodes!
-            " A. Remove surplus TCodes
             IF lt_tcodes_to_del IS NOT INITIAL.
               DATA: lt_node_del_ids TYPE STANDARD TABLE OF menu_num_8.
               CLEAR lt_node_del_ids.
@@ -1053,24 +1441,32 @@ FORM process_role_generation.
               ENDLOOP.
             ENDIF.
 
-            " B. Add missing TCodes (safely handle roles without any folder node)
             IF lt_tcodes_to_add IS NOT INITIAL.
-              lv_target_folder = 0.
-              lv_target_level  = 1.
-              lv_has_folder    = abap_false.
-              lv_max_id        = 0.
-              lv_max_sort      = 0.
+              DATA: lv_root_sort TYPE menu_num_8.
+              CLEAR: lv_target_folder, lv_target_level, lv_has_folder,
+                     lv_max_id, lv_max_sort, lv_root_sort.
 
-              LOOP AT lt_curr_texts ASSIGNING FIELD-SYMBOL(<ls_ct>) WHERE text = ls_role-role_desc.
-                READ TABLE lt_curr_nodes ASSIGNING FIELD-SYMBOL(<ls_cn>)
-                  WITH KEY object_id = <ls_ct>-object_id folder = 'X'.
-                IF sy-subrc = 0.
-                  lv_target_folder = <ls_cn>-object_id.
-                  lv_target_level  = <ls_cn>-menu_level + 1.
-                  lv_has_folder    = abap_true.
-                  EXIT.
+              LOOP AT lt_curr_nodes ASSIGNING FIELD-SYMBOL(<ls_cn>).
+                IF <ls_cn>-object_id > lv_max_id.
+                  lv_max_id = <ls_cn>-object_id.
+                ENDIF.
+                IF <ls_cn>-parent_id = 0 AND <ls_cn>-sort_order > lv_root_sort.
+                  lv_root_sort = <ls_cn>-sort_order.
                 ENDIF.
               ENDLOOP.
+
+              IF ls_role-role_desc IS NOT INITIAL.
+                LOOP AT lt_curr_texts ASSIGNING FIELD-SYMBOL(<ls_ct>) WHERE text = ls_role-role_desc.
+                  READ TABLE lt_curr_nodes ASSIGNING <ls_cn>
+                    WITH KEY object_id = <ls_ct>-object_id folder = 'X'.
+                  IF sy-subrc = 0.
+                    lv_target_folder = <ls_cn>-object_id.
+                    lv_target_level  = <ls_cn>-menu_level + 1.
+                    lv_has_folder    = abap_true.
+                    EXIT.
+                  ENDIF.
+                ENDLOOP.
+              ENDIF.
 
               IF lv_has_folder = abap_false.
                 READ TABLE lt_curr_nodes ASSIGNING <ls_cn> WITH KEY folder = 'X'.
@@ -1081,14 +1477,37 @@ FORM process_role_generation.
                 ENDIF.
               ENDIF.
 
-              LOOP AT lt_curr_nodes ASSIGNING <ls_cn>.
-                IF <ls_cn>-object_id > lv_max_id.
-                  lv_max_id = <ls_cn>-object_id.
+              IF lv_has_folder = abap_true.
+                LOOP AT lt_curr_nodes ASSIGNING <ls_cn> WHERE parent_id = lv_target_folder.
+                  IF <ls_cn>-sort_order > lv_max_sort.
+                    lv_max_sort = <ls_cn>-sort_order.
+                  ENDIF.
+                ENDLOOP.
+              ELSE.
+                " Create a real root folder node so folderless roles never reference missing parent_id=1
+                lv_max_id    = lv_max_id + 1.
+                lv_root_sort = lv_root_sort + 10.
+                APPEND VALUE agr_shier(
+                  object_id  = lv_max_id
+                  parent_id  = 0
+                  menu_level = 1
+                  sort_order = lv_root_sort
+                  folder     = 'X'
+                ) TO lt_curr_nodes.
+                DATA(lv_new_fld_txt) = VALUE agr_shiert(
+                  object_id = lv_max_id
+                  spras     = sy-langu
+                  text      = lv_create_desc
+                ).
+                APPEND lv_new_fld_txt TO lt_curr_texts.
+                IF sy-langu NE 'E'.
+                  lv_new_fld_txt-spras = 'E'.
+                  APPEND lv_new_fld_txt TO lt_curr_texts.
                 ENDIF.
-                IF <ls_cn>-parent_id = lv_target_folder AND <ls_cn>-sort_order > lv_max_sort.
-                  lv_max_sort = <ls_cn>-sort_order.
-                ENDIF.
-              ENDLOOP.
+                lv_target_folder = lv_max_id.
+                lv_target_level  = 2.
+                lv_max_sort      = 0.
+              ENDIF.
 
               LOOP AT lt_tcodes_to_add INTO DATA(ls_add_tc).
                 lv_max_id   = lv_max_id + 1.
@@ -1120,13 +1539,13 @@ FORM process_role_generation.
               ENDLOOP.
             ENDIF.
 
-            " C. Save modified menu nodes
+            " C. Save modified menu nodes while holding continuous lock (enqueue = space)
             CLEAR: lv_err_flag, lt_bapiret.
             CALL FUNCTION 'PRGN_STRU_SAVE_NODES'
               EXPORTING
                 activity_group    = ls_role-agr_name
                 use_global_tables = space
-                enqueue           = 'X'
+                enqueue           = space
               IMPORTING
                 error_flag        = lv_err_flag
               TABLES
@@ -1139,27 +1558,54 @@ FORM process_role_generation.
                 OTHERS                  = 3.
             lv_rc = sy-subrc.
 
+            CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+              EXPORTING
+                activity_group = ls_role-agr_name
+              EXCEPTIONS
+                OTHERS         = 0.
+
             IF lv_rc = 0 AND lv_err_flag IS INITIAL.
-              " Rebuild auth data so deleted TCodes lose authorizations and added TCodes gain them
+              " Rebuild auth data while strictly preserving already-maintained AGR_1252 orgs
               IF p_genprf = abap_true.
-                PERFORM generate_master_role_profile USING ls_role-agr_name abap_true.
+                PERFORM generate_master_role_profile USING ls_role-agr_name abap_true abap_true CHANGING lv_gen_err.
               ELSE.
-                PERFORM set_org_levels_default USING ls_role-agr_name.
+                PERFORM set_org_levels_default USING ls_role-agr_name abap_false abap_true CHANGING lv_gen_err.
               ENDIF.
 
-              PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc.
+              IF lv_desc_changed = abap_true.
+                PERFORM set_role_description USING ls_role-agr_name ls_role-role_desc abap_true
+                                             CHANGING lv_desc_warn.
+              ENDIF.
               COMMIT WORK AND WAIT.
 
-              IF p_adjder = abap_true.
-                PERFORM adjust_derived_roles USING ls_role-agr_name CHANGING lv_adj_roles lv_adj_sum.
+              CLEAR: lv_adj_err_cnt, lv_der_cnt_skp.
+              IF p_adjder = abap_true AND p_genprf = abap_true AND lv_gen_err IS INITIAL.
+                PERFORM adjust_derived_roles USING ls_role-agr_name CHANGING lv_adj_roles lv_adj_sum lv_adj_err_cnt.
                 ls_res-derived_roles = lv_adj_roles.
+              ELSEIF p_adjder = abap_true.
+                SELECT COUNT(*) FROM agr_define INTO @lv_der_cnt_skp
+                  WHERE parent_agr = @ls_role-agr_name.
               ENDIF.
 
-              ls_res-status  = gc_status_ok.
+              ls_res-status  = COND #( WHEN lv_adj_err_cnt > 0 OR lv_gen_err IS NOT INITIAL
+                                            OR lv_desc_warn IS NOT INITIAL OR lv_der_cnt_skp > 0
+                                       THEN gc_status_warn ELSE gc_status_ok ).
               ls_res-action  = 'UPDATED'.
-              ls_res-message = |Synchronized menu: Added { lines( lt_tcodes_to_add ) } [{ lv_str_add }], Removed { lines( lt_tcodes_to_del ) } [{ lv_str_del }], Kept { lines( lt_tcodes_to_keep ) }; Org levels defaulted to '-1'.|.
+              IF lv_gen_err IS INITIAL.
+                ls_res-message = |Synchronized menu: Added { lines( lt_tcodes_to_add ) } [{ lv_str_add }], Removed { lines( lt_tcodes_to_del ) } [{ lv_str_del }], Kept { lines( lt_tcodes_to_keep ) }; existing orgs preserved & unmaintained set to '-1'.|.
+              ELSE.
+                ls_res-message = |Synchronized menu: Added { lines( lt_tcodes_to_add ) } [{ lv_str_add }], Removed { lines( lt_tcodes_to_del ) } [{ lv_str_del }], Kept { lines( lt_tcodes_to_keep ) }. Profile/Org warning: { lv_gen_err }|.
+              ENDIF.
+              IF lv_desc_warn IS NOT INITIAL.
+                ls_res-message = |{ ls_res-message } Description warning: { lv_desc_warn }|.
+              ENDIF.
               IF lv_adj_sum IS NOT INITIAL.
                 CONCATENATE ls_res-message lv_adj_sum INTO ls_res-message SEPARATED BY space.
+              ENDIF.
+              IF lv_der_cnt_skp > 0 AND p_genprf = abap_true.
+                ls_res-message = |{ ls_res-message } Skipped adjusting { lv_der_cnt_skp } derived role(s) due to Master profile/org failure.|.
+              ELSEIF lv_der_cnt_skp > 0.
+                ls_res-message = |{ ls_res-message } Skipped adjusting { lv_der_cnt_skp } derived role(s): requires Auto-Generate Auth Profiles = 'X' before derivation.|.
               ENDIF.
               IF lv_invalid_cnt > 0.
                 ls_res-status  = gc_status_warn.
@@ -1167,6 +1613,7 @@ FORM process_role_generation.
               ENDIF.
             ELSE.
               ROLLBACK WORK.
+              CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
               ls_res-status  = gc_status_err.
               ls_res-action  = 'ERROR'.
               PERFORM format_bapi_message USING lt_bapiret CHANGING ls_res-message.
@@ -1205,14 +1652,33 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *& Form set_org_levels_default
 *&---------------------------------------------------------------------*
-* Sets all Organizational Levels for Master Roles to '-1'
-* (Used as template default for subsequent derived role specialization)
+* Sets unmaintained Organizational Levels for Master Roles to '-1'
+* Preserves already-maintained AGR_1252 values when iv_preserve_maint = 'X'.
 *&---------------------------------------------------------------------*
-FORM set_org_levels_default USING iv_agr_name TYPE agr_name.
+FORM set_org_levels_default USING    iv_agr_name       TYPE agr_name
+                                     iv_already_enq    TYPE abap_bool
+                                     iv_preserve_maint TYPE abap_bool
+                            CHANGING ev_err            TYPE string.
   DATA: lt_org_levels TYPE TABLE OF pt1252,
         lv_org_mod    TYPE abap_bool.
 
-  CLEAR: lt_org_levels, lv_org_mod.
+  CLEAR: lt_org_levels, lv_org_mod, ev_err.
+
+  IF iv_already_enq = abap_false.
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+      EXPORTING
+        activity_group = iv_agr_name
+        no_dialog      = 'X'
+      EXCEPTIONS
+        OTHERS         = 1.
+    IF sy-subrc <> 0.
+      ev_err = |Role '{ iv_agr_name }' is locked or cannot be enqueued for org defaults (rc={ sy-subrc }).|.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+  CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+
   CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
     EXPORTING
       activity_group    = iv_agr_name
@@ -1221,56 +1687,133 @@ FORM set_org_levels_default USING iv_agr_name TYPE agr_name.
     EXCEPTIONS
       no_data_available = 1
       OTHERS            = 2.
-
-  IF sy-subrc = 0 AND lt_org_levels IS NOT INITIAL.
-    LOOP AT lt_org_levels ASSIGNING FIELD-SYMBOL(<ls_org>).
-      IF <ls_org>-low <> '-1' OR <ls_org>-high IS NOT INITIAL.
-        <ls_org>-low  = '-1'.
-        <ls_org>-high = space.
-        lv_org_mod    = abap_true.
-      ENDIF.
-    ENDLOOP.
-  ELSEIF sy-subrc = 1 OR lt_org_levels IS INITIAL.
-    " Fallback: Read Org variables directly from AGR_1251 (verified against cached gt_usorg_map)
-    DATA: lt_auth_vars TYPE TABLE OF agval.
-    SELECT DISTINCT low FROM agr_1251 INTO TABLE @lt_auth_vars
-      WHERE agr_name = @iv_agr_name AND low LIKE '$%'
-        AND deleted  = @space AND copied <> 'I'.
-    LOOP AT lt_auth_vars INTO DATA(lv_var).
-      IF line_exists( gt_usorg_map[ KEY by_varbl COMPONENTS varbl = lv_var ] ).
-        APPEND VALUE pt1252( varbl = lv_var low = '-1' high = space ) TO lt_org_levels.
-        lv_org_mod = abap_true.
-      ENDIF.
-    ENDLOOP.
-  ENDIF.
-
-  IF lv_org_mod = abap_true AND lt_org_levels IS NOT INITIAL.
-    SORT lt_org_levels BY varbl low high.
-    DELETE ADJACENT DUPLICATES FROM lt_org_levels COMPARING varbl low high.
-
-    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
-      EXPORTING
-        activity_group = iv_agr_name
-      EXCEPTIONS
-        OTHERS         = 1.
-    IF sy-subrc = 0.
-      CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
-        EXPORTING
-          activity_group = iv_agr_name
-        TABLES
-          org_levels     = lt_org_levels
-        EXCEPTIONS
-          OTHERS         = 1.
-      CALL FUNCTION 'PRGN_UPDATE_DATABASE'
-        EXCEPTIONS
-          OTHERS = 1.
-      COMMIT WORK AND WAIT.
+  IF sy-subrc = 2.
+    ev_err = |PRGN_1252_READ_ORG_LEVELS failed for '{ iv_agr_name }' (rc=2).|.
+    IF iv_already_enq = abap_false.
       CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
         EXPORTING
           activity_group = iv_agr_name
         EXCEPTIONS
           OTHERS         = 0.
     ENDIF.
+    RETURN.
+  ENDIF.
+
+  IF sy-subrc = 0 AND lt_org_levels IS NOT INITIAL.
+    IF iv_preserve_maint = abap_true.
+      DATA: lt_maint_vars1 TYPE HASHED TABLE OF agval WITH UNIQUE KEY table_line,
+            lt_norm_orgs1  TYPE TABLE OF pt1252,
+            lt_seen_unm1   TYPE HASHED TABLE OF agval WITH UNIQUE KEY table_line.
+      CLEAR: lt_maint_vars1, lt_norm_orgs1, lt_seen_unm1.
+      LOOP AT lt_org_levels INTO DATA(ls_mv1)
+        WHERE ( low IS NOT INITIAL AND low <> '-1' AND low <> '$' )
+           OR high IS NOT INITIAL.
+        INSERT ls_mv1-varbl INTO TABLE lt_maint_vars1.
+      ENDLOOP.
+      LOOP AT lt_org_levels INTO DATA(ls_o1).
+        IF line_exists( lt_maint_vars1[ table_line = ls_o1-varbl ] ).
+          IF ( ls_o1-low IS INITIAL OR ls_o1-low = space OR ls_o1-low = '-1' OR ls_o1-low = '$' )
+             AND ls_o1-high IS INITIAL.
+            lv_org_mod = abap_true.
+            CONTINUE.
+          ENDIF.
+          APPEND ls_o1 TO lt_norm_orgs1.
+        ELSE.
+          IF line_exists( lt_seen_unm1[ table_line = ls_o1-varbl ] ).
+            lv_org_mod = abap_true.
+            CONTINUE.
+          ENDIF.
+          INSERT ls_o1-varbl INTO TABLE lt_seen_unm1.
+          IF ls_o1-low <> '-1' OR ls_o1-high IS NOT INITIAL.
+            ls_o1-low  = '-1'.
+            ls_o1-high = space.
+            lv_org_mod = abap_true.
+          ENDIF.
+          APPEND ls_o1 TO lt_norm_orgs1.
+        ENDIF.
+      ENDLOOP.
+      IF lv_org_mod = abap_true.
+        lt_org_levels = lt_norm_orgs1.
+      ENDIF.
+    ELSE.
+      LOOP AT lt_org_levels ASSIGNING FIELD-SYMBOL(<ls_org>).
+        IF <ls_org>-low <> '-1' OR <ls_org>-high IS NOT INITIAL.
+          <ls_org>-low  = '-1'.
+          <ls_org>-high = space.
+          lv_org_mod    = abap_true.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+  ENDIF.
+
+  " Unconditionally union any active $VARBL from AGR_1251 missing in AGR_1252
+  DATA: lt_auth_vars TYPE TABLE OF agval.
+  SELECT DISTINCT f~low FROM agr_1251 AS f
+    INNER JOIN agr_1250 AS h
+      ON  h~agr_name = f~agr_name
+      AND h~object   = f~object
+      AND h~auth     = f~auth
+    INTO TABLE @lt_auth_vars
+    WHERE f~agr_name = @iv_agr_name AND f~low LIKE '$%'
+      AND f~deleted  = @space AND f~copied <> 'I'
+      AND h~deleted  = @space AND h~copied <> 'I'.
+  LOOP AT lt_auth_vars INTO DATA(lv_var).
+    IF line_exists( gt_usorg_map[ KEY by_varbl COMPONENTS varbl = lv_var ] ).
+      READ TABLE lt_org_levels WITH KEY varbl = lv_var TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND VALUE pt1252( varbl = lv_var low = '-1' high = space ) TO lt_org_levels.
+        lv_org_mod = abap_true.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+  IF lv_org_mod = abap_true AND lt_org_levels IS NOT INITIAL.
+    SORT lt_org_levels BY varbl low high.
+    DELETE ADJACENT DUPLICATES FROM lt_org_levels COMPARING varbl low high.
+
+    CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+    CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+      EXPORTING
+        activity_group = iv_agr_name
+      TABLES
+        org_levels     = lt_org_levels
+      EXCEPTIONS
+        OTHERS         = 1.
+    IF sy-subrc <> 0.
+      ev_err = |PRGN_1252_SAVE_ORG_LEVELS failed for '{ iv_agr_name }' (rc={ sy-subrc }).|.
+    ENDIF.
+
+    IF ev_err IS INITIAL.
+      CALL FUNCTION 'PRGN_UPDATE_DATABASE'
+        EXCEPTIONS
+          OTHERS = 1.
+      IF sy-subrc <> 0.
+        ev_err = |PRGN_UPDATE_DATABASE failed for '{ iv_agr_name }' (rc={ sy-subrc }).|.
+      ENDIF.
+    ENDIF.
+
+    IF ev_err IS INITIAL.
+      IF iv_already_enq = abap_false.
+        CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+          EXPORTING
+            activity_group = iv_agr_name
+            no_commit      = 'X'
+          EXCEPTIONS
+            OTHERS         = 0.
+      ENDIF.
+      COMMIT WORK AND WAIT.
+    ELSE.
+      ROLLBACK WORK.
+      CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+    ENDIF.
+  ENDIF.
+
+  IF iv_already_enq = abap_false.
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+      EXPORTING
+        activity_group = iv_agr_name
+      EXCEPTIONS
+        OTHERS         = 0.
   ENDIF.
 ENDFORM.
 
@@ -1278,61 +1821,138 @@ ENDFORM.
 *& Form generate_master_role_profile
 *&---------------------------------------------------------------------*
 * Generates authorization runtime profile for Master Role cleanly:
-* 1. Rebuilds auth data if requested (merging menu changes)
-* 2. Sets all org levels to '-1' in AGR_1252 so no open variables remain
+* 1. Merges menu changes ('M') without wiping existing restrictions
+* 2. Locks continuously across 1251 $VARBL bind & 1252 '-1' defaults
 * 3. Compiles runtime profile via SUPRN_DARK_MANIPULATE_PROFILE
-* 4. Updates timestamps in AGR_FLAGS/TOST to ensure 100% GREEN status
+* 4. Synchronizes role timestamp & commits ONLY when Step 3 succeeds
 *&---------------------------------------------------------------------*
-FORM generate_master_role_profile USING iv_agr_name     TYPE agr_name
-                                        iv_rebuild_auth TYPE abap_bool.
-  DATA: lt_bapi TYPE bapiret2_t.
+FORM generate_master_role_profile USING    iv_agr_name     TYPE agr_name
+                                           iv_rebuild_auth TYPE abap_bool
+                                           iv_is_existing  TYPE abap_bool
+                                  CHANGING ev_err          TYPE string.
+  DATA: lt_bapi    TYPE bapiret2_t,
+        lv_sub_err TYPE string,
+        lv_rc      TYPE sy-subrc.
 
-  " Step 1: Rebuild auth objects from menu if requested
+  CLEAR ev_err.
+
+  " Step 1: Merge menu changes ('M' preserves custom restrictions; NEVER 'X' full wipe)
   IF iv_rebuild_auth = abap_true.
+    CLEAR: lt_bapi, lv_sub_err.
     CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
       EXPORTING
         activity_group        = iv_agr_name
         fill_orgs_with_star   = space
-        fill_fields_with_star = 'X'
+        fill_fields_with_star = space
         no_dialog             = 'X'
-        rebuild_auth_data     = 'X'
+        rebuild_auth_data     = 'M'
         generate_profile      = space
       IMPORTING
         return                = lt_bapi
       EXCEPTIONS
-        OTHERS                = 1.
+        open_auths                    = 1
+        no_auth_for_gen               = 2
+        no_auths                      = 3
+        too_many_auths                = 4
+        error_when_generating_profile = 5
+        OTHERS                        = 6.
+    lv_rc = sy-subrc.
+    PERFORM format_bapi_message USING lt_bapi CHANGING lv_sub_err.
+    IF lv_rc <> 0 AND lv_rc <> 1 AND lv_sub_err IS INITIAL.
+      IF sy-msgid IS NOT INITIAL.
+        MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO lv_sub_err.
+      ENDIF.
+      IF lv_sub_err IS INITIAL.
+        lv_sub_err = |Auth merge failed (sy-subrc = { lv_rc })|.
+      ENDIF.
+    ENDIF.
+    IF lv_sub_err IS NOT INITIAL.
+      ROLLBACK WORK.
+      CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+      ev_err = lv_sub_err.
+      RETURN.
+    ENDIF.
   ENDIF.
 
-  " Step 2: Ensure ALL Org Levels in AGR_1252 have default value '-1'
-  PERFORM set_org_levels_default USING iv_agr_name.
+  " Step 2 (TOCTOU-safe): Hold continuous lock across 1251 repair & 1252 defaults, then dequeue BEFORE Step 3
+  CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+    EXPORTING
+      activity_group = iv_agr_name
+      no_dialog      = 'X'
+    EXCEPTIONS
+      OTHERS         = 1.
+  IF sy-subrc <> 0.
+    ev_err = |Role '{ iv_agr_name }' is locked before org binding/defaults (rc={ sy-subrc }).|.
+    RETURN.
+  ENDIF.
 
-  " Step 3: Compile runtime authorization profile
-  CLEAR lt_bapi.
+  PERFORM restore_1251_org_bindings USING iv_agr_name abap_true CHANGING lv_sub_err.
+  IF lv_sub_err IS INITIAL.
+    PERFORM set_org_levels_default USING iv_agr_name abap_true iv_is_existing CHANGING lv_sub_err.
+  ENDIF.
+
+  CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+    EXPORTING
+      activity_group = iv_agr_name
+    EXCEPTIONS
+      OTHERS         = 0.
+
+  IF lv_sub_err IS NOT INITIAL.
+    ev_err = lv_sub_err.
+    RETURN.
+  ENDIF.
+
+  " Step 3: Compile runtime authorization profile (after 1251/1252 updates so PFCG stays GREEN)
+  CLEAR: lt_bapi, lv_sub_err.
   CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
     EXPORTING
       activity_group        = iv_agr_name
       fill_orgs_with_star   = space
-      fill_fields_with_star = 'X'
+      fill_fields_with_star = space
       no_dialog             = 'X'
       rebuild_auth_data     = space
       generate_profile      = 'X'
     IMPORTING
       return                = lt_bapi
     EXCEPTIONS
-      OTHERS                = 1.
+      open_auths                    = 1
+      no_auth_for_gen               = 2
+      no_auths                      = 3
+      too_many_auths                = 4
+      error_when_generating_profile = 5
+      OTHERS                        = 6.
+  lv_rc = sy-subrc.
+  PERFORM format_bapi_message USING lt_bapi CHANGING lv_sub_err.
+  IF lv_rc <> 0 AND lv_sub_err IS INITIAL.
+    IF sy-msgid IS NOT INITIAL.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO lv_sub_err.
+    ENDIF.
+    IF lv_sub_err IS INITIAL.
+      lv_sub_err = SWITCH #( lv_rc
+        WHEN 1 THEN 'Open/unmaintained authorizations or org levels'
+        WHEN 2 THEN 'Missing profile generation authorization (S_USER_PRO)'
+        WHEN 3 THEN 'No authorization data found'
+        WHEN 4 THEN 'Too many authorizations for profile'
+        ELSE |Profile generation failed (sy-subrc = { lv_rc })| ).
+    ENDIF.
+  ENDIF.
 
-  " Step 3b: Restore Org Variable Bindings in AGR_1251 for Master Role
-  " (Standard SAP template rule: Org fields in Master Role AGR_1251 MUST be bound to $VARBL with MODIFIED = 'S')
-  PERFORM restore_1251_org_bindings USING iv_agr_name.
-
-  " Step 4: Synchronize role and profile timestamp in PFCG
-  CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
-    EXPORTING
-      activity_group = iv_agr_name
-    EXCEPTIONS
-      OTHERS         = 0.
-
-  COMMIT WORK AND WAIT.
+  " Step 4: Update role timestamp and commit ONLY when profile generation succeeded cleanly
+  IF lv_rc = 0 AND lv_sub_err IS INITIAL.
+    CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+      EXPORTING
+        activity_group = iv_agr_name
+        no_commit      = 'X'
+      EXCEPTIONS
+        OTHERS         = 0.
+    COMMIT WORK AND WAIT.
+  ELSE.
+    ROLLBACK WORK.
+    CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+    ev_err = lv_sub_err.
+  ENDIF.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
@@ -1344,12 +1964,16 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
                           CHANGING cv_der_roles   TYPE string
-                                   cv_der_summary TYPE string.
+                                   cv_der_summary TYPE string
+                                   cv_err_cnt     TYPE i.
   DATA: lt_derived_roles   TYPE STANDARD TABLE OF agr_name,
         lt_child_bapi      TYPE bapiret2_t,
         lt_orig_orgs       TYPE TABLE OF agr_1252,
+        lt_orig_pt1252     TYPE TABLE OF pt1252,
         lt_cur_child_orgs  TYPE TABLE OF pt1252,
         lt_dist_vars       TYPE STANDARD TABLE OF agval,
+        lt_child_vars      TYPE STANDARD TABLE OF agval,
+        lt_mast_vars_adj   TYPE STANDARD TABLE OF agval,
         lt_final_child_org TYPE TABLE OF pt1252,
         lv_new_req         TYPE trkorr,
         lv_drv_ok          TYPE char01,
@@ -1358,9 +1982,15 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
         lv_rc              TYPE sy-subrc,
         lv_succ_cnt        TYPE i,
         lv_err_cnt         TYPE i,
-        lv_role_list       TYPE string.
+        lv_role_list       TYPE string,
+        lv_err_details     TYPE string,
+        lv_ch_msg          TYPE string,
+        lv_ch_bind_err     TYPE string,
+        lv_ch_gen_err      TYPE string,
+        lv_ch_gen_rc       TYPE sy-subrc.
 
-  CLEAR: cv_der_roles, cv_der_summary, lv_succ_cnt, lv_err_cnt, lv_role_list.
+  CLEAR: cv_der_roles, cv_der_summary, cv_err_cnt, lv_succ_cnt, lv_err_cnt,
+         lv_role_list, lv_err_details.
 
   SELECT agr_name FROM agr_define INTO TABLE @lt_derived_roles
     WHERE parent_agr = @iv_master_agr
@@ -1370,30 +2000,54 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
     RETURN.
   ENDIF.
 
-  LOOP AT lt_derived_roles INTO DATA(lv_child_agr).
-    IF lv_role_list IS INITIAL.
-      lv_role_list = lv_child_agr.
-    ELSE.
-      CONCATENATE lv_role_list ',' lv_child_agr INTO lv_role_list SEPARATED BY space.
-    ENDIF.
+  SELECT DISTINCT varbl FROM agr_1252 INTO TABLE @lt_mast_vars_adj
+    WHERE agr_name = @iv_master_agr.
 
+  LOOP AT lt_derived_roles INTO DATA(lv_child_agr).
     " Per-child authority check
     AUTHORITY-CHECK OBJECT 'S_USER_AGR'
       ID 'ACT_GROUP' FIELD lv_child_agr
       ID 'ACTVT'     FIELD '02'.
     IF sy-subrc <> 0.
       lv_err_cnt = lv_err_cnt + 1.
+      IF strlen( lv_err_details ) < 180.
+        lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                 THEN |{ lv_child_agr } (no S_USER_AGR 02)|
+                                 ELSE |{ lv_err_details }; { lv_child_agr } (no S_USER_AGR 02)| ).
+      ENDIF.
       CONTINUE.
     ENDIF.
 
-    " 1. Backup ALL existing Org Levels of this derived role
-    CLEAR lt_orig_orgs.
+    " 1. TOCTOU-safe brief lock to snapshot ALL existing Org Levels of this derived role
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+      EXPORTING
+        activity_group = lv_child_agr
+        no_dialog      = 'X'
+      EXCEPTIONS
+        OTHERS         = 1.
+    IF sy-subrc <> 0.
+      lv_err_cnt = lv_err_cnt + 1.
+      IF strlen( lv_err_details ) < 180.
+        lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                 THEN |{ lv_child_agr } (pre-der enqueue rc={ sy-subrc })|
+                                 ELSE |{ lv_err_details }; { lv_child_agr } (pre-der enqueue rc={ sy-subrc })| ).
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR: lt_orig_orgs, lt_orig_pt1252.
     SELECT * FROM agr_1252 INTO TABLE @lt_orig_orgs
       WHERE agr_name = @lv_child_agr
       ORDER BY counter.
 
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+      EXPORTING
+        activity_group = lv_child_agr
+      EXCEPTIONS
+        OTHERS         = 0.
+
     " 2. Inherit authorization objects from Master Role via standard FM
-    CLEAR: lt_child_bapi, lv_new_req, lv_drv_ok, lv_adj_ok, lv_prf_ok.
+    CLEAR: lt_child_bapi, lv_new_req, lv_drv_ok, lv_adj_ok, lv_prf_ok, lv_ch_msg.
     CALL FUNCTION 'PRGN_RFC_CREATE_DERIVATION'
       EXPORTING
         role            = lv_child_agr
@@ -1413,19 +2067,86 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
         OTHERS          = 99.
     lv_rc = sy-subrc.
 
-    DATA(lv_has_der_err) = xsdbool( lv_rc <> 0 ).
+    DATA(lv_has_der_err) = xsdbool( lv_rc <> 0 OR lv_drv_ok <> 'Y' OR lv_adj_ok <> 'Y' ).
     LOOP AT lt_child_bapi INTO DATA(ls_b_chk) WHERE type CA 'EAX'.
       lv_has_der_err = abap_true.
       EXIT.
     ENDLOOP.
 
     IF lv_has_der_err = abap_true.
+      ROLLBACK WORK.
+      CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+      PERFORM format_bapi_message USING lt_child_bapi CHANGING lv_ch_msg.
+      IF lv_ch_msg IS INITIAL.
+        lv_ch_msg = |derivation error rc={ lv_rc }|.
+      ENDIF.
       lv_err_cnt = lv_err_cnt + 1.
+      IF strlen( lv_err_details ) < 180.
+        lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                 THEN |{ lv_child_agr } ({ lv_ch_msg })|
+                                 ELSE |{ lv_err_details }; { lv_child_agr } ({ lv_ch_msg })| ).
+      ENDIF.
       CONTINUE.
     ENDIF.
 
-    " 3. Restore and preserve ALL multi-value Child Org Levels (AGR_1252)
-    CLEAR: lt_cur_child_orgs, lt_dist_vars, lt_final_child_org.
+    " 3. Hold continuous lock across 1251 $VARBL repair -> 1252 read -> 1252 save (TOCTOU-safe)
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+      EXPORTING
+        activity_group = lv_child_agr
+        no_dialog      = 'X'
+      EXCEPTIONS
+        OTHERS         = 1.
+    IF sy-subrc <> 0.
+      lv_err_cnt = lv_err_cnt + 1.
+      IF strlen( lv_err_details ) < 180.
+        lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                 THEN |{ lv_child_agr } (post-der enqueue rc={ sy-subrc })|
+                                 ELSE |{ lv_err_details }; { lv_child_agr } (post-der enqueue rc={ sy-subrc })| ).
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR: lv_ch_bind_err, lv_ch_gen_err, lv_ch_gen_rc.
+    PERFORM restore_1251_org_bindings USING lv_child_agr abap_true CHANGING lv_ch_bind_err.
+    IF lv_ch_bind_err IS NOT INITIAL.
+      LOOP AT lt_orig_orgs INTO DATA(ls_comp1).
+        APPEND VALUE pt1252( varbl = ls_comp1-varbl low = ls_comp1-low high = ls_comp1-high ) TO lt_orig_pt1252.
+      ENDLOOP.
+      IF lt_orig_pt1252 IS NOT INITIAL.
+        CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+        CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+          EXPORTING
+            activity_group = lv_child_agr
+          TABLES
+            org_levels     = lt_orig_pt1252
+          EXCEPTIONS
+            OTHERS         = 1.
+        IF sy-subrc = 0.
+          CALL FUNCTION 'PRGN_UPDATE_DATABASE' EXCEPTIONS OTHERS = 1.
+        ENDIF.
+        IF sy-subrc = 0.
+          COMMIT WORK AND WAIT.
+        ELSE.
+          ROLLBACK WORK.
+          CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+        ENDIF.
+      ENDIF.
+      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+        EXPORTING
+          activity_group = lv_child_agr
+        EXCEPTIONS
+          OTHERS         = 0.
+      lv_err_cnt = lv_err_cnt + 1.
+      IF strlen( lv_err_details ) < 180.
+        lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                 THEN |{ lv_child_agr } ({ lv_ch_bind_err })|
+                                 ELSE |{ lv_err_details }; { lv_child_agr } ({ lv_ch_bind_err })| ).
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    " 4. Restore and preserve ALL multi-value Child Org Levels (AGR_1252), including Master variables
+    CLEAR: lt_cur_child_orgs, lt_dist_vars, lt_child_vars, lt_final_child_org.
     CALL FUNCTION 'PRGN_1252_READ_ORG_LEVELS'
       EXPORTING
         activity_group    = lv_child_agr
@@ -1434,9 +2155,64 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
       EXCEPTIONS
         no_data_available = 1
         OTHERS            = 2.
+    IF sy-subrc = 2.
+      LOOP AT lt_orig_orgs INTO ls_comp1.
+        APPEND VALUE pt1252( varbl = ls_comp1-varbl low = ls_comp1-low high = ls_comp1-high ) TO lt_orig_pt1252.
+      ENDLOOP.
+      IF lt_orig_pt1252 IS NOT INITIAL.
+        CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+        CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
+          EXPORTING
+            activity_group = lv_child_agr
+          TABLES
+            org_levels     = lt_orig_pt1252
+          EXCEPTIONS
+            OTHERS         = 1.
+        IF sy-subrc = 0.
+          CALL FUNCTION 'PRGN_UPDATE_DATABASE' EXCEPTIONS OTHERS = 1.
+        ENDIF.
+        IF sy-subrc = 0.
+          COMMIT WORK AND WAIT.
+        ELSE.
+          ROLLBACK WORK.
+          CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+        ENDIF.
+      ENDIF.
+      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+        EXPORTING
+          activity_group = lv_child_agr
+        EXCEPTIONS
+          OTHERS         = 0.
+      lv_err_cnt = lv_err_cnt + 1.
+      IF strlen( lv_err_details ) < 180.
+        lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                 THEN |{ lv_child_agr } (PRGN_1252_READ_ORG_LEVELS rc=2)|
+                                 ELSE |{ lv_err_details }; { lv_child_agr } (PRGN_1252_READ_ORG_LEVELS rc=2)| ).
+      ENDIF.
+      CONTINUE.
+    ENDIF.
 
     LOOP AT lt_cur_child_orgs INTO DATA(ls_cur_org).
       APPEND ls_cur_org-varbl TO lt_dist_vars.
+    ENDLOOP.
+    SELECT DISTINCT f~low FROM agr_1251 AS f
+      INNER JOIN agr_1250 AS h
+        ON  h~agr_name = f~agr_name
+        AND h~object   = f~object
+        AND h~auth     = f~auth
+      INTO TABLE @lt_child_vars
+      WHERE f~agr_name = @lv_child_agr AND f~low LIKE '$%'
+        AND f~deleted  = @space AND f~copied <> 'I'
+        AND h~deleted  = @space AND h~copied <> 'I'.
+    LOOP AT lt_child_vars INTO DATA(lv_ch_v).
+      IF line_exists( gt_usorg_map[ KEY by_varbl COMPONENTS varbl = lv_ch_v ] ).
+        APPEND lv_ch_v TO lt_dist_vars.
+      ENDIF.
+    ENDLOOP.
+    LOOP AT lt_mast_vars_adj INTO DATA(lv_m_v).
+      IF line_exists( gt_usorg_map[ KEY by_varbl COMPONENTS varbl = lv_m_v ] ).
+        APPEND lv_m_v TO lt_dist_vars.
+      ENDIF.
     ENDLOOP.
     SORT lt_dist_vars.
     DELETE ADJACENT DUPLICATES FROM lt_dist_vars.
@@ -1446,7 +2222,7 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
       DATA(lv_found_orig) = abap_false.
       LOOP AT lt_orig_orgs INTO DATA(ls_orig)
         WHERE varbl = lv_cvar
-          AND ( ( low IS NOT INITIAL AND low <> '-1' ) OR high IS NOT INITIAL ).
+          AND ( low IS NOT INITIAL OR high IS NOT INITIAL ).
         lv_found_orig = abap_true.
         APPEND VALUE pt1252(
           varbl = ls_orig-varbl
@@ -1464,40 +2240,67 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
     DELETE ADJACENT DUPLICATES FROM lt_final_child_org COMPARING varbl low high.
 
     IF lt_final_child_org IS NOT INITIAL.
-      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+      CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+      CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
         EXPORTING
           activity_group = lv_child_agr
+        TABLES
+          org_levels     = lt_final_child_org
         EXCEPTIONS
           OTHERS         = 1.
       IF sy-subrc = 0.
-        CALL FUNCTION 'PRGN_1252_SAVE_ORG_LEVELS'
-          EXPORTING
-            activity_group = lv_child_agr
-          TABLES
-            org_levels     = lt_final_child_org
-          EXCEPTIONS
-            OTHERS         = 1.
         CALL FUNCTION 'PRGN_UPDATE_DATABASE'
           EXCEPTIONS
             OTHERS = 1.
-        CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
-          EXPORTING
-            activity_group = lv_child_agr
-          EXCEPTIONS
-            OTHERS         = 0.
-        COMMIT WORK AND WAIT.
+        IF sy-subrc = 0.
+          CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
+            EXPORTING
+              activity_group = lv_child_agr
+              no_commit      = 'X'
+            EXCEPTIONS
+              OTHERS         = 0.
+          COMMIT WORK AND WAIT.
+        ELSE.
+          ROLLBACK WORK.
+          CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+          CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+            EXPORTING
+              activity_group = lv_child_agr
+            EXCEPTIONS
+              OTHERS         = 0.
+          lv_err_cnt = lv_err_cnt + 1.
+          IF strlen( lv_err_details ) < 180.
+            lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                     THEN |{ lv_child_agr } (PRGN_UPDATE_DATABASE failed)|
+                                     ELSE |{ lv_err_details }; { lv_child_agr } (PRGN_UPDATE_DATABASE failed)| ).
+          ENDIF.
+          CONTINUE.
+        ENDIF.
+      ELSE.
+        ROLLBACK WORK.
+        CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
         CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
           EXPORTING
             activity_group = lv_child_agr
           EXCEPTIONS
             OTHERS         = 0.
+        lv_err_cnt = lv_err_cnt + 1.
+        IF strlen( lv_err_details ) < 180.
+          lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                   THEN |{ lv_child_agr } (SAVE_ORG_LEVELS failed)|
+                                   ELSE |{ lv_err_details }; { lv_child_agr } (SAVE_ORG_LEVELS failed)| ).
+        ENDIF.
+        CONTINUE.
       ENDIF.
     ENDIF.
 
-    " Restore Org Variable Bindings in AGR_1251/1250 BEFORE profile generation
-    PERFORM restore_1251_org_bindings USING lv_child_agr.
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+      EXPORTING
+        activity_group = lv_child_agr
+      EXCEPTIONS
+        OTHERS         = 0.
 
-    " 4. Regenerate derived role runtime profile if requested
+    " 5. Regenerate derived role runtime profile if requested
     IF p_genprf = abap_true.
       CLEAR lt_child_bapi.
       CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
@@ -1511,45 +2314,105 @@ FORM adjust_derived_roles USING    iv_master_agr  TYPE agr_name
         IMPORTING
           return                = lt_child_bapi
         EXCEPTIONS
-          OTHERS                = 1.
-      COMMIT WORK AND WAIT.
+          open_auths                    = 1
+          no_auth_for_gen               = 2
+          no_auths                      = 3
+          too_many_auths                = 4
+          error_when_generating_profile = 5
+          OTHERS                        = 6.
+      lv_ch_gen_rc = sy-subrc.
+      PERFORM format_bapi_message USING lt_child_bapi CHANGING lv_ch_gen_err.
+      IF lv_ch_gen_rc = 0 AND lv_ch_gen_err IS INITIAL.
+        COMMIT WORK AND WAIT.
+      ELSE.
+        ROLLBACK WORK.
+        CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+        IF lv_ch_gen_err IS INITIAL.
+          lv_ch_gen_err = |profile gen rc={ lv_ch_gen_rc }|.
+        ENDIF.
+        lv_err_cnt = lv_err_cnt + 1.
+        IF strlen( lv_err_details ) < 180.
+          lv_err_details = COND #( WHEN lv_err_details IS INITIAL
+                                   THEN |{ lv_child_agr } ({ lv_ch_gen_err })|
+                                   ELSE |{ lv_err_details }; { lv_child_agr } ({ lv_ch_gen_err })| ).
+        ENDIF.
+        CONTINUE.
+      ENDIF.
     ENDIF.
 
+    IF lv_role_list IS INITIAL.
+      lv_role_list = lv_child_agr.
+    ELSE.
+      CONCATENATE lv_role_list ',' lv_child_agr INTO lv_role_list SEPARATED BY space.
+    ENDIF.
     lv_succ_cnt = lv_succ_cnt + 1.
   ENDLOOP.
 
   cv_der_roles = lv_role_list.
+  cv_err_cnt   = lv_err_cnt.
 
   IF lv_err_cnt = 0.
     cv_der_summary = |Adjusted { lv_succ_cnt } child role(s) [{ lv_role_list }] (org levels preserved).|.
   ELSE.
-    cv_der_summary = |Adjusted { lv_succ_cnt } child role(s) [{ lv_role_list }]; { lv_err_cnt } role(s) had errors.|.
+    cv_der_summary = |Adjusted { lv_succ_cnt } child role(s) [{ lv_role_list }]; { lv_err_cnt } role(s) failed: { lv_err_details }.|.
   ENDIF.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Form set_role_description
 *&---------------------------------------------------------------------*
-* Sets role description and clears comments via standard PFCG FM
+* Sets role description via standard PFCG FM (preserves long text lines
+* > '00000' when updating existing roles)
 *&---------------------------------------------------------------------*
-FORM set_role_description USING iv_agr_name TYPE agr_name
-                                iv_desc     TYPE csequence.
-  DATA: lt_texts TYPE STANDARD TABLE OF agr_texts.
-  CLEAR lt_texts.
-  APPEND VALUE agr_texts(
+FORM set_role_description USING    iv_agr_name      TYPE agr_name
+                                   iv_desc          TYPE csequence
+                                   iv_preserve_long TYPE abap_bool
+                          CHANGING ev_warn          TYPE string.
+  DATA: lt_texts TYPE STANDARD TABLE OF agr_texts,
+        lt_ret   TYPE bapiret2_t,
+        lv_rc    TYPE sy-subrc.
+  CLEAR: lt_texts, lt_ret, ev_warn.
+
+  IF iv_preserve_long = abap_true.
+    SELECT * FROM agr_texts INTO TABLE @lt_texts
+      WHERE agr_name = @iv_agr_name
+        AND spras    = @sy-langu
+        AND line     > '00000'
+      ORDER BY line.
+  ENDIF.
+
+  INSERT VALUE agr_texts(
     spras = sy-langu
     line  = '00000'
     text  = iv_desc
-  ) TO lt_texts.
+  ) INTO lt_texts INDEX 1.
 
   CALL FUNCTION 'PRGN_RFC_CHANGE_TEXTS'
     EXPORTING
-      activity_group = iv_agr_name
-      no_dialog      = 'X'
+      activity_group                = iv_agr_name
+      no_dialog                     = 'X'
     TABLES
-      texts          = lt_texts
+      texts                         = lt_texts
+      return                        = lt_ret
     EXCEPTIONS
-      OTHERS         = 0.
+      activity_group_enqueued       = 1
+      activity_group_does_not_exist = 2
+      namespace_problem             = 3
+      not_authorized                = 4
+      wrong_language                = 5
+      OTHERS                        = 6.
+  lv_rc = sy-subrc.
+
+  LOOP AT lt_ret INTO DATA(ls_r) WHERE type CA 'EAXW'.
+    IF ev_warn IS INITIAL.
+      ev_warn = ls_r-message.
+    ELSE.
+      ev_warn = |{ ev_warn }; { ls_r-message }|.
+    ENDIF.
+  ENDLOOP.
+  IF lv_rc <> 0 AND ev_warn IS INITIAL.
+    ev_warn = |PRGN_RFC_CHANGE_TEXTS failed (rc={ lv_rc }).|.
+  ENDIF.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -1721,94 +2584,192 @@ ENDFORM.
 * Org Variable ($VARBL) with MODIFIED = 'S' and NEU = 'O', never left as '-1'
 * or marked as Manual ('U').
 *&---------------------------------------------------------------------*
-FORM restore_1251_org_bindings USING iv_agr_name TYPE agr_name.
-  DATA: lt_pt1251   TYPE STANDARD TABLE OF pt1251,
-        lt_clean    TYPE STANDARD TABLE OF pt1251,
-        lt_pt1250   TYPE STANDARD TABLE OF pt1250,
-        lt_seen_key TYPE HASHED TABLE OF string WITH UNIQUE KEY table_line,
-        lv_key      TYPE string,
-        lv_mod51    TYPE abap_bool,
-        lv_mod50    TYPE abap_bool.
+FORM restore_1251_org_bindings USING    iv_agr_name    TYPE agr_name
+                                        iv_already_enq TYPE abap_bool
+                               CHANGING ev_err         TYPE string.
+  TYPES: BEGIN OF ty_obj_auth_key,
+           object TYPE xuobject,
+           auth   TYPE xuauth,
+         END OF ty_obj_auth_key,
+         BEGIN OF ty_obj_auth_fld,
+           object TYPE xuobject,
+           auth   TYPE xuauth,
+           field  TYPE xufield,
+         END OF ty_obj_auth_fld.
 
-  CLEAR: lt_pt1251, lt_clean, lt_pt1250, lt_seen_key, lv_mod51, lv_mod50.
+  DATA: lt_pt1251         TYPE STANDARD TABLE OF pt1251,
+        lt_clean          TYPE STANDARD TABLE OF pt1251,
+        lt_pt1250         TYPE STANDARD TABLE OF pt1250,
+        lt_seen_key       TYPE HASHED TABLE OF string WITH UNIQUE KEY table_line,
+        lt_act_hdr        TYPE HASHED TABLE OF ty_obj_auth_key WITH UNIQUE KEY object auth,
+        lt_healed_auths   TYPE HASHED TABLE OF ty_obj_auth_key WITH UNIQUE KEY object auth,
+        lt_decoupled_flds TYPE HASHED TABLE OF ty_obj_auth_fld WITH UNIQUE KEY object auth field,
+        lv_key            TYPE string,
+        lv_mod51          TYPE abap_bool,
+        lv_mod50          TYPE abap_bool.
+
+  CLEAR: lt_pt1251, lt_clean, lt_pt1250, lt_seen_key, lt_act_hdr,
+         lt_healed_auths, lt_decoupled_flds, lv_mod51, lv_mod50, ev_err.
 
   IF gt_usorg_map IS INITIAL.
     RETURN.
   ENDIF.
 
-  CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
-    EXPORTING
-      activity_group = iv_agr_name
-    TABLES
-      field_values   = lt_pt1251
-    EXCEPTIONS
-      OTHERS         = 1.
-
-  IF sy-subrc <> 0 OR lt_pt1251 IS INITIAL.
-    RETURN.
-  ENDIF.
-
-  LOOP AT lt_pt1251 INTO DATA(ls_f51).
-    IF ls_f51-deleted = space AND ls_f51-copied <> 'I'.
-      READ TABLE gt_usorg_map INTO DATA(ls_uo) WITH TABLE KEY field = ls_f51-field.
-      IF sy-subrc = 0.
-        lv_key = |{ ls_f51-object }:{ ls_f51-auth }:{ ls_f51-field }|.
-        IF line_exists( lt_seen_key[ table_line = lv_key ] ).
-          lv_mod51 = abap_true.
-          CONTINUE.
-        ENDIF.
-        INSERT lv_key INTO TABLE lt_seen_key.
-        IF ls_f51-low <> ls_uo-varbl OR ls_f51-high IS NOT INITIAL
-           OR ls_f51-modified <> 'S' OR ls_f51-neu <> 'O'.
-          ls_f51-low      = ls_uo-varbl.
-          ls_f51-high     = space.
-          ls_f51-modified = 'S'.
-          ls_f51-neu      = 'O'.
-          lv_mod51        = abap_true.
-        ENDIF.
-      ENDIF.
-    ENDIF.
-    APPEND ls_f51 TO lt_clean.
-  ENDLOOP.
-  lt_pt1251 = lt_clean.
-
-  CALL FUNCTION 'PRGN_1250_READ_AUTH_DATA'
-    EXPORTING
-      activity_group = iv_agr_name
-      no_texts       = 'X'
-    TABLES
-      auth_data      = lt_pt1250
-    EXCEPTIONS
-      OTHERS         = 1.
-
-  IF sy-subrc = 0 AND lt_pt1250 IS NOT INITIAL.
-    LOOP AT lt_pt1250 ASSIGNING FIELD-SYMBOL(<ls_a50>)
-      WHERE deleted = space AND copied <> 'I' AND modified = 'U'.
-      READ TABLE lt_pt1251 TRANSPORTING NO FIELDS
-        WITH KEY object = <ls_a50>-object auth = <ls_a50>-auth
-                 modified = 'U' deleted = space.
-      IF sy-subrc <> 0.
-        READ TABLE lt_pt1251 TRANSPORTING NO FIELDS
-          WITH KEY object = <ls_a50>-object auth = <ls_a50>-auth
-                   modified = 'G' deleted = space.
-        IF sy-subrc = 0.
-          <ls_a50>-modified = 'G'.
-        ELSE.
-          <ls_a50>-modified = 'S'.
-        ENDIF.
-        <ls_a50>-neu = 'O'.
-        lv_mod50     = abap_true.
-      ENDIF.
-    ENDLOOP.
-  ENDIF.
-
-  IF lv_mod51 = abap_true OR lv_mod50 = abap_true.
+  IF iv_already_enq = abap_false.
     CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
       EXPORTING
         activity_group = iv_agr_name
+        no_dialog      = 'X'
       EXCEPTIONS
         OTHERS         = 1.
-    IF sy-subrc = 0.
+    IF sy-subrc <> 0.
+      ev_err = |Role '{ iv_agr_name }' is locked during $VARBL repair (rc={ sy-subrc }).|.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+  DO 1 TIMES.
+    CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+
+    CALL FUNCTION 'PRGN_1250_READ_AUTH_DATA'
+      EXPORTING
+        activity_group    = iv_agr_name
+        no_texts          = 'X'
+      TABLES
+        auth_data         = lt_pt1250
+      EXCEPTIONS
+        no_data_available = 1
+        OTHERS            = 2.
+    IF sy-subrc = 2.
+      ev_err = |PRGN_1250_READ_AUTH_DATA failed for '{ iv_agr_name }' (rc=2).|.
+      EXIT.
+    ENDIF.
+    IF sy-subrc <> 0 OR lt_pt1250 IS INITIAL.
+      EXIT.
+    ENDIF.
+
+    CALL FUNCTION 'PRGN_1251_READ_FIELD_VALUES'
+      EXPORTING
+        activity_group    = iv_agr_name
+      TABLES
+        field_values      = lt_pt1251
+      EXCEPTIONS
+        no_data_available = 1
+        OTHERS            = 2.
+    IF sy-subrc = 2.
+      ev_err = |PRGN_1251_READ_FIELD_VALUES failed for '{ iv_agr_name }' (rc=2).|.
+      EXIT.
+    ENDIF.
+    IF sy-subrc <> 0 OR lt_pt1251 IS INITIAL.
+      EXIT.
+    ENDIF.
+
+    LOOP AT lt_pt1250 INTO DATA(ls_hdr_act) WHERE deleted = space AND copied <> 'I'.
+      INSERT VALUE ty_obj_auth_key(
+        object = ls_hdr_act-object auth = ls_hdr_act-auth ) INTO TABLE lt_act_hdr.
+    ENDLOOP.
+
+    " Pre-scan: identify any (object, auth, field) having a decoupled concrete 'G'/'M'/'U' value
+    " (never confuse '$TMP' with $VARBL; never mix concrete rows with $VARBL on the same field!)
+    LOOP AT lt_pt1251 INTO DATA(ls_pre).
+      IF ls_pre-deleted <> space OR ls_pre-copied = 'I'.
+        CONTINUE.
+      ENDIF.
+      IF NOT line_exists( lt_act_hdr[ object = ls_pre-object auth = ls_pre-auth ] ).
+        CONTINUE.
+      ENDIF.
+      READ TABLE gt_usorg_map INTO DATA(ls_uo_pre) WITH TABLE KEY field = ls_pre-field.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+      IF ( ls_pre-modified = 'G' OR ls_pre-modified = 'M' OR ls_pre-modified = 'U' )
+         AND ( ( ls_pre-low IS NOT INITIAL AND ls_pre-low <> '-1'
+                 AND ls_pre-low <> '$' AND ls_pre-low <> ls_uo_pre-varbl )
+               OR ls_pre-high IS NOT INITIAL ).
+        INSERT VALUE ty_obj_auth_fld(
+          object = ls_pre-object auth = ls_pre-auth field = ls_pre-field )
+          INTO TABLE lt_decoupled_flds.
+      ENDIF.
+    ENDLOOP.
+
+    " SAPLSUPRN LSUPRNF1H: AGR_1251 $VARBL rows MUST have MODIFIED = 'S' (even under 'U' header!)
+    LOOP AT lt_pt1251 INTO DATA(ls_f51).
+      IF ls_f51-deleted = space AND ls_f51-copied <> 'I'.
+        IF NOT line_exists( lt_act_hdr[ object = ls_f51-object auth = ls_f51-auth ] ).
+          APPEND ls_f51 TO lt_clean.
+          CONTINUE.
+        ENDIF.
+        READ TABLE gt_usorg_map INTO DATA(ls_uo) WITH TABLE KEY field = ls_f51-field.
+        IF sy-subrc = 0.
+          IF line_exists( lt_decoupled_flds[
+               object = ls_f51-object auth = ls_f51-auth field = ls_f51-field ] ).
+            IF ( ls_f51-low IS INITIAL OR ls_f51-low = '-1'
+                 OR ls_f51-low = '$' OR ls_f51-low = ls_uo-varbl )
+               AND ls_f51-high IS INITIAL.
+              lv_mod51 = abap_true.
+              INSERT VALUE ty_obj_auth_key( object = ls_f51-object auth = ls_f51-auth )
+                INTO TABLE lt_healed_auths.
+              CONTINUE.
+            ENDIF.
+            APPEND ls_f51 TO lt_clean.
+            CONTINUE.
+          ENDIF.
+
+          lv_key = |{ ls_f51-object }:{ ls_f51-auth }:{ ls_f51-field }|.
+          IF line_exists( lt_seen_key[ table_line = lv_key ] ).
+            lv_mod51 = abap_true.
+            INSERT VALUE ty_obj_auth_key( object = ls_f51-object auth = ls_f51-auth )
+              INTO TABLE lt_healed_auths.
+            CONTINUE.
+          ENDIF.
+          INSERT lv_key INTO TABLE lt_seen_key.
+          IF ls_f51-low <> ls_uo-varbl OR ls_f51-high IS NOT INITIAL
+             OR ls_f51-modified <> 'S'.
+            ls_f51-low      = ls_uo-varbl.
+            ls_f51-high     = space.
+            ls_f51-modified = 'S'.
+            ls_f51-neu      = 'O'.
+            lv_mod51        = abap_true.
+            INSERT VALUE ty_obj_auth_key( object = ls_f51-object auth = ls_f51-auth )
+              INTO TABLE lt_healed_auths.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+      APPEND ls_f51 TO lt_clean.
+    ENDLOOP.
+    lt_pt1251 = lt_clean.
+
+    IF lt_pt1250 IS NOT INITIAL AND lt_healed_auths IS NOT INITIAL.
+      " Only normalize 'M' (Changed) headers that were actually healed; NEVER touch unrelated 'M' or 'U'
+      LOOP AT lt_pt1250 ASSIGNING FIELD-SYMBOL(<ls_a50>)
+        WHERE deleted = space AND copied <> 'I' AND modified = 'M'.
+        IF NOT line_exists( lt_healed_auths[ object = <ls_a50>-object auth = <ls_a50>-auth ] ).
+          CONTINUE.
+        ENDIF.
+        DATA(lv_has_m) = abap_false.
+        DATA(lv_has_g) = abap_false.
+        LOOP AT lt_pt1251 TRANSPORTING NO FIELDS
+          WHERE object = <ls_a50>-object AND auth = <ls_a50>-auth
+            AND modified = 'M' AND deleted = space AND copied <> 'I'.
+          lv_has_m = abap_true.
+          EXIT.
+        ENDLOOP.
+        IF lv_has_m = abap_false.
+          LOOP AT lt_pt1251 TRANSPORTING NO FIELDS
+            WHERE object = <ls_a50>-object AND auth = <ls_a50>-auth
+              AND modified = 'G' AND deleted = space AND copied <> 'I'.
+            lv_has_g = abap_true.
+            EXIT.
+          ENDLOOP.
+          <ls_a50>-modified = COND #( WHEN lv_has_g = abap_true THEN 'G' ELSE 'S' ).
+          <ls_a50>-neu      = 'O'.
+          lv_mod50          = abap_true.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+    IF lv_mod51 = abap_true OR lv_mod50 = abap_true.
+      CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
       IF lv_mod51 = abap_true.
         CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
           EXPORTING
@@ -1817,8 +2778,11 @@ FORM restore_1251_org_bindings USING iv_agr_name TYPE agr_name.
             field_values   = lt_pt1251
           EXCEPTIONS
             OTHERS         = 1.
+        IF sy-subrc <> 0.
+          ev_err = |PRGN_1251_SAVE_FIELD_VALUES failed for '{ iv_agr_name }' (rc={ sy-subrc }).|.
+        ENDIF.
       ENDIF.
-      IF lv_mod50 = abap_true.
+      IF ev_err IS INITIAL AND lv_mod50 = abap_true.
         CALL FUNCTION 'PRGN_1250_SAVE_AUTH_DATA'
           EXPORTING
             activity_group = iv_agr_name
@@ -1826,16 +2790,32 @@ FORM restore_1251_org_bindings USING iv_agr_name TYPE agr_name.
             auth_data      = lt_pt1250
           EXCEPTIONS
             OTHERS         = 1.
+        IF sy-subrc <> 0.
+          ev_err = |PRGN_1250_SAVE_AUTH_DATA failed for '{ iv_agr_name }' (rc={ sy-subrc }).|.
+        ENDIF.
       ENDIF.
-      CALL FUNCTION 'PRGN_UPDATE_DATABASE'
-        EXCEPTIONS
-          OTHERS = 1.
-      COMMIT WORK AND WAIT.
-      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
-        EXPORTING
-          activity_group = iv_agr_name
-        EXCEPTIONS
-          OTHERS         = 0.
+      IF ev_err IS INITIAL.
+        CALL FUNCTION 'PRGN_UPDATE_DATABASE'
+          EXCEPTIONS
+            OTHERS = 1.
+        IF sy-subrc <> 0.
+          ev_err = |PRGN_UPDATE_DATABASE failed during $VARBL repair for '{ iv_agr_name }' (rc={ sy-subrc }).|.
+        ENDIF.
+      ENDIF.
+      IF ev_err IS INITIAL.
+        COMMIT WORK AND WAIT.
+      ELSE.
+        ROLLBACK WORK.
+        CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+      ENDIF.
     ENDIF.
+  ENDDO.
+
+  IF iv_already_enq = abap_false.
+    CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+      EXPORTING
+        activity_group = iv_agr_name
+      EXCEPTIONS
+        OTHERS         = 0.
   ENDIF.
 ENDFORM.

@@ -50,6 +50,12 @@ TYPES: BEGIN OF ty_obj_fld,
          field  TYPE xufield,
        END OF ty_obj_fld.
 
+TYPES: BEGIN OF ty_invalid_item,
+         agr_name TYPE string,
+         item     TYPE string,
+         reason   TYPE string,
+       END OF ty_invalid_item.
+
 TYPES: BEGIN OF ty_alv_result,
          status        TYPE char12,    " Status Icon: @08@ [OK], @09@ [WARN], @0A@ [ERR]
          action        TYPE char12,    " Action: UPDATED / UP-TO-DATE / SIMULATE / ERROR
@@ -75,7 +81,9 @@ DATA: gt_raw_rows        TYPE STANDARD TABLE OF ty_raw_row,
                            WITH NON-UNIQUE KEY agr_name object field,
       gt_results         TYPE STANDARD TABLE OF ty_alv_result,
       gt_usorg_map       TYPE SORTED TABLE OF usorg WITH NON-UNIQUE KEY field,
-      gt_oversized_roles TYPE STANDARD TABLE OF string.
+      gt_tactz           TYPE SORTED TABLE OF tactz WITH NON-UNIQUE KEY brobj actvt,
+      gt_oversized_roles TYPE STANDARD TABLE OF string,
+      gt_invalid_items   TYPE STANDARD TABLE OF ty_invalid_item.
 
 *----------------------------------------------------------------------*
 * 2. SELECTION SCREEN
@@ -126,8 +134,9 @@ START-OF-SELECTION.
 *& Form load_usorg_mapping
 *&---------------------------------------------------------------------*
 FORM load_usorg_mapping.
-  CLEAR gt_usorg_map.
+  CLEAR: gt_usorg_map, gt_tactz.
   SELECT * FROM usorg INTO TABLE @gt_usorg_map.
+  SELECT * FROM tactz INTO TABLE @gt_tactz.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
@@ -253,29 +262,45 @@ FORM read_csv_file USING iv_file TYPE localfile.
     MESSAGE 'Failed to read CSV file from client workstation.' TYPE 'E'.
   ENDIF.
 
+  DATA(lv_utf8_bom) = cl_abap_conv_in_ce=>uccp( 'FEFF' ).
+  DATA: lv_file_delim TYPE c LENGTH 1 VALUE ',',
+        lv_delim_set  TYPE abap_bool VALUE abap_false.
+
   CLEAR lv_line_idx.
   LOOP AT lt_file_records INTO lv_line.
     lv_line_idx = lv_line_idx + 1.
-    IF lv_line_idx = 1 AND strlen( lv_line ) >= 1.
-      IF lv_line(1) = cl_abap_char_utilities=>byte_order_mark_utf8.
-        lv_line = substring( val = lv_line off = 1 ).
-      ENDIF.
+    IF lv_line_idx = 1 AND lv_line IS NOT INITIAL AND lv_line(1) = lv_utf8_bom.
+      SHIFT lv_line LEFT BY 1 PLACES.
     ENDIF.
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_line WITH ''.
+    IF lv_line IS INITIAL.
+      CONTINUE.
+    ENDIF.
+
+    IF lv_delim_set = abap_false.
+      PERFORM detect_csv_delimiter USING lv_line CHANGING lv_file_delim.
+      lv_delim_set = abap_true.
+    ENDIF.
+
     CLEAR ls_raw.
-    PERFORM parse_csv_line USING lv_line
+    PERFORM parse_csv_line USING lv_line lv_file_delim
                            CHANGING ls_raw-col1 ls_raw-col2 ls_raw-col3 ls_raw-col4.
 
-    " Validate & skip header row
+    " Validate & skip header row (avoid rejecting real data like M_BEST_EKO-EKORG or Z_FI_GL_MASTER_*)
     DATA(lv_c1_up) = to_upper( ls_raw-col1 ).
     DATA(lv_c2_up) = to_upper( ls_raw-col2 ).
     IF lv_line_idx = 1.
-      IF lv_c2_up CS 'ORG' OR lv_c2_up = 'FIELD' OR lv_c2_up = 'ACTIVITY'
-         OR lv_c1_up CS 'MASTER' OR lv_c1_up CS 'COMPOSITE' OR lv_c1_up CS 'USER'
-         OR lv_c2_up CS 'DESC'.
+      IF lv_c2_up = 'ORG_LEVEL' OR lv_c2_up = 'ORG LEVEL VARIABLE' OR lv_c2_up = 'ORG_LEVEL_VARIABLE'
+         OR lv_c2_up = 'FIELD' OR lv_c2_up = 'ACTIVITY'
+         OR lv_c2_up = 'ROLE DESCRIPTION' OR lv_c2_up = 'DERIVED ROLE'
+         OR lv_c2_up = 'DERIVED ROLE DESCRIPTION' OR lv_c2_up = 'COMPOSITE ROLE DESCRIPTION'
+         OR lv_c1_up = 'MASTER ROLE' OR lv_c1_up = 'MASTER_ROLE'
+         OR lv_c1_up = 'COMPOSITE ROLE' OR lv_c1_up = 'COMPOSITE ROLE NAME'
+         OR lv_c1_up = 'USERNAME' OR lv_c1_up = 'USER NAME'.
         MESSAGE 'Invalid CSV header for Z_ROLE_03B_UPDATE_OBJECT. Expected: Role, object-field, value-low, value-high.' TYPE 'E'.
       ENDIF.
-      IF lv_c1_up CS 'ROLE' AND lv_c2_up CS 'OBJECT'.
+      IF ( lv_c1_up = 'ROLE' OR lv_c1_up = 'ROLE NAME' OR lv_c1_up = 'ROLE_NAME' )
+         AND lv_c2_up CS 'OBJECT'.
         CONTINUE.
       ENDIF.
     ENDIF.
@@ -291,13 +316,62 @@ FORM read_csv_file USING iv_file TYPE localfile.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
+*& Form detect_csv_delimiter
+*&---------------------------------------------------------------------*
+FORM detect_csv_delimiter USING    iv_line  TYPE string
+                          CHANGING ev_delim TYPE c.
+  DATA: lv_len      TYPE i,
+        lv_pos      TYPE i,
+        lv_in_q     TYPE abap_bool VALUE abap_false,
+        lv_char     TYPE string,
+        lv_next     TYPE string,
+        lv_cnt_tab  TYPE i,
+        lv_cnt_semi TYPE i,
+        lv_cnt_com  TYPE i.
+
+  lv_len = strlen( iv_line ).
+  lv_pos = 0.
+  WHILE lv_pos < lv_len.
+    lv_char = substring( val = iv_line off = lv_pos len = 1 ).
+    IF lv_char = '"'.
+      IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
+        lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
+        IF lv_next = '"'.
+          lv_pos = lv_pos + 2.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      lv_in_q = xsdbool( lv_in_q = abap_false ).
+    ELSEIF lv_in_q = abap_false.
+      IF lv_char = cl_abap_char_utilities=>horizontal_tab.
+        lv_cnt_tab = lv_cnt_tab + 1.
+      ELSEIF lv_char = ';'.
+        lv_cnt_semi = lv_cnt_semi + 1.
+      ELSEIF lv_char = ','.
+        lv_cnt_com = lv_cnt_com + 1.
+      ENDIF.
+    ENDIF.
+    lv_pos = lv_pos + 1.
+  ENDWHILE.
+
+  IF lv_cnt_tab > 0.
+    ev_delim = cl_abap_char_utilities=>horizontal_tab.
+  ELSEIF lv_cnt_semi > 0 AND lv_cnt_semi >= lv_cnt_com.
+    ev_delim = ';'.
+  ELSE.
+    ev_delim = ','.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
 *& Form parse_csv_line
 *&---------------------------------------------------------------------*
-FORM parse_csv_line USING    iv_line TYPE string
-                    CHANGING ev_col1 TYPE string
-                             ev_col2 TYPE string
-                             ev_col3 TYPE string
-                             ev_col4 TYPE string.
+FORM parse_csv_line USING    iv_line  TYPE string
+                             iv_delim TYPE c
+                    CHANGING ev_col1  TYPE string
+                             ev_col2  TYPE string
+                             ev_col3  TYPE string
+                             ev_col4  TYPE string.
   DATA: lt_tokens TYPE STANDARD TABLE OF string,
         lv_len    TYPE i,
         lv_in_q   TYPE abap_bool VALUE abap_false,
@@ -309,12 +383,9 @@ FORM parse_csv_line USING    iv_line TYPE string
 
   CLEAR: ev_col1, ev_col2, ev_col3, ev_col4.
 
-  IF iv_line CS cl_abap_char_utilities=>horizontal_tab.
-    lv_delim = cl_abap_char_utilities=>horizontal_tab.
-  ELSEIF iv_line CS ','.
+  lv_delim = iv_delim.
+  IF lv_delim IS INITIAL.
     lv_delim = ','.
-  ELSE.
-    lv_delim = ';'.
   ENDIF.
 
   lv_len = strlen( iv_line ).
@@ -377,6 +448,8 @@ FORM aggregate_input_data.
   DATA: lv_role_raw     TYPE string,
         lv_role         TYPE agr_name,
         lv_obj_fld      TYPE string,
+        lv_obj_str      TYPE string,
+        lv_fld_str      TYPE string,
         lv_object       TYPE xuobject,
         lv_field        TYPE xufield,
         lv_low_str      TYPE string,
@@ -387,7 +460,7 @@ FORM aggregate_input_data.
         lv_alpha_obj_10 TYPE c LENGTH 10,
         ls_role_ent     TYPE ty_role_entry.
 
-  CLEAR: gt_roles, gt_role_auths, gt_oversized_roles.
+  CLEAR: gt_roles, gt_role_auths, gt_oversized_roles, gt_invalid_items.
 
   LOOP AT gt_raw_rows INTO DATA(ls_raw).
     lv_role_raw = to_upper( condense( ls_raw-col1 ) ).
@@ -411,19 +484,48 @@ FORM aggregate_input_data.
       CONTINUE.
     ENDIF.
 
-    " Parse OBJECT-FIELD format strictly using '-' (never split on '_' which corrupts SAP object names)
-    CLEAR: lv_object, lv_field.
+    " Parse OBJECT-FIELD on STRING first so >10-char typos or malformed rows never fail silently
+    CLEAR: lv_obj_str, lv_fld_str, lv_object, lv_field.
     IF lv_obj_fld CS '-'.
-      SPLIT lv_obj_fld AT '-' INTO lv_object lv_field.
-      lv_object = condense( lv_object ).
-      lv_field  = condense( lv_field ).
+      SPLIT lv_obj_fld AT '-' INTO lv_obj_str lv_fld_str.
+      lv_obj_str = condense( lv_obj_str ).
+      lv_fld_str = condense( lv_fld_str ).
     ELSE.
+      READ TABLE gt_invalid_items WITH KEY agr_name = lv_role_raw item = lv_obj_fld TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND VALUE ty_invalid_item(
+          agr_name = lv_role_raw
+          item     = lv_obj_fld
+          reason   = |Malformed Object-Field '{ lv_obj_fld }' (missing '-' separator). Skipped.|
+        ) TO gt_invalid_items.
+      ENDIF.
       CONTINUE.
     ENDIF.
 
-    IF lv_object IS INITIAL OR lv_field IS INITIAL.
+    IF lv_obj_str IS INITIAL OR lv_fld_str IS INITIAL.
+      READ TABLE gt_invalid_items WITH KEY agr_name = lv_role_raw item = lv_obj_fld TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND VALUE ty_invalid_item(
+          agr_name = lv_role_raw
+          item     = lv_obj_fld
+          reason   = |Malformed Object-Field '{ lv_obj_fld }' (empty object or field). Skipped.|
+        ) TO gt_invalid_items.
+      ENDIF.
       CONTINUE.
     ENDIF.
+    IF strlen( lv_obj_str ) > 10 OR strlen( lv_fld_str ) > 10.
+      READ TABLE gt_invalid_items WITH KEY agr_name = lv_role_raw item = lv_obj_fld TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        APPEND VALUE ty_invalid_item(
+          agr_name = lv_role_raw
+          item     = lv_obj_fld
+          reason   = |Object or field name exceeds SAP 10-character limit: '{ lv_obj_fld }'. Skipped.|
+        ) TO gt_invalid_items.
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+    lv_object = lv_obj_str.
+    lv_field  = lv_fld_str.
 
     " Preserve valid empty/space value ' ' or strip Excel formula wrapping
     IF lv_low_str = ''' ''' OR lv_low_str = '''  ''' OR lv_low_str = '''   '''.
@@ -444,16 +546,41 @@ FORM aggregate_input_data.
       lv_high_str = condense( lv_high_str ).
     ENDIF.
 
-    " Parse potential ranges (LOW - HIGH or LOW:HIGH) if col4 is initial
-    IF lv_high_str IS INITIAL.
-      IF lv_low_str CS ' - '.
-        SPLIT lv_low_str AT ' - ' INTO lv_low_str lv_high_str.
-        lv_low_str  = condense( lv_low_str ).
-        lv_high_str = condense( lv_high_str ).
-      ELSEIF lv_low_str CS ':'.
-        SPLIT lv_low_str AT ':' INTO lv_low_str lv_high_str.
-        lv_low_str  = condense( lv_low_str ).
-        lv_high_str = condense( lv_high_str ).
+    " Parse range (LOW - HIGH) if col4 is empty (do NOT split on ':' which breaks paths/URLs/times)
+    IF lv_high_str IS INITIAL AND lv_low_str CS ' - '.
+      SPLIT lv_low_str AT ' - ' INTO lv_low_str lv_high_str.
+      lv_low_str  = condense( lv_low_str ).
+      lv_high_str = condense( lv_high_str ).
+    ENDIF.
+
+    " Skip genuinely blank CSV value rows (avoid wiping existing values in Sync mode)
+    IF lv_low_str IS INITIAL AND lv_high_str IS INITIAL.
+      CONTINUE.
+    ENDIF.
+
+    " Strict ACTVT validation (matches 03C rules: uppercase, <=2 chars, no wildcard ranges)
+    IF lv_field = 'ACTVT'.
+      lv_low_str  = to_upper( lv_low_str ).
+      lv_high_str = to_upper( lv_high_str ).
+      DATA(lv_act_inv_rsn) = ``.
+      IF strlen( lv_low_str ) > 2 OR ( lv_high_str IS NOT INITIAL AND strlen( lv_high_str ) > 2 ).
+        lv_act_inv_rsn = |ACTVT value exceeds 2 characters for '{ lv_obj_fld }'. Skipped.|.
+      ELSEIF lv_high_str IS NOT INITIAL AND ( lv_low_str CA '*+' OR lv_high_str CA '*+' ).
+        lv_act_inv_rsn = |Wildcards are not allowed inside ACTVT range for '{ lv_obj_fld }'. Skipped.|.
+      ELSEIF lv_high_str IS NOT INITIAL AND lv_low_str > lv_high_str.
+        lv_act_inv_rsn = |Invalid ACTVT range '{ lv_low_str }-{ lv_high_str }' (low > high) for '{ lv_obj_fld }'. Skipped.|.
+      ENDIF.
+      IF lv_act_inv_rsn IS NOT INITIAL.
+        DATA(lv_act_key) = |{ lv_obj_fld }={ lv_low_str }-{ lv_high_str }|.
+        READ TABLE gt_invalid_items WITH KEY agr_name = lv_role_raw item = lv_act_key TRANSPORTING NO FIELDS.
+        IF sy-subrc <> 0.
+          APPEND VALUE ty_invalid_item(
+            agr_name = lv_role_raw
+            item     = lv_act_key
+            reason   = lv_act_inv_rsn
+          ) TO gt_invalid_items.
+        ENDIF.
+        CONTINUE.
       ENDIF.
     ENDIF.
 
@@ -500,6 +627,18 @@ FORM aggregate_input_data.
 
     lv_low  = lv_low_str.
     lv_high = lv_high_str.
+
+    " Deduplicate identical (agr_name, object, field, val_low, val_high) CSV rows
+    DATA(lv_dup_auth) = abap_false.
+    LOOP AT gt_role_auths TRANSPORTING NO FIELDS
+      WHERE agr_name = lv_role AND object = lv_object AND field = lv_field
+        AND val_low = lv_low AND val_high = lv_high.
+      lv_dup_auth = abap_true.
+      EXIT.
+    ENDLOOP.
+    IF lv_dup_auth = abap_true.
+      CONTINUE.
+    ENDIF.
 
     " Maintain Role Header count
     READ TABLE gt_roles ASSIGNING FIELD-SYMBOL(<ls_r>) WITH KEY agr_name = lv_role.
@@ -556,6 +695,15 @@ FORM process_object_update.
     APPEND ls_res TO gt_results.
   ENDLOOP.
 
+  LOOP AT gt_invalid_items INTO DATA(ls_bad_of).
+    CLEAR ls_res.
+    ls_res-status   = gc_status_err.
+    ls_res-action   = 'ERROR'.
+    ls_res-agr_name = ls_bad_of-agr_name.
+    ls_res-message  = ls_bad_of-reason.
+    APPEND ls_res TO gt_results.
+  ENDLOOP.
+
   LOOP AT gt_roles INTO DATA(ls_role).
     CLEAR: ls_res, lt_pt1250, lt_pt1251, lt_bapiret,
            lv_agr_chk, lv_parent_chk, lv_upd_cnt, lv_skip_cnt,
@@ -594,6 +742,17 @@ FORM process_object_update.
       CONTINUE.
     ENDIF.
 
+    DATA(lv_coll_flag) = VALUE agr_flags-flag_value( ).
+    SELECT SINGLE flag_value FROM agr_flags INTO @lv_coll_flag
+      WHERE agr_name = @ls_role-agr_name AND flag_type = 'COLL_AGR'.
+    IF sy-subrc = 0 AND lv_coll_flag = 'X'.
+      ls_res-status  = gc_status_warn.
+      ls_res-action  = 'COMPOSITE'.
+      ls_res-message = |Role '{ ls_role-agr_name }' is a Composite Role (no direct auth objects). Skipped.|.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
+
     ls_res-parent_agr = lv_parent_chk.
 
     " Fetch Role Description from AGR_TEXTS
@@ -602,6 +761,27 @@ FORM process_object_update.
     IF sy-subrc <> 0.
       SELECT SINGLE text FROM agr_texts INTO @ls_res-role_desc
         WHERE agr_name = @ls_role-agr_name AND line = '00000'.
+    ENDIF.
+
+    " TOCTOU Prevention (HIGH-1): Enqueue role BEFORE reading AGR_1250/1251 in Real Execution
+    DATA(lv_enq_held) = abap_false.
+    IF p_test = abap_false.
+      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+        EXPORTING
+          activity_group          = ls_role-agr_name
+          no_dialog               = 'X'
+        EXCEPTIONS
+          foreign_lock            = 1
+          transport_check_problem = 2
+          OTHERS                  = 3.
+      IF sy-subrc <> 0.
+        ls_res-status  = gc_status_err.
+        ls_res-action  = 'ERROR'.
+        ls_res-message = |Role '{ ls_role-agr_name }' is locked or cannot be enqueued (sy-subrc = { sy-subrc }).|.
+        APPEND ls_res TO gt_results.
+        CONTINUE.
+      ENDIF.
+      lv_enq_held = abap_true.
     ENDIF.
 
     " -----------------------------------------------------------------
@@ -619,6 +799,13 @@ FORM process_object_update.
         OTHERS            = 2.
 
     IF sy-subrc = 2.
+      IF lv_enq_held = abap_true.
+        CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+          EXPORTING
+            activity_group = ls_role-agr_name
+          EXCEPTIONS
+            OTHERS         = 0.
+      ENDIF.
       ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = |Failed to read AGR_1250 auth data for role '{ ls_role-agr_name }'.|.
@@ -636,6 +823,13 @@ FORM process_object_update.
         OTHERS            = 2.
 
     IF sy-subrc = 2.
+      IF lv_enq_held = abap_true.
+        CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+          EXPORTING
+            activity_group = ls_role-agr_name
+          EXCEPTIONS
+            OTHERS         = 0.
+      ENDIF.
       ls_res-status  = gc_status_err.
       ls_res-action  = 'ERROR'.
       ls_res-message = |Failed to read AGR_1251 field values for role '{ ls_role-agr_name }'.|.
@@ -659,8 +853,12 @@ FORM process_object_update.
     "    Strict Rules:
     "      - Never inject foreign objects/fields not already in role
     "      - Strictly protect Org Level fields (USORG)
+    "      - Validate ACTVT against TACTZ and enforce S_USER_VAL
     "      - Only rewrite (object, auth, field) instances that actually changed
     " -----------------------------------------------------------------
+    DATA(lv_sval_abort) = abap_false.
+    DATA(lv_sval_msg)   = ``.
+
     LOOP AT lt_distinct_of INTO DATA(ls_of).
       IF line_exists( gt_usorg_map[ field = ls_of-field ] ).
         lv_skip_cnt = lv_skip_cnt + 1.
@@ -678,18 +876,17 @@ FORM process_object_update.
       LOOP AT lt_pt1251 INTO DATA(ls_p_chk)
         WHERE object = ls_of-object AND field = ls_of-field
           AND deleted = space AND copied <> 'I'.
-        READ TABLE lt_pt1250 TRANSPORTING NO FIELDS
-          WITH KEY object = ls_p_chk-object auth = ls_p_chk-auth
-                   deleted = space.
-        IF sy-subrc = 0.
-          READ TABLE lt_pt1250 INTO DATA(ls_a50_chk)
-            WITH KEY object = ls_p_chk-object auth = ls_p_chk-auth
-                     deleted = space.
-          IF ls_a50_chk-copied <> 'I'.
-            READ TABLE lt_auth_ids WITH KEY table_line = ls_p_chk-auth TRANSPORTING NO FIELDS.
-            IF sy-subrc <> 0.
-              APPEND ls_p_chk-auth TO lt_auth_ids.
-            ENDIF.
+        DATA(lv_hdr_active) = abap_false.
+        LOOP AT lt_pt1250 TRANSPORTING NO FIELDS
+          WHERE object = ls_p_chk-object AND auth = ls_p_chk-auth
+            AND deleted = space AND copied <> 'I'.
+          lv_hdr_active = abap_true.
+          EXIT.
+        ENDLOOP.
+        IF lv_hdr_active = abap_true.
+          READ TABLE lt_auth_ids WITH KEY table_line = ls_p_chk-auth TRANSPORTING NO FIELDS.
+          IF sy-subrc <> 0.
+            APPEND ls_p_chk-auth TO lt_auth_ids.
           ENDIF.
         ENDIF.
       ENDLOOP.
@@ -702,6 +899,89 @@ FORM process_object_update.
           lv_skip_det = |{ lv_skip_det }, { ls_of-object }-{ ls_of-field }|.
         ENDIF.
         CONTINUE.
+      ENDIF.
+
+      " Validate / expand ACTVT values against SAP TACTZ for this object (MEDIUM-3)
+      DATA lt_obj_csv_vals TYPE STANDARD TABLE OF ty_role_auth.
+      CLEAR lt_obj_csv_vals.
+      IF ls_of-field = 'ACTVT' AND line_exists( gt_tactz[ brobj = ls_of-object ] ).
+        LOOP AT gt_role_auths INTO DATA(ls_tz_in)
+          WHERE agr_name = ls_role-agr_name AND object = ls_of-object AND field = 'ACTVT'.
+          DATA(lv_tz_row_cnt) = 0.
+          IF ls_tz_in-val_low = '*' AND ls_tz_in-val_high IS INITIAL.
+            READ TABLE lt_obj_csv_vals WITH KEY val_low = '*' val_high = space TRANSPORTING NO FIELDS.
+            IF sy-subrc <> 0.
+              APPEND ls_tz_in TO lt_obj_csv_vals.
+            ENDIF.
+            lv_tz_row_cnt = 1.
+          ELSEIF ls_tz_in-val_high IS NOT INITIAL.
+            LOOP AT gt_tactz INTO DATA(ls_tz_r)
+              WHERE brobj = ls_of-object
+                AND actvt >= ls_tz_in-val_low
+                AND actvt <= ls_tz_in-val_high.
+              lv_tz_row_cnt = lv_tz_row_cnt + 1.
+              READ TABLE lt_obj_csv_vals WITH KEY val_low = ls_tz_r-actvt val_high = space TRANSPORTING NO FIELDS.
+              IF sy-subrc <> 0.
+                APPEND VALUE ty_role_auth(
+                  agr_name = ls_tz_in-agr_name
+                  object   = ls_tz_in-object
+                  field    = ls_tz_in-field
+                  val_low  = ls_tz_r-actvt
+                  val_high = space
+                ) TO lt_obj_csv_vals.
+              ENDIF.
+            ENDLOOP.
+          ELSEIF ls_tz_in-val_low CA '*+'.
+            DATA(lv_tz_pat) = condense( CONV string( ls_tz_in-val_low ) ).
+            IF lv_tz_pat CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*+'.
+              REPLACE ALL OCCURRENCES OF '+' IN lv_tz_pat WITH '.'.
+              REPLACE ALL OCCURRENCES OF '*' IN lv_tz_pat WITH '.*'.
+              lv_tz_pat = '\A' && lv_tz_pat && '\z'.
+              LOOP AT gt_tactz INTO ls_tz_r WHERE brobj = ls_of-object.
+                FIND PCRE lv_tz_pat IN ls_tz_r-actvt RESPECTING CASE.
+                IF sy-subrc = 0.
+                  lv_tz_row_cnt = lv_tz_row_cnt + 1.
+                  READ TABLE lt_obj_csv_vals WITH KEY val_low = ls_tz_r-actvt val_high = space TRANSPORTING NO FIELDS.
+                  IF sy-subrc <> 0.
+                    APPEND VALUE ty_role_auth(
+                      agr_name = ls_tz_in-agr_name
+                      object   = ls_tz_in-object
+                      field    = ls_tz_in-field
+                      val_low  = ls_tz_r-actvt
+                      val_high = space
+                    ) TO lt_obj_csv_vals.
+                  ENDIF.
+                ENDIF.
+              ENDLOOP.
+            ENDIF.
+          ELSE.
+            DATA(lv_tz_str) = condense( CONV string( ls_tz_in-val_low ) ).
+            IF strlen( lv_tz_str ) <= 2
+               AND line_exists( gt_tactz[ brobj = ls_of-object actvt = ls_tz_in-val_low ] ).
+              lv_tz_row_cnt = 1.
+              READ TABLE lt_obj_csv_vals WITH KEY val_low = ls_tz_in-val_low val_high = space TRANSPORTING NO FIELDS.
+              IF sy-subrc <> 0.
+                APPEND ls_tz_in TO lt_obj_csv_vals.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+          IF lv_tz_row_cnt = 0.
+            lv_skip_cnt = lv_skip_cnt + 1.
+            IF lv_skip_det IS INITIAL.
+              lv_skip_det = |{ ls_of-object }-ACTVT={ ls_tz_in-val_low }(TACTZ)|.
+            ELSEIF strlen( lv_skip_det ) < 150.
+              lv_skip_det = |{ lv_skip_det }, { ls_of-object }-ACTVT={ ls_tz_in-val_low }(TACTZ)|.
+            ENDIF.
+          ENDIF.
+        ENDLOOP.
+        IF lt_obj_csv_vals IS INITIAL.
+          CONTINUE.
+        ENDIF.
+      ELSE.
+        LOOP AT gt_role_auths INTO DATA(ls_n_in)
+          WHERE agr_name = ls_role-agr_name AND object = ls_of-object AND field = ls_of-field.
+          APPEND ls_n_in TO lt_obj_csv_vals.
+        ENDLOOP.
       ENDIF.
 
       DATA(lv_any_inst_chg) = abap_false.
@@ -735,10 +1015,7 @@ FORM process_object_update.
           ENDLOOP.
         ENDIF.
 
-        LOOP AT gt_role_auths INTO DATA(ls_new)
-          WHERE agr_name = ls_role-agr_name
-            AND object   = ls_of-object
-            AND field    = ls_of-field.
+        LOOP AT lt_obj_csv_vals INTO DATA(ls_new).
           READ TABLE lt_target_vals WITH KEY val_low = ls_new-val_low val_high = ls_new-val_high TRANSPORTING NO FIELDS.
           IF sy-subrc <> 0.
             APPEND ls_new TO lt_target_vals.
@@ -760,6 +1037,40 @@ FORM process_object_update.
         ENDIF.
 
         IF lv_inst_chg = abap_true.
+          " S_USER_VAL check for any newly added authorization value(s)
+          LOOP AT lt_target_vals INTO DATA(ls_sv_chk).
+            READ TABLE lt_cur_inst WITH KEY low = ls_sv_chk-val_low high = ls_sv_chk-val_high
+              TRANSPORTING NO FIELDS.
+            IF sy-subrc = 0.
+              CONTINUE.
+            ENDIF.
+            DATA(lv_sv_lo) = COND xuval( WHEN ls_sv_chk-val_low = ''' ''' THEN space ELSE ls_sv_chk-val_low ).
+            AUTHORITY-CHECK OBJECT 'S_USER_VAL'
+              ID 'OBJECT'     FIELD ls_of-object
+              ID 'AUTH_FIELD' FIELD ls_of-field
+              ID 'AUTH_VALUE' FIELD lv_sv_lo.
+            IF sy-subrc <> 0.
+              lv_sval_abort = abap_true.
+              lv_sval_msg   = |No authorization (S_USER_VAL) for { ls_of-object }-{ ls_of-field } = '{ ls_sv_chk-val_low }'.|.
+              EXIT.
+            ENDIF.
+            IF ls_sv_chk-val_high IS NOT INITIAL.
+              DATA(lv_sv_hi) = COND xuval( WHEN ls_sv_chk-val_high = ''' ''' THEN space ELSE ls_sv_chk-val_high ).
+              AUTHORITY-CHECK OBJECT 'S_USER_VAL'
+                ID 'OBJECT'     FIELD ls_of-object
+                ID 'AUTH_FIELD' FIELD ls_of-field
+                ID 'AUTH_VALUE' FIELD lv_sv_hi.
+              IF sy-subrc <> 0.
+                lv_sval_abort = abap_true.
+                lv_sval_msg   = |No authorization (S_USER_VAL) for { ls_of-object }-{ ls_of-field } = '{ ls_sv_chk-val_high }'.|.
+                EXIT.
+              ENDIF.
+            ENDIF.
+          ENDLOOP.
+          IF lv_sval_abort = abap_true.
+            EXIT.
+          ENDIF.
+
           lv_any_inst_chg = abap_true.
           READ TABLE lt_target_vals INTO DATA(ls_first_nv) INDEX 1.
           IF sy-subrc = 0 AND lv_disp_val IS INITIAL.
@@ -769,41 +1080,67 @@ FORM process_object_update.
           ENDIF.
 
           " Apply in memory only for this changed (object, auth, field) instance
+          " TPR_ST_MOD: overwriting populated Standard ('S') or Changed ('M') sets 'M'; filling open sets 'G'
           READ TABLE lt_cur_inst INTO DATA(ls_tmpl) INDEX 1.
           IF sy-subrc = 0.
-            DATA(lv_fld_mod) = CONV char1( 'G' ).
-            READ TABLE lt_pt1250 ASSIGNING FIELD-SYMBOL(<ls_a50>)
-              WITH KEY object = ls_of-object auth = lv_auth_id deleted = space.
-            IF sy-subrc = 0 AND <ls_a50>-copied <> 'I'.
+            DATA(lv_overrode_std) = abap_false.
+            LOOP AT lt_cur_inst INTO DATA(ls_chk_mod).
+              IF ( ls_chk_mod-modified = 'S' AND ( ls_chk_mod-low IS NOT INITIAL OR ls_chk_mod-high IS NOT INITIAL ) )
+                 OR ls_chk_mod-modified = 'M'.
+                lv_overrode_std = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+
+            DATA(lv_fld_mod) = COND char1( WHEN lv_overrode_std = abap_true THEN 'M' ELSE 'G' ).
+            LOOP AT lt_pt1250 ASSIGNING FIELD-SYMBOL(<ls_a50>)
+              WHERE object = ls_of-object AND auth = lv_auth_id
+                AND deleted = space AND copied <> 'I'.
               IF <ls_a50>-modified = 'U'.
                 lv_fld_mod = 'U'.
-              ELSEIF <ls_a50>-modified = 'S'.
-                <ls_a50>-modified = 'G'.
-                <ls_a50>-neu      = COND #( WHEN <ls_a50>-neu IS NOT INITIAL THEN <ls_a50>-neu ELSE 'O' ).
-                lv_mod1250        = abap_true.
+              ELSEIF lv_overrode_std = abap_true.
+                lv_fld_mod = 'M'.
+                IF <ls_a50>-modified <> 'M'.
+                  <ls_a50>-modified = 'M'.
+                  <ls_a50>-neu      = COND #( WHEN <ls_a50>-neu IS NOT INITIAL THEN <ls_a50>-neu ELSE 'O' ).
+                  lv_mod1250        = abap_true.
+                ENDIF.
+              ELSE.
+                lv_fld_mod = 'G'.
+                IF <ls_a50>-modified = 'S'.
+                  <ls_a50>-modified = 'G'.
+                  <ls_a50>-neu      = COND #( WHEN <ls_a50>-neu IS NOT INITIAL THEN <ls_a50>-neu ELSE 'O' ).
+                  lv_mod1250        = abap_true.
+                ENDIF.
               ENDIF.
-            ENDIF.
+              EXIT.
+            ENDLOOP.
 
             DELETE lt_pt1251 WHERE object = ls_of-object AND auth = lv_auth_id
                                AND field = ls_of-field
                                AND deleted = space AND copied <> 'I'.
 
             LOOP AT lt_target_vals INTO DATA(ls_fv).
-              APPEND VALUE pt1251(
-                object   = ls_of-object
-                auth     = lv_auth_id
-                variant  = ls_tmpl-variant
-                field    = ls_of-field
-                low      = ls_fv-val_low
-                high     = ls_fv-val_high
-                modified = lv_fld_mod
-                neu      = COND #( WHEN ls_tmpl-neu IS NOT INITIAL THEN ls_tmpl-neu ELSE 'O' )
-                copied   = ls_tmpl-copied
-              ) TO lt_pt1251.
+              DATA(ls_new_51) = ls_tmpl.
+              ls_new_51-low      = ls_fv-val_low.
+              ls_new_51-high     = ls_fv-val_high.
+              READ TABLE lt_cur_inst INTO DATA(ls_orig_v)
+                WITH KEY low = ls_fv-val_low high = ls_fv-val_high.
+              IF sy-subrc = 0 AND ls_orig_v-modified IS NOT INITIAL.
+                ls_new_51-modified = ls_orig_v-modified.
+                ls_new_51-neu      = COND #( WHEN ls_orig_v-neu IS NOT INITIAL THEN ls_orig_v-neu ELSE 'O' ).
+              ELSE.
+                ls_new_51-modified = lv_fld_mod.
+                ls_new_51-neu      = COND #( WHEN ls_tmpl-neu IS NOT INITIAL THEN ls_tmpl-neu ELSE 'O' ).
+              ENDIF.
+              APPEND ls_new_51 TO lt_pt1251.
             ENDLOOP.
           ENDIF.
         ENDIF.
       ENDLOOP.
+      IF lv_sval_abort = abap_true.
+        EXIT.
+      ENDIF.
 
       IF lv_any_inst_chg = abap_true.
         lv_upd_cnt = lv_upd_cnt + 1.
@@ -814,6 +1151,21 @@ FORM process_object_update.
         ENDIF.
       ENDIF.
     ENDLOOP.
+
+    IF lv_sval_abort = abap_true.
+      IF lv_enq_held = abap_true.
+        CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+          EXPORTING
+            activity_group = ls_role-agr_name
+          EXCEPTIONS
+            OTHERS         = 0.
+      ENDIF.
+      ls_res-status  = gc_status_err.
+      ls_res-action  = 'ERROR'.
+      ls_res-message = lv_sval_msg.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
 
     ls_res-auth_upd_cnt  = lv_upd_cnt.
     ls_res-auth_skip_cnt = lv_skip_cnt.
@@ -832,13 +1184,16 @@ FORM process_object_update.
         ls_res-action  = 'SIMULATE'.
         ls_res-message = |[Simulated] { lv_upd_cnt } auth field(s) will be updated.|.
       ELSE.
-        ls_res-status  = gc_status_ok.
+        ls_res-status  = COND #( WHEN lv_skip_cnt > 0 THEN gc_status_warn ELSE gc_status_ok ).
         ls_res-action  = 'UP-TO-DATE'.
         ls_res-message = |[Simulated] All matching auth fields are already up-to-date.|.
       ENDIF.
 
       IF lv_skip_cnt > 0.
-        ls_res-message = |{ ls_res-message } { lv_skip_cnt } item(s) in CSV skipped (not in role / OrgLvl).|.
+        IF ls_res-status = gc_status_ok.
+          ls_res-status = gc_status_warn.
+        ENDIF.
+        ls_res-message = |{ ls_res-message } { lv_skip_cnt } item(s) in CSV skipped (not in role / OrgLvl / TACTZ).|.
       ENDIF.
 
       APPEND ls_res TO gt_results.
@@ -846,27 +1201,29 @@ FORM process_object_update.
     ENDIF.
 
     " -----------------------------------------------------------------
-    " 5. Real Run Execution (Enqueue -> Save -> Timestamp -> Commit -> Dequeue -> Gen)
+    " 5. Real Run Execution (Enqueue held from Step 2 -> Save -> Timestamp -> Commit -> Dequeue -> Gen)
     " -----------------------------------------------------------------
     IF lv_upd_cnt > 0.
-      " Ensure all Org Level fields in lt_pt1251 remain strictly bound to $VARBL before saving
-      PERFORM normalize_1251_org_bindings CHANGING lt_pt1251.
+      IF lv_enq_held = abap_false.
+        CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
+          EXPORTING
+            activity_group          = ls_role-agr_name
+            no_dialog               = 'X'
+          EXCEPTIONS
+            foreign_lock            = 1
+            transport_check_problem = 2
+            OTHERS                  = 3.
 
-      CALL FUNCTION 'PRGN_ACTIVITY_GROUP_ENQUEUE'
-        EXPORTING
-          activity_group          = ls_role-agr_name
-        EXCEPTIONS
-          foreign_lock            = 1
-          transport_check_problem = 2
-          OTHERS                  = 3.
-
-      IF sy-subrc <> 0.
-        ls_res-status  = gc_status_err.
-        ls_res-action  = 'ERROR'.
-        ls_res-message = |Role '{ ls_role-agr_name }' is locked or cannot be enqueued (sy-subrc = { sy-subrc }).|.
-        APPEND ls_res TO gt_results.
-        CONTINUE.
+        IF sy-subrc <> 0.
+          ls_res-status  = gc_status_err.
+          ls_res-action  = 'ERROR'.
+          ls_res-message = |Role '{ ls_role-agr_name }' is locked or cannot be enqueued (sy-subrc = { sy-subrc }).|.
+          APPEND ls_res TO gt_results.
+          CONTINUE.
+        ENDIF.
       ENDIF.
+
+      CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
 
       CALL FUNCTION 'PRGN_1251_SAVE_FIELD_VALUES'
         EXPORTING
@@ -905,11 +1262,13 @@ FORM process_object_update.
         CALL FUNCTION 'PRGN_SET_ACTGROUP_TIMESTAMP'
           EXPORTING
             activity_group = ls_role-agr_name
+            no_commit      = 'X'
           EXCEPTIONS
             OTHERS         = 0.
         COMMIT WORK AND WAIT.
       ELSE.
         ROLLBACK WORK.
+        CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
       ENDIF.
 
       " Crucial: Always DEQUEUE before SUPRN_DARK_MANIPULATE_PROFILE
@@ -927,8 +1286,18 @@ FORM process_object_update.
         CONTINUE.
       ENDIF.
 
-      " Regenerate Authorization Profile (only check LED when p_genprf = 'X')
-      IF p_genprf = abap_true.
+      " Skip profile generation on Master/non-derived roles with unmaintained '-1'/blank orgs (avoids false RED)
+      DATA(lv_skip_m_gen) = abap_false.
+      IF p_genprf = abap_true AND lv_parent_chk IS INITIAL.
+        SELECT SINGLE @abap_true FROM agr_1252
+          WHERE agr_name = @ls_role-agr_name AND ( low = '-1' OR low = @space )
+          INTO @lv_skip_m_gen.
+      ENDIF.
+      DATA(lv_eff_genprf) = COND abap_bool( WHEN p_genprf = abap_true AND lv_skip_m_gen = abap_false
+                                            THEN abap_true ELSE abap_false ).
+
+      " Regenerate Authorization Profile (only check LED when lv_eff_genprf = 'X')
+      IF lv_eff_genprf = abap_true.
         CLEAR lt_bapiret.
         CALL FUNCTION 'SUPRN_DARK_MANIPULATE_PROFILE'
           EXPORTING
@@ -941,7 +1310,12 @@ FORM process_object_update.
           IMPORTING
             return                = lt_bapiret
           EXCEPTIONS
-            OTHERS                = 1.
+            open_auths                     = 1
+            no_auth_for_gen                = 2
+            no_auths                       = 3
+            too_many_auths                 = 4
+            error_when_generating_profile  = 5
+            OTHERS                         = 6.
         lv_gen_subrc = sy-subrc.
 
         LOOP AT lt_bapiret INTO DATA(ls_ret) WHERE type CA 'EAX'.
@@ -951,8 +1325,27 @@ FORM process_object_update.
             lv_gen_err = |{ lv_gen_err }; { ls_ret-message }|.
           ENDIF.
         ENDLOOP.
+        IF lv_gen_subrc <> 0 AND lv_gen_err IS INITIAL.
+          IF sy-msgid IS NOT INITIAL.
+            MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO lv_gen_err.
+          ENDIF.
+          IF lv_gen_err IS INITIAL.
+            lv_gen_err = SWITCH #( lv_gen_subrc
+              WHEN 1 THEN 'Open/unmaintained authorizations or org levels'
+              WHEN 2 THEN 'Missing profile generation authorization (S_USER_PRO)'
+              WHEN 3 THEN 'No authorization data found'
+              WHEN 4 THEN 'Too many authorizations for profile'
+              ELSE |Profile generation failed (sy-subrc = { lv_gen_subrc })| ).
+          ENDIF.
+        ENDIF.
 
-        COMMIT WORK AND WAIT.
+        IF lv_gen_subrc = 0 AND lv_gen_err IS INITIAL.
+          COMMIT WORK AND WAIT.
+        ELSE.
+          ROLLBACK WORK.
+          CALL FUNCTION 'PRGN_CLEAR_BUFFER'.
+        ENDIF.
 
         SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
           WHERE agr_name = @ls_role-agr_name.
@@ -966,7 +1359,11 @@ FORM process_object_update.
           EXCEPTIONS
             OTHERS         = 1.
 
-        IF lv_gen_subrc <> 0 OR lv_gen_err IS NOT INITIAL.
+        IF lv_chk_color = 'RED'.
+          ls_res-status  = gc_status_err.
+          ls_res-action  = 'WARNING'.
+          ls_res-message = |Updated { lv_upd_cnt } auth field(s). Profile Red: { lv_gen_err } { lv_chk_msg }|.
+        ELSEIF lv_gen_subrc <> 0 OR lv_gen_err IS NOT INITIAL.
           ls_res-status  = gc_status_warn.
           ls_res-action  = 'UPDATED'.
           ls_res-message = |Updated { lv_upd_cnt } auth field(s). Profile warning: { lv_gen_err } { lv_chk_msg }|.
@@ -978,10 +1375,6 @@ FORM process_object_update.
           ls_res-status  = gc_status_warn.
           ls_res-action  = 'UPDATED'.
           ls_res-message = |Updated { lv_upd_cnt } auth field(s). Profile Yellow: { lv_chk_msg }|.
-        ELSEIF lv_chk_color = 'RED'.
-          ls_res-status  = gc_status_err.
-          ls_res-action  = 'WARNING'.
-          ls_res-message = |Updated { lv_upd_cnt } auth field(s). Profile Red: { lv_chk_msg }|.
         ELSE.
           ls_res-status  = gc_status_ok.
           ls_res-action  = 'UPDATED'.
@@ -992,22 +1385,36 @@ FORM process_object_update.
           WHERE agr_name = @ls_role-agr_name.
         ls_res-status  = gc_status_ok.
         ls_res-action  = 'UPDATED'.
-        ls_res-message = |Updated { lv_upd_cnt } auth field(s). Profile regeneration skipped.|.
+        IF lv_skip_m_gen = abap_true AND p_genprf = abap_true.
+          ls_res-message = |Updated { lv_upd_cnt } auth field(s) on Master Role (unmaintained '-1' orgs: profile generation skipped).|.
+        ELSE.
+          ls_res-message = |Updated { lv_upd_cnt } auth field(s). Profile regeneration skipped.|.
+        ENDIF.
       ENDIF.
 
       IF lv_skip_cnt > 0.
-        ls_res-message = |{ ls_res-message } { lv_skip_cnt } item(s) in CSV skipped (not in role / OrgLvl).|.
+        IF ls_res-status = gc_status_ok.
+          ls_res-status = gc_status_warn.
+        ENDIF.
+        ls_res-message = |{ ls_res-message } { lv_skip_cnt } item(s) in CSV skipped (not in role / OrgLvl / TACTZ).|.
       ENDIF.
 
     ELSE.
+      IF lv_enq_held = abap_true.
+        CALL FUNCTION 'PRGN_ACTIVITY_GROUP_DEQUEUE'
+          EXPORTING
+            activity_group = ls_role-agr_name
+          EXCEPTIONS
+            OTHERS         = 0.
+      ENDIF.
       SELECT SINGLE profile FROM agr_1016 INTO @ls_res-profile
         WHERE agr_name = @ls_role-agr_name.
 
-      ls_res-status  = gc_status_ok.
+      ls_res-status  = COND #( WHEN lv_skip_cnt > 0 THEN gc_status_warn ELSE gc_status_ok ).
       ls_res-action  = 'UP-TO-DATE'.
       ls_res-message = |All matching auth fields in role are already up-to-date.|.
       IF lv_skip_cnt > 0.
-        ls_res-message = |{ ls_res-message } { lv_skip_cnt } item(s) in CSV skipped (not in role / OrgLvl).|.
+        ls_res-message = |{ ls_res-message } { lv_skip_cnt } item(s) in CSV skipped (not in role / OrgLvl / TACTZ).|.
       ENDIF.
     ENDIF.
 
@@ -1167,43 +1574,4 @@ FORM display_alv_results.
     CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx_salv_err).
       MESSAGE lx_salv_err->get_text( ) TYPE 'E'.
   ENDTRY.
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form normalize_1251_org_bindings
-*&---------------------------------------------------------------------*
-* Ensures all active Org Level fields in lt_pt1251 remain strictly bound
-* to $VARBL (MODIFIED = 'S', NEU = 'O') and deduplicated per (object, auth, field).
-*&---------------------------------------------------------------------*
-FORM normalize_1251_org_bindings CHANGING ct_pt1251 TYPE STANDARD TABLE.
-  DATA: lt_clean    TYPE STANDARD TABLE OF pt1251,
-        lt_seen_key TYPE HASHED TABLE OF string WITH UNIQUE KEY table_line,
-        ls_f51      TYPE pt1251,
-        lv_key      TYPE string.
-
-  IF gt_usorg_map IS INITIAL OR ct_pt1251 IS INITIAL.
-    RETURN.
-  ENDIF.
-
-  LOOP AT ct_pt1251 INTO ls_f51.
-    IF ls_f51-deleted = space AND ls_f51-copied <> 'I'.
-      READ TABLE gt_usorg_map INTO DATA(ls_uo) WITH TABLE KEY field = ls_f51-field.
-      IF sy-subrc = 0.
-        lv_key = |{ ls_f51-object }:{ ls_f51-auth }:{ ls_f51-field }|.
-        IF line_exists( lt_seen_key[ table_line = lv_key ] ).
-          CONTINUE.
-        ENDIF.
-        INSERT lv_key INTO TABLE lt_seen_key.
-        IF ls_f51-low <> ls_uo-varbl OR ls_f51-high IS NOT INITIAL
-           OR ls_f51-modified <> 'S' OR ls_f51-neu <> 'O'.
-          ls_f51-low      = ls_uo-varbl.
-          ls_f51-high     = space.
-          ls_f51-modified = 'S'.
-          ls_f51-neu      = 'O'.
-        ENDIF.
-      ENDIF.
-    ENDIF.
-    APPEND ls_f51 TO lt_clean.
-  ENDLOOP.
-  ct_pt1251 = lt_clean.
 ENDFORM.

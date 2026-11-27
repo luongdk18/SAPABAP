@@ -38,6 +38,7 @@ TYPES: ty_bin_255      TYPE x LENGTH 255,
 TYPES: BEGIN OF ty_user_csv,
          raw_username  TYPE string,
          username      TYPE bapibname-bapibname,
+         raw_password  TYPE string,
          password      TYPE bapipwd-bapipwd,
          fullname      TYPE string,
          email         TYPE bapiaddr3-e_mail,
@@ -45,6 +46,10 @@ TYPES: BEGIN OF ty_user_csv,
          phone         TYPE bapiaddr3-tel1_numbr,
          department    TYPE bapiaddr3-department,
          function      TYPE bapiaddr3-function,
+         has_email_col TYPE abap_bool,
+         has_phone_col TYPE abap_bool,
+         has_dept_col  TYPE abap_bool,
+         has_func_col  TYPE abap_bool,
        END OF ty_user_csv.
 
 TYPES: BEGIN OF ty_alv_result,
@@ -246,13 +251,15 @@ AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
   PERFORM f4_file_open CHANGING p_file.
 
 AT SELECTION-SCREEN ON p_file.
-  PERFORM validate_filename USING p_file.
+  DATA lv_file_ok TYPE abap_bool.
+  PERFORM validate_filename USING p_file abap_false CHANGING lv_file_ok.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_pfile.
   PERFORM f4_param_file_open CHANGING p_pfile.
 
 AT SELECTION-SCREEN ON p_pfile.
-  PERFORM validate_param_filename USING p_pfile.
+  DATA lv_pfile_ok TYPE abap_bool.
+  PERFORM validate_param_filename USING p_pfile abap_false CHANGING lv_pfile_ok.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_comp.
   PERFORM f4_company CHANGING p_comp.
@@ -263,8 +270,8 @@ AT SELECTION-SCREEN.
   ENDIF.
   IF p_pfile IS INITIAL.
     CLEAR gv_loaded_pfile.
-  ELSEIF p_pfile <> gv_loaded_pfile OR ( p_pid01 IS INITIAL AND p_pid02 IS INITIAL ).
-    PERFORM load_param_file_to_screen USING p_pfile abap_false.
+  ELSEIF p_uppar = abap_true AND p_pfile <> gv_loaded_pfile AND sy-batch IS INITIAL.
+    PERFORM load_param_file_to_screen USING p_pfile abap_false abap_false.
   ENDIF.
   PERFORM validate_screen_params.
 
@@ -316,7 +323,8 @@ FORM f4_file_open CHANGING cv_file TYPE localfile.
   DATA: lv_picked    TYPE localfile,
         lv_cand      TYPE string,
         lv_off       TYPE i,
-        lv_exists_pf TYPE abap_bool.
+        lv_exists_pf TYPE abap_bool,
+        lv_valid     TYPE abap_bool.
 
   PERFORM open_csv_dialog
     USING    'Select Users CSV File (.csv)'
@@ -327,7 +335,10 @@ FORM f4_file_open CHANGING cv_file TYPE localfile.
     RETURN.
   ENDIF.
 
-  PERFORM validate_filename USING lv_picked.
+  PERFORM validate_filename USING lv_picked abap_true CHANGING lv_valid.
+  IF lv_valid = abap_false.
+    RETURN.
+  ENDIF.
   cv_file = lv_picked.
 
   IF p_pfile IS INITIAL.
@@ -355,7 +366,7 @@ FORM f4_file_open CHANGING cv_file TYPE localfile.
           OTHERS = 1 ).
       IF sy-subrc = 0 AND lv_exists_pf = abap_true.
         p_pfile = lv_cand.
-        PERFORM load_param_file_to_screen USING p_pfile abap_true.
+        PERFORM load_param_file_to_screen USING p_pfile abap_true abap_true.
       ENDIF.
     ENDIF.
   ENDIF.
@@ -365,7 +376,8 @@ ENDFORM.
 *& Form f4_param_file_open
 *&---------------------------------------------------------------------*
 FORM f4_param_file_open CHANGING cv_file TYPE localfile.
-  DATA: lv_picked TYPE localfile.
+  DATA: lv_picked TYPE localfile,
+        lv_valid  TYPE abap_bool.
 
   PERFORM open_csv_dialog
     USING    'Select User Parameter CSV File (.csv)'
@@ -373,8 +385,11 @@ FORM f4_param_file_open CHANGING cv_file TYPE localfile.
     CHANGING lv_picked.
 
   IF lv_picked IS NOT INITIAL.
-    PERFORM validate_param_filename USING lv_picked.
-    PERFORM load_param_file_to_screen USING lv_picked abap_true.
+    PERFORM validate_param_filename USING lv_picked abap_true CHANGING lv_valid.
+    IF lv_valid = abap_false.
+      RETURN.
+    ENDIF.
+    PERFORM load_param_file_to_screen USING lv_picked abap_true abap_false.
     cv_file = lv_picked.
   ENDIF.
 ENDFORM.
@@ -405,9 +420,13 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *& Form validate_filename
 *&---------------------------------------------------------------------*
-FORM validate_filename USING iv_file TYPE localfile.
-  DATA: lv_fname TYPE string.
+FORM validate_filename USING    iv_file   TYPE localfile
+                                iv_in_pov TYPE abap_bool
+                       CHANGING ev_ok     TYPE abap_bool.
+  DATA: lv_fname TYPE string,
+        lv_msg   TYPE string.
 
+  ev_ok = abap_true.
   IF iv_file IS INITIAL.
     RETURN.
   ENDIF.
@@ -416,7 +435,14 @@ FORM validate_filename USING iv_file TYPE localfile.
 
   DATA(lv_up) = to_upper( condense( lv_fname ) ).
   IF strlen( lv_up ) <= 4 OR NOT ( lv_up CP '*.CSV' ).
-    MESSAGE |Invalid file '{ lv_fname }'. Expected CSV file (*_01_Create_converted.csv).| TYPE 'E'.
+    ev_ok  = abap_false.
+    lv_msg = |Invalid file '{ lv_fname }'. Expected CSV file (*_01_Create_converted.csv).|.
+    IF iv_in_pov = abap_true.
+      MESSAGE lv_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_msg TYPE 'E'.
+    ENDIF.
+    RETURN.
   ENDIF.
 
   DATA(lv_name_ok) = abap_false.
@@ -431,16 +457,26 @@ FORM validate_filename USING iv_file TYPE localfile.
     lv_name_ok = abap_false.
   ENDIF.
   IF lv_name_ok = abap_false.
-    MESSAGE |Invalid file '{ lv_fname }' for Z_USER_01_CREATE. Expected '*_01_Create_converted.csv'.| TYPE 'E'.
+    ev_ok  = abap_false.
+    lv_msg = |Invalid file '{ lv_fname }' for Z_USER_01_CREATE. Expected '*_01_Create_converted.csv'.|.
+    IF iv_in_pov = abap_true.
+      MESSAGE lv_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_msg TYPE 'E'.
+    ENDIF.
   ENDIF.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Form validate_param_filename
 *&---------------------------------------------------------------------*
-FORM validate_param_filename USING iv_file TYPE localfile.
-  DATA: lv_fname TYPE string.
+FORM validate_param_filename USING    iv_file   TYPE localfile
+                                      iv_in_pov TYPE abap_bool
+                             CHANGING ev_ok     TYPE abap_bool.
+  DATA: lv_fname TYPE string,
+        lv_msg   TYPE string.
 
+  ev_ok = abap_true.
   IF iv_file IS INITIAL.
     RETURN.
   ENDIF.
@@ -449,7 +485,14 @@ FORM validate_param_filename USING iv_file TYPE localfile.
 
   DATA(lv_up) = to_upper( condense( lv_fname ) ).
   IF strlen( lv_up ) <= 4 OR NOT ( lv_up CP '*.CSV' ).
-    MESSAGE |Invalid file '{ lv_fname }'. Expected Parameter CSV (*_Create_Parameter_converted.csv).| TYPE 'E'.
+    ev_ok  = abap_false.
+    lv_msg = |Invalid file '{ lv_fname }'. Expected Parameter CSV (*_Create_Parameter_converted.csv).|.
+    IF iv_in_pov = abap_true.
+      MESSAGE lv_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_msg TYPE 'E'.
+    ENDIF.
+    RETURN.
   ENDIF.
 
   DATA(lv_name_ok) = abap_false.
@@ -462,7 +505,13 @@ FORM validate_param_filename USING iv_file TYPE localfile.
     lv_name_ok = abap_false.
   ENDIF.
   IF lv_name_ok = abap_false.
-    MESSAGE |Invalid file '{ lv_fname }' for Parameter upload. Expected '*_Create_Parameter_converted.csv'.| TYPE 'E'.
+    ev_ok  = abap_false.
+    lv_msg = |Invalid file '{ lv_fname }' for Parameter upload. Expected '*_Create_Parameter_converted.csv'.|.
+    IF iv_in_pov = abap_true.
+      MESSAGE lv_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_msg TYPE 'E'.
+    ENDIF.
   ENDIF.
 ENDFORM.
 
@@ -530,14 +579,16 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *& Form read_local_csv_lines
 *&---------------------------------------------------------------------*
-FORM read_local_csv_lines USING    iv_file  TYPE localfile
-                          CHANGING et_lines TYPE string_table.
+FORM read_local_csv_lines USING    iv_file     TYPE localfile
+                                   iv_soft_err TYPE abap_bool
+                          CHANGING et_lines    TYPE string_table
+                                   ev_err      TYPE string.
   DATA: lv_filepath   TYPE string,
         lt_binary_tab TYPE STANDARD TABLE OF ty_bin_255,
         lv_length     TYPE i,
         lv_content    TYPE string.
 
-  CLEAR et_lines.
+  CLEAR: et_lines, ev_err.
   lv_filepath = iv_file.
 
   " Upload file in BIN mode to preserve raw UTF-8 bytes (Vietnamese diacritics)
@@ -561,11 +612,23 @@ FORM read_local_csv_lines USING    iv_file  TYPE localfile
       OTHERS                  = 9 ).
 
   IF sy-subrc <> 0.
-    MESSAGE 'Failed to read CSV file from client workstation.' TYPE 'E'.
+    ev_err = 'Failed to read CSV file from client workstation.'.
+    IF iv_soft_err = abap_true.
+      MESSAGE ev_err TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE ev_err TYPE 'E'.
+    ENDIF.
+    RETURN.
   ENDIF.
 
   IF lv_length <= 0.
-    MESSAGE 'Selected file is empty.' TYPE 'E'.
+    ev_err = 'Selected file is empty.'.
+    IF iv_soft_err = abap_true.
+      MESSAGE ev_err TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE ev_err TYPE 'E'.
+    ENDIF.
+    RETURN.
   ENDIF.
 
   " Convert binary buffer to UTF-8 string
@@ -592,7 +655,13 @@ FORM read_local_csv_lines USING    iv_file  TYPE localfile
       EXCEPTIONS
         OTHERS       = 1.
     IF sy-subrc <> 0.
-      MESSAGE 'Failed to decode CSV file content (check UTF-8 encoding).' TYPE 'E'.
+      ev_err = 'Failed to decode CSV file content (check UTF-8 encoding).'.
+      IF iv_soft_err = abap_true.
+        MESSAGE ev_err TYPE 'S' DISPLAY LIKE 'E'.
+      ELSE.
+        MESSAGE ev_err TYPE 'E'.
+      ENDIF.
+      RETURN.
     ENDIF.
   ENDIF.
 
@@ -626,19 +695,32 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
         ls_user        TYPE ty_user_csv,
         lt_tokens      TYPE string_table,
         lv_c1          TYPE string,
-        lv_pwd_col_idx TYPE i.
+        lv_email_col   TYPE i VALUE 3,
+        lv_phone_col   TYPE i VALUE 4,
+        lv_dept_col    TYPE i VALUE 5,
+        lv_func_col    TYPE i VALUE 6,
+        lv_pwd_col_idx TYPE i,
+        lv_has_header  TYPE abap_bool VALUE abap_false.
 
-  PERFORM read_local_csv_lines USING iv_file CHANGING lt_lines.
+  DATA lv_read_err TYPE string.
+  PERFORM read_local_csv_lines USING iv_file abap_false CHANGING lt_lines lv_read_err.
 
-  CLEAR: lv_line_idx, lv_pwd_col_idx.
+  DATA: lv_file_delim TYPE c LENGTH 1 VALUE ',',
+        lv_delim_set  TYPE abap_bool VALUE abap_false.
+  CLEAR: lv_line_idx, lv_pwd_col_idx, lv_has_header.
 
   LOOP AT lt_lines INTO lv_line.
-    lv_line_idx = lv_line_idx + 1.
     IF lv_line IS INITIAL.
       CONTINUE.
     ENDIF.
+    lv_line_idx = lv_line_idx + 1.
 
-    PERFORM parse_csv_line USING lv_line
+    IF lv_delim_set = abap_false.
+      PERFORM detect_csv_delimiter USING lv_line CHANGING lv_file_delim.
+      lv_delim_set = abap_true.
+    ENDIF.
+
+    PERFORM parse_csv_line USING lv_line lv_file_delim
                            CHANGING lt_tokens.
 
     IF lt_tokens IS INITIAL.
@@ -646,6 +728,7 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
     ENDIF.
 
     READ TABLE lt_tokens INTO lv_c1 INDEX 1.
+    PERFORM clean_cell CHANGING lv_c1.
     DATA(lv_c1_up) = to_upper( lv_c1 ).
 
     " Validate header row against wrong CSV types
@@ -659,14 +742,50 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
       ENDIF.
     ENDIF.
 
-    " Check and skip header row
-    IF lv_line_idx = 1 AND ( lv_c1_up CS 'USER' OR lv_c1_up CS 'NAME' OR lv_c1_up CS 'BNAME' ).
+    " Map columns from header row so Password column NEVER leaks into Phone/Dept/Func
+    IF lv_line_idx = 1 AND ( lv_c1_up = 'USERNAME' OR lv_c1_up = 'USER NAME'
+       OR lv_c1_up = 'USER' OR lv_c1_up = 'USER ID' OR lv_c1_up = 'BNAME' ).
+      lv_has_header = abap_true.
+      CLEAR: lv_email_col, lv_phone_col, lv_dept_col, lv_func_col, lv_pwd_col_idx.
       LOOP AT lt_tokens INTO DATA(lv_hdr_tok).
-        DATA(lv_hdr_up) = to_upper( lv_hdr_tok ).
-        IF lv_hdr_up CS 'PASS' OR lv_hdr_up CS 'PWD' OR lv_hdr_up CS 'MẬT' OR lv_hdr_up CS 'MAT'.
-          lv_pwd_col_idx = sy-tabix.
+        DATA(lv_col_num) = sy-tabix.
+        DATA(lv_hdr_up) = to_upper( condense( lv_hdr_tok ) ).
+        IF lv_col_num = 1 OR lv_col_num = 2.
+          CONTINUE.
+        ENDIF.
+        IF lv_hdr_up CS 'PASS' OR lv_hdr_up CS 'PWD'
+           OR lv_hdr_up CS 'MẬT KHẨU' OR lv_hdr_up CS 'MAT KHAU'.
+          IF lv_pwd_col_idx = 0.
+            lv_pwd_col_idx = lv_col_num.
+          ENDIF.
+        ELSEIF lv_hdr_up CS 'EMAIL' OR lv_hdr_up CS 'E-MAIL' OR lv_hdr_up CS 'MAIL'.
+          IF lv_email_col = 0.
+            lv_email_col = lv_col_num.
+          ENDIF.
+        ELSEIF lv_hdr_up CS 'PHONE' OR lv_hdr_up CS 'TEL' OR lv_hdr_up CS 'MOBILE'.
+          IF lv_phone_col = 0.
+            lv_phone_col = lv_col_num.
+          ENDIF.
+        ELSEIF lv_hdr_up CS 'DEPT' OR lv_hdr_up CS 'DEPARTMENT'.
+          IF lv_dept_col = 0.
+            lv_dept_col = lv_col_num.
+          ENDIF.
+        ELSEIF lv_hdr_up CS 'FUNC' OR lv_hdr_up CS 'FUNCTION' OR lv_hdr_up CS 'TITLE'.
+          IF lv_func_col = 0.
+            lv_func_col = lv_col_num.
+          ENDIF.
         ENDIF.
       ENDLOOP.
+      " Positional fallback ONLY for columns strictly before Password column if header used non-standard labels
+      DATA(lv_max_pos) = COND i(
+        WHEN lv_pwd_col_idx > 0 AND lv_pwd_col_idx <= 6 THEN lv_pwd_col_idx - 1
+        ELSE 6 ).
+      IF lv_email_col = 0 AND lv_phone_col = 0 AND lv_dept_col = 0 AND lv_func_col = 0.
+        IF lv_max_pos >= 3. lv_email_col = 3. ENDIF.
+        IF lv_max_pos >= 4. lv_phone_col = 4. ENDIF.
+        IF lv_max_pos >= 5. lv_dept_col  = 5. ENDIF.
+        IF lv_max_pos >= 6. lv_func_col  = 6. ENDIF.
+      ENDIF.
       CONTINUE.
     ENDIF.
     IF lv_c1_up = 'USERNAME' OR lv_c1_up = 'USER' OR lv_c1_up = 'BNAME'.
@@ -676,10 +795,9 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
     IF lv_c1 IS NOT INITIAL.
       DATA: lv_raw_user TYPE string,
             lv_pwd_val  TYPE string,
-            lv_last_tok TYPE string,
-            lv_num_tok  TYPE i.
+            lv_tok_tmp  TYPE string.
 
-      CLEAR: ls_user, lv_raw_user, lv_pwd_val, lv_last_tok, lv_num_tok.
+      CLEAR: ls_user, lv_raw_user, lv_pwd_val, lv_tok_tmp.
       lv_raw_user = lv_c1_up.
       CONDENSE lv_raw_user NO-GAPS.
       ls_user-raw_username = lv_raw_user.
@@ -687,37 +805,54 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
         ls_user-username = lv_raw_user.
       ENDIF.
 
-      READ TABLE lt_tokens INTO ls_user-fullname   INDEX 2.
-      READ TABLE lt_tokens INTO ls_user-email      INDEX 3.
-      READ TABLE lt_tokens INTO ls_user-phone      INDEX 4.
-      READ TABLE lt_tokens INTO ls_user-department INDEX 5.
-      READ TABLE lt_tokens INTO ls_user-function   INDEX 6.
+      DATA(lv_tok_cnt) = lines( lt_tokens ).
+      IF lv_tok_cnt >= 2.
+        lv_tok_tmp = lt_tokens[ 2 ].
+        PERFORM clean_cell CHANGING lv_tok_tmp.
+        ls_user-fullname = lv_tok_tmp.
+      ENDIF.
+      IF lv_email_col > 0 AND lv_email_col <> lv_pwd_col_idx AND lv_tok_cnt >= lv_email_col.
+        lv_tok_tmp = lt_tokens[ lv_email_col ].
+        PERFORM clean_cell CHANGING lv_tok_tmp.
+        ls_user-email         = lv_tok_tmp.
+        ls_user-has_email_col = abap_true.
+      ENDIF.
+      IF lv_phone_col > 0 AND lv_phone_col <> lv_pwd_col_idx AND lv_tok_cnt >= lv_phone_col.
+        lv_tok_tmp = lt_tokens[ lv_phone_col ].
+        PERFORM clean_cell CHANGING lv_tok_tmp.
+        ls_user-phone         = lv_tok_tmp.
+        ls_user-has_phone_col = abap_true.
+      ENDIF.
+      IF lv_dept_col > 0 AND lv_dept_col <> lv_pwd_col_idx AND lv_tok_cnt >= lv_dept_col.
+        lv_tok_tmp = lt_tokens[ lv_dept_col ].
+        PERFORM clean_cell CHANGING lv_tok_tmp.
+        ls_user-department   = lv_tok_tmp.
+        ls_user-has_dept_col = abap_true.
+      ENDIF.
+      IF lv_func_col > 0 AND lv_func_col <> lv_pwd_col_idx AND lv_tok_cnt >= lv_func_col.
+        lv_tok_tmp = lt_tokens[ lv_func_col ].
+        PERFORM clean_cell CHANGING lv_tok_tmp.
+        ls_user-function     = lv_tok_tmp.
+        ls_user-has_func_col = abap_true.
+      ENDIF.
 
-      " Read Initial Password from the mapped or last column (strictly check sy-subrc)
-      lv_num_tok = lines( lt_tokens ).
+      " Read Initial Password verbatim (NO condense / NO double-quote stripping; check >40 char overflow!)
       IF lv_pwd_col_idx > 0.
         READ TABLE lt_tokens INTO lv_pwd_val INDEX lv_pwd_col_idx.
-        IF sy-subrc = 0.
-          CONDENSE lv_pwd_val NO-GAPS.
-          ls_user-password = lv_pwd_val.
-        ENDIF.
-      ELSEIF lv_num_tok >= 7.
-        " No explicit header: read last column (Col 7 or final non-empty token >= 7)
-        READ TABLE lt_tokens INTO lv_last_tok INDEX lv_num_tok.
-        IF sy-subrc = 0.
-          CONDENSE lv_last_tok NO-GAPS.
-        ELSE.
-          CLEAR lv_last_tok.
-        ENDIF.
-        IF lv_last_tok IS INITIAL AND lv_num_tok > 7.
-          READ TABLE lt_tokens INTO lv_last_tok INDEX 7.
-          IF sy-subrc = 0.
-            CONDENSE lv_last_tok NO-GAPS.
-          ELSE.
-            CLEAR lv_last_tok.
+        IF sy-subrc = 0 AND NOT ( lv_pwd_val CO ' ' ).
+          ls_user-raw_password = lv_pwd_val.
+          IF strlen( lv_pwd_val ) <= 40.
+            ls_user-password = lv_pwd_val.
           ENDIF.
         ENDIF.
-        ls_user-password = lv_last_tok.
+      ELSEIF lv_has_header = abap_false AND lv_tok_cnt >= 7.
+        READ TABLE lt_tokens INTO lv_pwd_val INDEX 7.
+        IF sy-subrc = 0 AND NOT ( lv_pwd_val CO ' ' ).
+          ls_user-raw_password = lv_pwd_val.
+          IF strlen( lv_pwd_val ) <= 40.
+            ls_user-password = lv_pwd_val.
+          ENDIF.
+        ENDIF.
       ENDIF.
 
       APPEND ls_user TO gt_users.
@@ -730,31 +865,25 @@ FORM upload_and_parse_file USING iv_file TYPE localfile.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
-*& Form parse_csv_line
+*& Form detect_csv_delimiter
 *&---------------------------------------------------------------------*
-FORM parse_csv_line USING    iv_line   TYPE string
-                    CHANGING et_tokens TYPE string_table.
+FORM detect_csv_delimiter USING    iv_line  TYPE string
+                          CHANGING ev_delim TYPE c.
   DATA: lv_len      TYPE i,
         lv_pos      TYPE i,
         lv_in_q     TYPE abap_bool VALUE abap_false,
-        lv_cur      TYPE string,
+        lv_at_start TYPE abap_bool VALUE abap_true,
         lv_char     TYPE string,
         lv_next     TYPE string,
-        lv_delim    TYPE c LENGTH 1,
         lv_cnt_tab  TYPE i,
         lv_cnt_semi TYPE i,
         lv_cnt_com  TYPE i.
 
-  CLEAR et_tokens.
-
   lv_len = strlen( iv_line ).
-
-  " Pass 1: Detect primary delimiter outside quotes (TAB > ';' > ',')
   lv_pos = 0.
-  lv_in_q = abap_false.
   WHILE lv_pos < lv_len.
     lv_char = substring( val = iv_line off = lv_pos len = 1 ).
-    IF lv_char = '"'.
+    IF lv_char = '"' AND ( lv_in_q = abap_true OR lv_at_start = abap_true ).
       IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
         lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
         IF lv_next = '"'.
@@ -763,34 +892,62 @@ FORM parse_csv_line USING    iv_line   TYPE string
         ENDIF.
       ENDIF.
       lv_in_q = xsdbool( lv_in_q = abap_false ).
+      lv_at_start = abap_false.
     ELSEIF lv_in_q = abap_false.
       IF lv_char = cl_abap_char_utilities=>horizontal_tab.
         lv_cnt_tab = lv_cnt_tab + 1.
+        lv_at_start = abap_true.
       ELSEIF lv_char = ';'.
         lv_cnt_semi = lv_cnt_semi + 1.
+        lv_at_start = abap_true.
       ELSEIF lv_char = ','.
         lv_cnt_com = lv_cnt_com + 1.
+        lv_at_start = abap_true.
+      ELSE.
+        lv_at_start = abap_false.
       ENDIF.
     ENDIF.
     lv_pos = lv_pos + 1.
   ENDWHILE.
 
   IF lv_cnt_tab > 0.
-    lv_delim = cl_abap_char_utilities=>horizontal_tab.
+    ev_delim = cl_abap_char_utilities=>horizontal_tab.
   ELSEIF lv_cnt_semi > 0 AND lv_cnt_semi >= lv_cnt_com.
-    lv_delim = ';'.
+    ev_delim = ';'.
   ELSE.
+    ev_delim = ','.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form parse_csv_line
+*&---------------------------------------------------------------------*
+FORM parse_csv_line USING    iv_line   TYPE string
+                             iv_delim  TYPE c
+                    CHANGING et_tokens TYPE string_table.
+  DATA: lv_len   TYPE i,
+        lv_pos   TYPE i,
+        lv_in_q  TYPE abap_bool VALUE abap_false,
+        lv_cur   TYPE string,
+        lv_char  TYPE string,
+        lv_next  TYPE string,
+        lv_delim TYPE c LENGTH 1.
+
+  CLEAR et_tokens.
+
+  lv_delim = iv_delim.
+  IF lv_delim IS INITIAL.
     lv_delim = ','.
   ENDIF.
 
-  " Pass 2: Tokenize with RFC 4180 escaped-quote support and space preservation
+  lv_len = strlen( iv_line ).
   lv_pos = 0.
   lv_in_q = abap_false.
   CLEAR lv_cur.
   WHILE lv_pos < lv_len.
     lv_char = substring( val = iv_line off = lv_pos len = 1 ).
-    IF lv_char = '"'.
-      IF lv_in_q = abap_true AND lv_pos + 1 < lv_len.
+    IF lv_char = '"' AND lv_in_q = abap_true.
+      IF lv_pos + 1 < lv_len.
         lv_next = substring( val = iv_line off = lv_pos + 1 len = 1 ).
         IF lv_next = '"'.
           lv_cur = lv_cur && '"'.
@@ -798,7 +955,9 @@ FORM parse_csv_line USING    iv_line   TYPE string
           CONTINUE.
         ENDIF.
       ENDIF.
-      lv_in_q = xsdbool( lv_in_q = abap_false ).
+      lv_in_q = abap_false.
+    ELSEIF lv_char = '"' AND lv_in_q = abap_false AND lv_cur IS INITIAL.
+      lv_in_q = abap_true.
     ELSEIF lv_char = lv_delim AND lv_in_q = abap_false.
       APPEND lv_cur TO et_tokens.
       CLEAR lv_cur.
@@ -808,30 +967,13 @@ FORM parse_csv_line USING    iv_line   TYPE string
     lv_pos = lv_pos + 1.
   ENDWHILE.
   APPEND lv_cur TO et_tokens.
-
-  " Clean quotes and trim outer spaces for each token
-  LOOP AT et_tokens ASSIGNING FIELD-SYMBOL(<lv_tok>).
-    PERFORM clean_cell CHANGING <lv_tok>.
-  ENDLOOP.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Form clean_cell
 *&---------------------------------------------------------------------*
 FORM clean_cell CHANGING cv_val TYPE string.
-  CONDENSE cv_val.
-  DATA(lv_len) = strlen( cv_val ).
-  IF lv_len >= 2.
-    DATA(lv_last_off) = lv_len - 1.
-    IF cv_val(1) = '"' AND substring( val = cv_val off = lv_last_off len = 1 ) = '"'.
-      DATA(lv_inner_len) = lv_len - 2.
-      IF lv_inner_len > 0.
-        cv_val = substring( val = cv_val off = 1 len = lv_inner_len ).
-      ELSE.
-        CLEAR cv_val.
-      ENDIF.
-    ENDIF.
-  ENDIF.
+  " RFC 4180 quotes were already decoded in parse_csv_line; only normalize surrounding spaces
   CONDENSE cv_val.
 ENDFORM.
 
@@ -839,13 +981,14 @@ ENDFORM.
 *& Form process_users
 *&---------------------------------------------------------------------*
 FORM process_users.
-  DATA: ls_res     TYPE ty_alv_result,
-        lv_exists  TYPE abap_bool,
-        lt_return  TYPE STANDARD TABLE OF bapiret2,
-        lv_errmsg  TYPE string,
-        lv_has_err TYPE abap_bool.
+  DATA: ls_res        TYPE ty_alv_result,
+        lv_exists     TYPE abap_bool,
+        lt_return     TYPE STANDARD TABLE OF bapiret2,
+        lt_seen_users TYPE HASHED TABLE OF bapibname-bapibname WITH UNIQUE KEY table_line,
+        lv_errmsg     TYPE string,
+        lv_has_err    TYPE abap_bool.
 
-  CLEAR gt_results.
+  CLEAR: gt_results, lt_seen_users.
 
   LOOP AT gt_users INTO DATA(ls_user).
     DATA: lv_clean_email TYPE bapiaddr3-e_mail,
@@ -882,12 +1025,33 @@ FORM process_users.
       CONTINUE.
     ENDIF.
 
+    " Validation 2b: Detect duplicate usernames in the same CSV batch
+    IF line_exists( lt_seen_users[ table_line = ls_user-username ] ).
+      ls_res-status     = gc_status_err.
+      ls_res-action     = 'ERROR'.
+      ls_res-username   = ls_user-username.
+      ls_res-fullname   = ls_user-fullname.
+      ls_res-email      = ls_user-email.
+      ls_res-phone      = ls_user-phone.
+      ls_res-department = ls_user-department.
+      ls_res-function   = ls_user-function.
+      ls_res-message    = 'Duplicate username in CSV upload batch; skipped to preserve earlier row.'.
+      APPEND ls_res TO gt_results.
+      CONTINUE.
+    ENDIF.
+    INSERT ls_user-username INTO TABLE lt_seen_users.
+
+    " Warn when Full Name exceeds SAP BAPIADDR3-LASTNAME 40-char limit
+    IF strlen( ls_user-fullname ) > 40.
+      lv_email_note = |{ lv_email_note } [WARN: Full Name truncated to 40 chars]|.
+    ENDIF.
+
     " Validate email: if invalid, ignore it without overwriting existing SAP email
     IF ls_user-email IS NOT INITIAL.
       PERFORM validate_email USING ls_user-email
                              CHANGING lv_clean_email lv_email_valid.
       IF lv_email_valid = abap_false.
-        lv_email_note = | [WARN: Invalid email '{ ls_user-email }' ignored]|.
+        lv_email_note = |{ lv_email_note } [WARN: Invalid email '{ ls_user-email }' ignored]|.
         ls_user-email_invalid = abap_true.
         CLEAR ls_user-email.
       ELSE.
@@ -904,8 +1068,39 @@ FORM process_users.
       lv_exists = abap_false.
     ENDIF.
 
+    " Guard against >40-char or invalid leading characters ('!', '?', or space) in CSV password
+    IF ( lv_exists = abap_false OR ( p_upd = abap_true AND p_pwd = abap_true ) )
+       AND ls_user-raw_password IS NOT INITIAL.
+      DATA(lv_pwd_first) = ls_user-raw_password(1).
+      IF strlen( ls_user-raw_password ) > 40.
+        ls_res-status     = gc_status_err.
+        ls_res-action     = 'ERROR'.
+        ls_res-username   = ls_user-username.
+        ls_res-fullname   = ls_user-fullname.
+        ls_res-email      = ls_user-email.
+        ls_res-phone      = ls_user-phone.
+        ls_res-department = ls_user-department.
+        ls_res-function   = ls_user-function.
+        ls_res-message    = 'Initial password exceeds SAP 40-character limit.'.
+        APPEND ls_res TO gt_results.
+        CONTINUE.
+      ELSEIF lv_pwd_first = '!' OR lv_pwd_first = '?' OR lv_pwd_first = ' '.
+        ls_res-status     = gc_status_err.
+        ls_res-action     = 'ERROR'.
+        ls_res-username   = ls_user-username.
+        ls_res-fullname   = ls_user-fullname.
+        ls_res-email      = ls_user-email.
+        ls_res-phone      = ls_user-phone.
+        ls_res-department = ls_user-department.
+        ls_res-function   = ls_user-function.
+        ls_res-message    = 'Initial password cannot start with ''!'', ''?'', or a space (prohibited by SAP).'.
+        APPEND ls_res TO gt_results.
+        CONTINUE.
+      ENDIF.
+    ENDIF.
+
     " Track whether initial password was supplied in the input file
-    IF ls_user-password IS NOT INITIAL.
+    IF ls_user-raw_password IS NOT INITIAL.
       lv_pwd_from_file = abap_true.
     ELSE.
       lv_pwd_from_file = abap_false.
@@ -1053,17 +1248,21 @@ FORM process_users.
             lv_usr_same = abap_false.
           ENDIF.
           IF ls_user-email_invalid = abap_false
-             AND ( p_sync = abap_true OR ls_user-email IS NOT INITIAL )
-             AND ls_cur_addr-e_mail <> ls_user-email.
+             AND ( ( p_sync = abap_true AND ls_user-has_email_col = abap_true ) OR ls_user-email IS NOT INITIAL )
+             AND to_lower( condense( CONV string( ls_cur_addr-e_mail ) ) )
+                 <> to_lower( condense( CONV string( ls_user-email ) ) ).
             lv_usr_same = abap_false.
           ENDIF.
-          IF ( p_sync = abap_true OR ls_user-phone IS NOT INITIAL ) AND ls_cur_addr-tel1_numbr <> ls_user-phone.
+          IF ( ( p_sync = abap_true AND ls_user-has_phone_col = abap_true ) OR ls_user-phone IS NOT INITIAL )
+             AND ls_cur_addr-tel1_numbr <> ls_user-phone.
             lv_usr_same = abap_false.
           ENDIF.
-          IF ( p_sync = abap_true OR ls_user-department IS NOT INITIAL ) AND ls_cur_addr-department <> ls_user-department.
+          IF ( ( p_sync = abap_true AND ls_user-has_dept_col = abap_true ) OR ls_user-department IS NOT INITIAL )
+             AND ls_cur_addr-department <> ls_user-department.
             lv_usr_same = abap_false.
           ENDIF.
-          IF ( p_sync = abap_true OR ls_user-function IS NOT INITIAL ) AND ls_cur_addr-function <> ls_user-function.
+          IF ( ( p_sync = abap_true AND ls_user-has_func_col = abap_true ) OR ls_user-function IS NOT INITIAL )
+             AND ls_cur_addr-function <> ls_user-function.
             lv_usr_same = abap_false.
           ENDIF.
           IF p_comp IS NOT INITIAL AND ls_cur_comp-company <> p_comp.
@@ -1276,22 +1475,22 @@ FORM update_single_user USING    is_user   TYPE ty_user_csv
   ls_addressx-lastname = 'X'.
 
   IF is_user-email_invalid = abap_false
-     AND ( p_sync = abap_true OR is_user-email IS NOT INITIAL ).
+     AND ( ( p_sync = abap_true AND is_user-has_email_col = abap_true ) OR is_user-email IS NOT INITIAL ).
     ls_address-e_mail  = is_user-email.
     ls_addressx-e_mail = 'X'.
   ENDIF.
 
-  IF p_sync = abap_true OR is_user-phone IS NOT INITIAL.
+  IF ( p_sync = abap_true AND is_user-has_phone_col = abap_true ) OR is_user-phone IS NOT INITIAL.
     ls_address-tel1_numbr  = is_user-phone.
     ls_addressx-tel1_numbr = 'X'.
   ENDIF.
 
-  IF p_sync = abap_true OR is_user-department IS NOT INITIAL.
+  IF ( p_sync = abap_true AND is_user-has_dept_col = abap_true ) OR is_user-department IS NOT INITIAL.
     ls_address-department  = is_user-department.
     ls_addressx-department = 'X'.
   ENDIF.
 
-  IF p_sync = abap_true OR is_user-function IS NOT INITIAL.
+  IF ( p_sync = abap_true AND is_user-has_func_col = abap_true ) OR is_user-function IS NOT INITIAL.
     ls_address-function  = is_user-function.
     ls_addressx-function = 'X'.
   ENDIF.
@@ -1480,28 +1679,31 @@ ENDFORM.
 *& Form load_param_file_to_screen
 *&---------------------------------------------------------------------*
 FORM load_param_file_to_screen USING iv_file          TYPE localfile
-                                     iv_update_dynpro TYPE abap_bool.
+                                     iv_update_dynpro TYPE abap_bool
+                                     iv_push_pfile    TYPE abap_bool.
   TYPES: BEGIN OF ty_par_row,
            parid TYPE bapiparam1-parid,
            parva TYPE bapiparam1-parva,
            partx TYPE c LENGTH 33,
          END OF ty_par_row.
 
-  DATA: lt_lines   TYPE STANDARD TABLE OF string,
-        lt_tokens  TYPE string_table,
-        lt_rows    TYPE STANDARD TABLE OF ty_par_row,
-        ls_row     TYPE ty_par_row,
-        lv_line    TYPE string,
-        lv_lidx    TYPE i,
-        lv_c1      TYPE string,
-        lv_c2      TYPE string,
-        lv_c3      TYPE string,
-        lv_idx_c   TYPE n LENGTH 2,
-        lv_f_pid   TYPE string,
-        lv_f_pva   TYPE string,
-        lv_f_pds   TYPE string,
-        lt_dynp    TYPE STANDARD TABLE OF dynpread,
-        lv_cur_pid TYPE bapiparam1-parid.
+  DATA: lt_lines      TYPE STANDARD TABLE OF string,
+        lt_tokens     TYPE string_table,
+        lt_rows       TYPE STANDARD TABLE OF ty_par_row,
+        ls_row        TYPE ty_par_row,
+        lv_line       TYPE string,
+        lv_lidx       TYPE i,
+        lv_c1         TYPE string,
+        lv_c2         TYPE string,
+        lv_c3         TYPE string,
+        lv_idx_c      TYPE n LENGTH 2,
+        lv_f_pid      TYPE string,
+        lv_f_pva      TYPE string,
+        lv_f_pds      TYPE string,
+        lt_dynp       TYPE STANDARD TABLE OF dynpread,
+        lv_cur_pid    TYPE bapiparam1-parid,
+        lv_file_delim TYPE c LENGTH 1 VALUE ',',
+        lv_delim_set  TYPE abap_bool VALUE abap_false.
 
   FIELD-SYMBOLS: <lv_pid> TYPE bapiparam1-parid,
                  <lv_pva> TYPE bapiparam1-parva,
@@ -1511,7 +1713,11 @@ FORM load_param_file_to_screen USING iv_file          TYPE localfile
     RETURN.
   ENDIF.
 
-  PERFORM read_local_csv_lines USING iv_file CHANGING lt_lines.
+  DATA lv_read_err TYPE string.
+  PERFORM read_local_csv_lines USING iv_file iv_update_dynpro CHANGING lt_lines lv_read_err.
+  IF lv_read_err IS NOT INITIAL.
+    RETURN.
+  ENDIF.
 
   LOOP AT lt_lines INTO lv_line.
     lv_lidx = lv_lidx + 1.
@@ -1519,7 +1725,12 @@ FORM load_param_file_to_screen USING iv_file          TYPE localfile
       CONTINUE.
     ENDIF.
 
-    PERFORM parse_csv_line USING lv_line CHANGING lt_tokens.
+    IF lv_delim_set = abap_false.
+      PERFORM detect_csv_delimiter USING lv_line CHANGING lv_file_delim.
+      lv_delim_set = abap_true.
+    ENDIF.
+
+    PERFORM parse_csv_line USING lv_line lv_file_delim CHANGING lt_tokens.
     IF lt_tokens IS INITIAL.
       CONTINUE.
     ENDIF.
@@ -1528,6 +1739,9 @@ FORM load_param_file_to_screen USING iv_file          TYPE localfile
     READ TABLE lt_tokens INTO lv_c1 INDEX 1.
     READ TABLE lt_tokens INTO lv_c2 INDEX 2.
     READ TABLE lt_tokens INTO lv_c3 INDEX 3.
+    PERFORM clean_cell CHANGING lv_c1.
+    PERFORM clean_cell CHANGING lv_c2.
+    PERFORM clean_cell CHANGING lv_c3.
 
     DATA(lv_c1_up) = to_upper( condense( lv_c1 ) ).
     DATA(lv_c2_up) = to_upper( condense( lv_c2 ) ).
@@ -1537,7 +1751,13 @@ FORM load_param_file_to_screen USING iv_file          TYPE localfile
       IF lv_hdr_up CS 'USERNAME' OR lv_hdr_up CS 'FULL NAME' OR lv_hdr_up CS 'ROLE'
          OR lv_hdr_up CS 'TCODE' OR lv_hdr_up CS 'ORG_LEVEL' OR lv_hdr_up CS 'OBJECT-FIELD'
          OR lv_hdr_up CS 'VALUE-LOW'.
-        MESSAGE 'Invalid CSV header for Parameter CSV. Expected: Parameter ID, Parameter Value, Description.' TYPE 'E'.
+        DATA(lv_hdr_msg) = 'Invalid CSV header for Parameter CSV. Expected: Parameter ID, Parameter Value, Description.'.
+        IF iv_update_dynpro = abap_true.
+          MESSAGE lv_hdr_msg TYPE 'S' DISPLAY LIKE 'E'.
+        ELSE.
+          MESSAGE lv_hdr_msg TYPE 'E'.
+        ENDIF.
+        RETURN.
       ENDIF.
       IF lv_c1_up = 'PARAMETER ID' OR lv_c1_up = 'PARAMATER ID' OR lv_c1_up = 'PARID'
          OR ( lv_c1_up CS 'PARAM' AND ( lv_c2_up CS 'VAL' OR lv_c2_up CS 'PARVA' ) ).
@@ -1566,7 +1786,13 @@ FORM load_param_file_to_screen USING iv_file          TYPE localfile
   ENDLOOP.
 
   IF lt_rows IS INITIAL.
-    MESSAGE 'No parameter rows found in the selected Parameter CSV file.' TYPE 'E'.
+    DATA(lv_empty_msg) = 'No parameter rows found in the selected Parameter CSV file.'.
+    IF iv_update_dynpro = abap_true.
+      MESSAGE lv_empty_msg TYPE 'S' DISPLAY LIKE 'E'.
+    ELSE.
+      MESSAGE lv_empty_msg TYPE 'E'.
+    ENDIF.
+    RETURN.
   ENDIF.
 
   IF lines( lt_rows ) > 10.
@@ -1603,7 +1829,7 @@ FORM load_param_file_to_screen USING iv_file          TYPE localfile
 
   IF iv_update_dynpro = abap_true AND sy-batch IS INITIAL.
     CLEAR lt_dynp.
-    IF p_file IS NOT INITIAL.
+    IF iv_push_pfile = abap_true AND p_file IS NOT INITIAL.
       APPEND VALUE dynpread( fieldname = 'P_FILE' fieldvalue = p_file ) TO lt_dynp.
     ENDIF.
     APPEND VALUE dynpread( fieldname = 'P_PFILE' fieldvalue = iv_file ) TO lt_dynp.
@@ -1753,20 +1979,29 @@ ENDFORM.
 FORM validate_email USING    iv_email    TYPE bapiaddr3-e_mail
                     CHANGING cv_email    TYPE bapiaddr3-e_mail
                              ev_is_valid TYPE abap_bool.
-  DATA: ls_addr_in TYPE sx_address.
+  DATA: ls_addr_in TYPE sx_address,
+        lv_str     TYPE string,
+        lv_local   TYPE string,
+        lv_domain  TYPE string,
+        lv_extra   TYPE string.
   CLEAR: cv_email, ev_is_valid.
 
-  IF iv_email IS INITIAL.
+  lv_str = condense( CONV string( iv_email ) ).
+  IF lv_str IS INITIAL OR lv_str CA space.
     RETURN.
   ENDIF.
 
-  " Syntactic basic checks: must contain '@' and domain must contain '.'
-  IF iv_email NA '@' OR iv_email NA '.'.
+  " Strict basic structure: exactly one '@', non-empty local, domain with '.' not at edges
+  SPLIT lv_str AT '@' INTO lv_local lv_domain lv_extra.
+  IF lv_local IS INITIAL OR lv_domain IS INITIAL OR lv_extra IS NOT INITIAL.
+    RETURN.
+  ENDIF.
+  IF lv_domain NA '.' OR lv_domain(1) = '.' OR substring( val = lv_domain off = strlen( lv_domain ) - 1 len = 1 ) = '.'.
     RETURN.
   ENDIF.
 
   ls_addr_in-type    = 'INT'.
-  ls_addr_in-address = iv_email.
+  ls_addr_in-address = lv_str.
 
   CALL FUNCTION 'SX_INTERNET_ADDRESS_TO_NORMAL'
     EXPORTING
@@ -1778,7 +2013,7 @@ FORM validate_email USING    iv_email    TYPE bapiaddr3-e_mail
       OTHERS              = 4.
 
   IF sy-subrc = 0.
-    cv_email    = iv_email.
+    cv_email    = lv_str.
     ev_is_valid = abap_true.
   ELSE.
     CLEAR cv_email.
@@ -1831,7 +2066,8 @@ ENDCLASS.
 CLASS lcl_alv_event_handler IMPLEMENTATION.
   METHOD on_link_click.
     READ TABLE gt_results INTO DATA(ls_row) INDEX row.
-    IF sy-subrc = 0 AND column = 'USERNAME' AND ls_row-username IS NOT INITIAL.
+    IF sy-subrc = 0 AND column = 'USERNAME'
+       AND ls_row-username IS NOT INITIAL AND ls_row-action <> 'ERROR'.
       SET PARAMETER ID 'USR' FIELD ls_row-username.
       TRY.
           CALL TRANSACTION 'SU01' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
@@ -1948,11 +2184,11 @@ ENDFORM.
 *& Form generate_initial_password
 *&---------------------------------------------------------------------*
 FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
-  DATA: lv_gen_pwd TYPE xubcode.
+  DATA: lv_gen_pwd TYPE bapipwd-bapipwd.
 
   CLEAR cv_password.
 
-  " Attempt 1: Standard SAP password generation function
+  " Attempt 1: Standard SAP password generation function (full 40-char buffer, never XUBCODE 8-char)
   CALL FUNCTION 'SUSR_GENERATE_PASSWORD'
     IMPORTING
       password        = lv_gen_pwd
@@ -1960,22 +2196,21 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
       generator_error = 1
       OTHERS          = 2.
 
-  IF sy-subrc = 0 AND lv_gen_pwd IS NOT INITIAL AND strlen( lv_gen_pwd ) >= 8.
+  IF sy-subrc = 0 AND lv_gen_pwd IS NOT INITIAL AND strlen( lv_gen_pwd ) >= 10.
     cv_password = lv_gen_pwd.
     RETURN.
   ENDIF.
 
-  " Attempt 2: CSPRNG-backed SAP-compliant fallback generator (12 characters)
+  " Attempt 2: Fail-closed CSPRNG generator (12 chars, unbiased rejection sampling; omit '!' to avoid SAP 01 117 leading-'!' rejection)
   DATA: lv_uppers   TYPE string VALUE 'ABCDEFGHJKLMNPQRSTUVWXYZ',
         lv_lowers   TYPE string VALUE 'abcdefghijkmnpqrstuvwxyz',
         lv_digits   TYPE string VALUE '23456789',
-        lv_spec     TYPE string VALUE '!@#$%*-_=+',
+        lv_spec     TYPE string VALUE '@#$%*-_=+',
         lv_all      TYPE string,
         lv_res      TYPE string,
         lv_char     TYPE c LENGTH 1,
         lv_sec_x    TYPE xstring,
         lv_sec_pos  TYPE i,
-        lo_rnd      TYPE REF TO cl_abap_random_int,
         lv_shuffled TYPE string,
         lv_rem_len  TYPE i,
         lv_pick_pos TYPE i,
@@ -1985,7 +2220,7 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
 
   CALL FUNCTION 'GENERATE_SEC_RANDOM'
     EXPORTING
-      length         = 32
+      length         = 64
     IMPORTING
       random         = lv_sec_x
     EXCEPTIONS
@@ -1993,47 +2228,37 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
       no_memory      = 2
       internal_error = 3
       OTHERS         = 4.
-  IF sy-subrc <> 0.
-    CLEAR lv_sec_x.
-  ENDIF.
-
-  IF xstrlen( lv_sec_x ) < 24.
-    TRY.
-        lo_rnd = cl_abap_random_int=>create(
-                   seed = cl_abap_random=>seed( )
-                   min  = 0
-                   max  = 999999 ).
-      CATCH cx_root.
-    ENDTRY.
+  IF sy-subrc <> 0 OR xstrlen( lv_sec_x ) < 64.
+    MESSAGE 'Cryptographic random password generator (GENERATE_SEC_RANDOM) unavailable.' TYPE 'E'.
   ENDIF.
 
   " Ensure at least 1 of each required character category
-  PERFORM pick_random_char USING lv_uppers lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
+  PERFORM pick_random_char USING lv_uppers CHANGING lv_sec_x lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
-  PERFORM pick_random_char USING lv_lowers lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
+  PERFORM pick_random_char USING lv_lowers CHANGING lv_sec_x lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
-  PERFORM pick_random_char USING lv_digits lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
+  PERFORM pick_random_char USING lv_digits CHANGING lv_sec_x lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
-  PERFORM pick_random_char USING lv_spec lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
+  PERFORM pick_random_char USING lv_spec CHANGING lv_sec_x lv_sec_pos lv_char.
   lv_res = lv_res && lv_char.
 
   " Fill remaining 8 characters
   DO 8 TIMES.
-    PERFORM pick_random_char USING lv_all lv_sec_x lo_rnd CHANGING lv_sec_pos lv_char.
+    PERFORM pick_random_char USING lv_all CHANGING lv_sec_x lv_sec_pos lv_char.
     lv_res = lv_res && lv_char.
   ENDDO.
 
-  " Shuffle characters for randomness
+  " Unbiased Fisher-Yates shuffle
   DO 12 TIMES.
     lv_rem_len = strlen( lv_res ).
     IF lv_rem_len <= 1.
       lv_shuffled = lv_shuffled && lv_res.
       EXIT.
     ENDIF.
-    PERFORM next_random_int USING lv_sec_x lo_rnd lv_rem_len CHANGING lv_sec_pos lv_rval.
+    PERFORM next_random_int USING lv_rem_len CHANGING lv_sec_x lv_sec_pos lv_rval.
     lv_pick_pos = lv_rval.
     lv_char = substring( val = lv_res off = lv_pick_pos len = 1 ).
     lv_shuffled = lv_shuffled && lv_char.
@@ -2051,40 +2276,59 @@ FORM generate_initial_password CHANGING cv_password TYPE bapipwd-bapipwd.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
-*& Form next_random_int
+*& Form next_random_int (Unbiased CSPRNG with Rejection Sampling)
 *&---------------------------------------------------------------------*
-FORM next_random_int USING    iv_sec_x  TYPE xstring
-                              io_rnd    TYPE REF TO cl_abap_random_int
-                              iv_mod    TYPE i
-                     CHANGING cv_pos    TYPE i
-                              ev_val    TYPE i.
-  DATA: lv_byte TYPE x LENGTH 1,
-        lv_int  TYPE i.
+FORM next_random_int USING    iv_mod   TYPE i
+                     CHANGING cv_sec_x TYPE xstring
+                              cv_pos   TYPE i
+                              ev_val   TYPE i.
+  DATA: lv_byte  TYPE x LENGTH 1,
+        lv_int   TYPE i,
+        lv_limit TYPE i.
 
   CLEAR ev_val.
   IF iv_mod <= 1.
     RETURN.
   ENDIF.
 
-  IF xstrlen( iv_sec_x ) > cv_pos.
-    lv_byte = iv_sec_x+cv_pos(1).
+  lv_limit = ( 256 DIV iv_mod ) * iv_mod.
+
+  DO 256 TIMES.
+    IF xstrlen( cv_sec_x ) <= cv_pos.
+      CLEAR: cv_sec_x, cv_pos.
+      CALL FUNCTION 'GENERATE_SEC_RANDOM'
+        EXPORTING
+          length         = 64
+        IMPORTING
+          random         = cv_sec_x
+        EXCEPTIONS
+          invalid_length = 1
+          no_memory      = 2
+          internal_error = 3
+          OTHERS         = 4.
+      IF sy-subrc <> 0 OR xstrlen( cv_sec_x ) = 0.
+        MESSAGE 'Cryptographic random password generator unavailable.' TYPE 'E'.
+      ENDIF.
+    ENDIF.
+
+    lv_byte = cv_sec_x+cv_pos(1).
     cv_pos  = cv_pos + 1.
     lv_int  = lv_byte.
-    ev_val  = lv_int MOD iv_mod.
-  ELSEIF io_rnd IS BOUND.
-    ev_val = io_rnd->get_next( ) MOD iv_mod.
-  ELSE.
-    MESSAGE 'Cryptographic random password generator unavailable.' TYPE 'E'.
-  ENDIF.
+    IF lv_int < lv_limit.
+      ev_val = lv_int MOD iv_mod.
+      RETURN.
+    ENDIF.
+  ENDDO.
+
+  MESSAGE 'Cryptographic random password generator exhausted retries.' TYPE 'E'.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Form pick_random_char
 *&---------------------------------------------------------------------*
 FORM pick_random_char USING    iv_pool  TYPE string
-                               iv_sec_x TYPE xstring
-                               io_rnd   TYPE REF TO cl_abap_random_int
-                      CHANGING cv_pos   TYPE i
+                      CHANGING cv_sec_x TYPE xstring
+                               cv_pos   TYPE i
                                cv_char  TYPE c.
   DATA: lv_pool_len TYPE i,
         lv_off      TYPE i.
@@ -2095,6 +2339,6 @@ FORM pick_random_char USING    iv_pool  TYPE string
     RETURN.
   ENDIF.
 
-  PERFORM next_random_int USING iv_sec_x io_rnd lv_pool_len CHANGING cv_pos lv_off.
+  PERFORM next_random_int USING lv_pool_len CHANGING cv_sec_x cv_pos lv_off.
   cv_char = substring( val = iv_pool off = lv_off len = 1 ).
 ENDFORM.

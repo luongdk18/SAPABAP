@@ -85,11 +85,12 @@ INITIALIZATION.
   c_url  = 'SICF Service Endpoint: /sap/bc/z_sspr'.
   c_note = 'Handler Class: ZCL_SSPR_HTTP_HANDLER (Active)'.
 
+AT SELECTION-SCREEN OUTPUT.
   PERFORM populate_dropdowns.
 
 AT SELECTION-SCREEN.
-  IF p_clean = abap_true AND p_days < 1.
-    MESSAGE 'Retention Days must be at least 1 day when Cleanup is enabled.' TYPE 'E'.
+  IF p_clean = abap_true AND ( p_days < 1 OR p_days > 3650 ).
+    MESSAGE 'Retention Days must be between 1 and 3650 when Cleanup is enabled.' TYPE 'E'.
   ENDIF.
 
 *----------------------------------------------------------------------*
@@ -152,18 +153,13 @@ FORM check_authority.
     MESSAGE 'You are not authorized to view user administration data (S_USER_GRP 03).' TYPE 'E'.
   ENDIF.
 
-  " Require write authorization (02 or 06) before executing real cleanup
+  " Require global delete authorization (S_USER_GRP CLASS='*' ACTVT='06') before purging audit logs
   IF p_clean = abap_true AND p_test = abap_false.
     AUTHORITY-CHECK OBJECT 'S_USER_GRP'
-      ID 'CLASS' DUMMY
-      ID 'ACTVT' FIELD '02'.
+      ID 'CLASS' FIELD '*'
+      ID 'ACTVT' FIELD '06'.
     IF sy-subrc <> 0.
-      AUTHORITY-CHECK OBJECT 'S_USER_GRP'
-        ID 'CLASS' DUMMY
-        ID 'ACTVT' FIELD '06'.
-      IF sy-subrc <> 0.
-        MESSAGE 'No authorization to delete SSPR audit tokens (S_USER_GRP 02/06).' TYPE 'E'.
-      ENDIF.
+      MESSAGE 'No global delete authorization to purge SSPR audit tokens (S_USER_GRP CLASS=* ACTVT=06).' TYPE 'E'.
     ENDIF.
   ENDIF.
 ENDFORM.
@@ -180,17 +176,21 @@ FORM cleanup_expired_tokens.
   IF p_test = abap_true.
     SELECT COUNT(*) FROM zsspr_tokens
       INTO @lv_del_cnt
-      WHERE created_date <= @lv_del_date
+      WHERE created_date < @lv_del_date
         AND ( status = 'EXPIRED' OR status = 'USED' OR status = 'INVALID'
-              OR ( status = 'PENDING' AND expires_date < @sy-datum ) ).
+              OR ( status = 'PENDING'
+                   AND ( expires_date < @sy-datum
+                         OR ( expires_date = @sy-datum AND expires_time < @sy-uzeit ) ) ) ).
     MESSAGE |[Simulated] { lv_del_cnt } expired/used/invalid token(s) older than { p_days } day(s) would be deleted.| TYPE 'S'.
     RETURN.
   ENDIF.
 
   DELETE FROM zsspr_tokens
-    WHERE created_date <= @lv_del_date
+    WHERE created_date < @lv_del_date
       AND ( status = 'EXPIRED' OR status = 'USED' OR status = 'INVALID'
-            OR ( status = 'PENDING' AND expires_date < @sy-datum ) ).
+            OR ( status = 'PENDING'
+                 AND ( expires_date < @sy-datum
+                       OR ( expires_date = @sy-datum AND expires_time < @sy-uzeit ) ) ) ).
 
   lv_del_cnt = sy-dbcnt.
   COMMIT WORK AND WAIT.
